@@ -4,12 +4,27 @@
   import { app } from '../lib/state.svelte';
   import type { Asset, AssetContent } from '../lib/types';
   import Icon from './Icon.svelte';
+  import { marked } from 'marked';
+
+  /** Feuille de style du Markdown rendu : l'iframe n'hérite pas de celle de Robiade. */
+  const MARKDOWN_STYLE = `<style>
+    :root { color-scheme: light dark; }
+    body { font: 14px/1.6 -apple-system, BlinkMacSystemFont, sans-serif; max-width: 78ch; margin: 24px auto; padding: 0 24px; }
+    h1, h2, h3 { line-height: 1.25; margin: 1.4em 0 0.5em; }
+    h1 { font-size: 1.6em; } h2 { font-size: 1.3em; } h3 { font-size: 1.1em; }
+    code { font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; background: rgb(127 127 127 / 0.15); padding: 1px 4px; border-radius: 4px; }
+    pre { background: rgb(127 127 127 / 0.12); padding: 12px 14px; border-radius: 8px; overflow-x: auto; }
+    pre code { background: none; padding: 0; }
+    table { border-collapse: collapse; } th, td { border: 1px solid rgb(127 127 127 / 0.35); padding: 4px 10px; text-align: left; }
+    blockquote { margin: 0; padding-left: 14px; border-left: 3px solid rgb(127 127 127 / 0.4); opacity: 0.85; }
+    img { max-width: 100%; }
+  </style>`;
 
   let { agentId, asset, onclose }: { agentId: string; asset: Asset; onclose: () => void } = $props();
 
   let content = $state<AssetContent | null>(null);
   let error = $state<string | null>(null);
-  /** Une page HTML se lit rendue ; sa source reste consultable. */
+  /** HTML et Markdown se lisent rendus ; leur source reste consultable. */
   let source = $state(false);
   let close: HTMLButtonElement | undefined = $state();
 
@@ -26,6 +41,13 @@
 
   $effect(() => close?.focus());
 
+  const rendered = $derived.by(() => {
+    if (!content?.text || source) return null;
+    if (content.kind === 'html') return content.text;
+    if (content.kind === 'markdown') return MARKDOWN_STYLE + marked.parse(content.text, { async: false, gfm: true });
+    return null;
+  });
+
   function onkeydown(e: KeyboardEvent) {
     if (e.key !== 'Escape') return;
     onclose();
@@ -40,7 +62,7 @@
     <header>
       <h2 id="asset-title" class="ellipsis">{asset.name}</h2>
       <span class="mono muted ellipsis path selectable">{shortPath(asset.path, app.env?.home ?? '')}</span>
-      {#if asset.kind === 'html'}
+      {#if asset.kind === 'html' || asset.kind === 'markdown'}
         <button class="btn ghost" onclick={() => (source = !source)}>{source ? 'Rendu' : 'Source'}</button>
       {/if}
       <button class="btn ghost icon" bind:this={close} onclick={onclose} title="Fermer (Échap)"><Icon name="close" size={14} /></button>
@@ -52,9 +74,10 @@
         <p class="muted center">Chargement…</p>
       {:else if content.dataUrl}
         <div class="image"><img src={content.dataUrl} alt={asset.name} /></div>
-      {:else if content.kind === 'html' && !source}
-        <!-- Sans `allow-scripts` ni `allow-same-origin` : la page s'affiche, rien ne s'y exécute. -->
-        <iframe title={asset.name} sandbox="" srcdoc={content.text ?? ''}></iframe>
+      {:else if rendered !== null}
+        <!-- Sans `allow-scripts` ni `allow-same-origin` : la page s'affiche, rien ne s'y exécute.
+             Le HTML brut d'un Markdown y est donc inoffensif, sans nettoyage à maintenir. -->
+        <iframe title={asset.name} sandbox="" srcdoc={rendered} class:md={content.kind === 'markdown'}></iframe>
       {:else}
         <pre class="selectable">{content.text}</pre>
       {/if}
@@ -84,6 +107,7 @@
   }
   img { max-width: 100%; max-height: 100%; object-fit: contain; }
   iframe { flex: 1; border: 0; background: #fff; }
+  iframe.md { background: var(--bg); }
   pre {
     flex: 1; margin: 0; padding: 16px 20px; overflow: auto; font: 12.5px/1.55 var(--mono);
     white-space: pre-wrap; word-break: break-word;
