@@ -2,6 +2,8 @@
 //! l'agent peut écrire dans le même dépôt au même moment.
 
 use std::collections::HashMap;
+use std::ffi::OsStr;
+use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::process::Command;
 
@@ -15,7 +17,7 @@ const MAX_DIFF_BYTES: usize = 2 * 1024 * 1024;
 /// Réglages imposés à chaque appel : la config d'un dépôt peut déclarer des commandes que `status`
 /// ou `diff` exécuteraient (`core.fsmonitor`, filtres `clean`/`textconv`, diff externe, sous-modules).
 /// Robiade lance git sans que je le demande, sur des dépôts où un agent écrit : aucune ne doit tourner.
-/// Les filtres, nommés librement, sont neutralisés un par un (voir `filter_overrides`).
+/// Les filtres, nommés librement, sont neutralisés un par un (voir `safe_command`).
 const HARDENING: &[&str] = &["-c", "core.fsmonitor=false", "-c", "core.quotepath=off", "-c", "diff.external="];
 
 /// Options de `git diff` qui n'exécutent rien de déclaré par le dépôt.
@@ -38,28 +40,44 @@ impl GitCli {
         cmd
     }
 
-    /// Vide chaque filtre déclaré dans la config (dépôt, global, système) : un filtre `clean`, comme
-    /// celui de git-lfs, tourne à chaque `status` ou `diff`. Lire la config n'exécute rien.
-    fn filter_overrides(&self, dir: &str) -> Vec<String> {
-        let Ok(out) = self.command(dir).args(["config", "--get-regexp", r"^filter\."]).output() else { return vec![] };
-        let mut names: Vec<String> = String::from_utf8_lossy(&out.stdout)
-            .lines()
-            .filter_map(|line| line.split_whitespace().next()?.strip_prefix("filter.")?.rsplit_once('.'))
-            .map(|(name, _)| name.to_owned())
+    /// Commande sûre : chaque filtre déclaré dans la config (dépôt, global, système) est vidé, car un
+    /// filtre `clean`, comme celui de git-lfs, tourne à chaque `status` ou `diff`. Lire la config
+    /// n'exécute rien. Les clés passent en octets bruts par `GIT_CONFIG_KEY_n` : un nom de filtre
+    /// peut contenir espaces, `=` ou retours à la ligne. Config illisible : git ne tourne pas.
+    fn safe_command(&self, dir: &str) -> Result<Command, VcsError> {
+        let out = self
+            .command(dir)
+            .args(["config", "-z", "--name-only", "--get-regexp", r"^filter\."])
+            .output()
+            .map_err(|e| VcsError::Git(e.to_string()))?;
+        let keys = match out.status.code() {
+            Some(0) => out.stdout,
+            Some(1) => Vec::new(), // aucun filtre
+            _ => return Err(VcsError::Git("config git illisible : lecture refusée".into())),
+        };
+        let mut prefixes: Vec<&[u8]> = keys
+            .split(|b| *b == 0)
+            .filter_map(|key| key.iter().rposition(|b| *b == b'.').map(|dot| &key[..dot]))
             .collect();
-        names.sort();
-        names.dedup();
-        names
-            .iter()
-            .flat_map(|n| ["clean=", "smudge=", "process=", "required=false"].map(|k| format!("filter.{n}.{k}")))
-            .flat_map(|setting| ["-c".to_owned(), setting])
-            .collect()
+        prefixes.sort();
+        prefixes.dedup();
+        let mut cmd = self.command(dir);
+        let mut n = 0;
+        for prefix in prefixes {
+            for (variable, value) in [("clean", ""), ("smudge", ""), ("process", ""), ("required", "false")] {
+                let key = [prefix, b".", variable.as_bytes()].concat();
+                cmd.env(format!("GIT_CONFIG_KEY_{n}"), OsStr::from_bytes(&key));
+                cmd.env(format!("GIT_CONFIG_VALUE_{n}"), value);
+                n += 1;
+            }
+        }
+        cmd.env("GIT_CONFIG_COUNT", n.to_string());
+        Ok(cmd)
     }
 
     fn run(&self, dir: &str, args: &[&str]) -> Result<Vec<u8>, VcsError> {
         let out = self
-            .command(dir)
-            .args(self.filter_overrides(dir))
+            .safe_command(dir)?
             .args(args)
             .output()
             .map_err(|e| VcsError::Git(e.to_string()))?;
@@ -172,8 +190,7 @@ impl WorkingTree for GitCli {
         if change.kind == ChangeKind::Untracked {
             // `--no-index` sort en code 1 quand il y a une différence : c'est le cas normal ici.
             let out = self
-                .command(&root)
-                .args(self.filter_overrides(&root))
+                .safe_command(&root)?
                 .args(["diff", "--no-color", "--no-ext-diff", "--no-textconv", "--no-index", "--", "/dev/null", path])
                 .output()
                 .map_err(|e| VcsError::Git(e.to_string()))?;
@@ -230,9 +247,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         git(&dir, &["init", "-q"]);
-        std::fs::write(dir.join(".gitattributes"), "*.txt diff=piege filter=lfs.like\n").unwrap();
+        std::fs::write(dir.join(".gitattributes"), "*.txt diff=piege filter=lfs.like\n*.md filter=a=b\n").unwrap();
+        std::fs::write(dir.join("b.md"), "un\n").unwrap();
         std::fs::write(dir.join("a.txt"), "un\n").unwrap();
-        git(&dir, &["add", "a.txt", ".gitattributes"]);
+        git(&dir, &["add", "a.txt", "b.md", ".gitattributes"]);
         git(&dir, &["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init"]);
         // Pièges posés après le commit : seuls les appels de Robiade peuvent les déclencher.
         let witness = dir.join("piege-declenche");
@@ -241,10 +259,14 @@ mod tests {
         git(&dir, &["config", "diff.piege.textconv", &trap]);
         git(&dir, &["config", "filter.lfs.like.clean", &format!("sh -c 'touch {}; cat'", witness.display())]);
         git(&dir, &["config", "filter.lfs.like.required", "true"]);
+        // Un nom qui casserait une clé reconstruite en texte pour `-c clé=valeur`.
+        git(&dir, &["config", "filter.a=b.clean", &format!("sh -c 'touch {}; cat'", witness.display())]);
         std::fs::write(dir.join("a.txt"), "deux\n").unwrap();
+        std::fs::write(dir.join("b.md"), "deux\n").unwrap();
         let repo = GitCli::default();
         let d = dir.to_str().unwrap();
-        assert_eq!(repo.changes(d).unwrap()[0].path, "a.txt");
+        assert_eq!(repo.changes(d).unwrap().len(), 2);
+        assert!(repo.diff(d, "b.md").unwrap().contains("+deux"));
         assert!(repo.diff(d, "a.txt").unwrap().contains("+deux"));
         assert!(!witness.exists(), "une commande du dépôt a été exécutée");
         std::fs::remove_dir_all(&dir).unwrap();
