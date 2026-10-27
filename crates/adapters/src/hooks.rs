@@ -173,6 +173,27 @@ mod tests {
         assert_eq!(std::fs::metadata(&socket).unwrap().permissions().mode() & 0o777, 0o600);
     }
 
+    /// Contrat : entrées réelles de Claude Code 2.1.311, anonymisées. À recapturer à chaque
+    /// montée de version (`claude -p` avec un `--settings` dont chaque hook écrit son stdin).
+    #[test]
+    fn reads_real_hook_inputs() {
+        let expected = [
+            (AgentEvent::SessionStarted, None),
+            (AgentEvent::PromptSubmitted, Some("default")),
+            (AgentEvent::ToolStarted { tool: "Bash".into() }, Some("default")),
+            (AgentEvent::ToolFinished, Some("default")),
+            (AgentEvent::TurnFinished, Some("default")),
+            (AgentEvent::SessionEnded, None),
+        ];
+        let inputs: Vec<&str> = include_str!("../fixtures/hooks-2.1.311.jsonl").lines().collect();
+        assert_eq!(inputs.len(), expected.len());
+        for (input, (event, mode)) in inputs.into_iter().zip(expected) {
+            let relayed = relayed_from(input, "id".into()).unwrap();
+            assert_eq!(translate(&relayed), Some(event));
+            assert_eq!(relayed.permission_mode.as_deref(), mode);
+        }
+    }
+
     #[test]
     fn settings_declare_every_hook() {
         let v: Value = serde_json::from_str(&settings_json("'/x/robiade' hook")).unwrap();
