@@ -30,7 +30,7 @@ impl TranscriptStore {
         Self { root, cache: Mutex::new(HashMap::new()) }
     }
 
-    fn transcript_files(&self) -> Vec<PathBuf> {
+    pub fn transcript_files(&self) -> Vec<PathBuf> {
         let Ok(projects) = std::fs::read_dir(&self.root) else { return vec![] };
         projects
             .flatten()
@@ -206,45 +206,49 @@ impl TranscriptReader for TranscriptStore {
     }
 
     fn entries(&self, session_id: &str) -> Result<Vec<TranscriptEntry>, HistoryError> {
-        let path = self.find(session_id).ok_or(HistoryError::NotFound)?;
-        let file = File::open(&path).map_err(|e| HistoryError::Unreadable(e.to_string()))?;
-        let mut out = vec![];
-        for line in BufReader::new(file).lines().map_while(Result::ok) {
-            let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
-            if v.get("isSidechain").and_then(Value::as_bool).unwrap_or(false) {
-                continue;
-            }
-            let at = timestamp(&v).unwrap_or(0);
-            let Some(message) = v.get("message") else { continue };
-            match v.get("type").and_then(Value::as_str) {
-                Some("user") => {
-                    if let Some(text) = user_text(message) {
-                        out.push(TranscriptEntry { kind: EntryKind::User, at, text });
-                    }
-                }
-                Some("assistant") => {
-                    for block in message.get("content").and_then(Value::as_array).into_iter().flatten() {
-                        match block.get("type").and_then(Value::as_str) {
-                            Some("text") => {
-                                let text = block.get("text").and_then(Value::as_str).unwrap_or_default();
-                                if !text.trim().is_empty() {
-                                    out.push(TranscriptEntry { kind: EntryKind::Assistant, at, text: text.to_owned() });
-                                }
-                            }
-                            Some("tool_use") => {
-                                let name = block.get("name").and_then(Value::as_str).unwrap_or("?");
-                                let hint = tool_hint(block.get("input"));
-                                out.push(TranscriptEntry { kind: EntryKind::ToolUse, at, text: format!("{name} {hint}") });
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        Ok(out)
+        read_entries(&self.find(session_id).ok_or(HistoryError::NotFound)?)
     }
+}
+
+/// Fil de lecture d'un transcript : messages humains, réponses, et une ligne par appel d'outil.
+pub fn read_entries(path: &Path) -> Result<Vec<TranscriptEntry>, HistoryError> {
+    let file = File::open(path).map_err(|e| HistoryError::Unreadable(e.to_string()))?;
+    let mut out = vec![];
+    for line in BufReader::new(file).lines().map_while(Result::ok) {
+        let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
+        if v.get("isSidechain").and_then(Value::as_bool).unwrap_or(false) {
+            continue;
+        }
+        let at = timestamp(&v).unwrap_or(0);
+        let Some(message) = v.get("message") else { continue };
+        match v.get("type").and_then(Value::as_str) {
+            Some("user") => {
+                if let Some(text) = user_text(message) {
+                    out.push(TranscriptEntry { kind: EntryKind::User, at, text });
+                }
+            }
+            Some("assistant") => {
+                for block in message.get("content").and_then(Value::as_array).into_iter().flatten() {
+                    match block.get("type").and_then(Value::as_str) {
+                        Some("text") => {
+                            let text = block.get("text").and_then(Value::as_str).unwrap_or_default();
+                            if !text.trim().is_empty() {
+                                out.push(TranscriptEntry { kind: EntryKind::Assistant, at, text: text.to_owned() });
+                            }
+                        }
+                        Some("tool_use") => {
+                            let name = block.get("name").and_then(Value::as_str).unwrap_or("?");
+                            let hint = tool_hint(block.get("input"));
+                            out.push(TranscriptEntry { kind: EntryKind::ToolUse, at, text: format!("{name} {hint}") });
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(out)
 }
 
 /// Résumé d'une ligne de l'entrée d'un outil, pour le fil de lecture.
