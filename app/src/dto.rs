@@ -325,6 +325,7 @@ pub struct OverviewDto {
     pub tokens: TokensDto,
     pub tool_calls: u64,
     pub merge_requests: u32,
+    pub median_duration_ms: Option<i64>,
     pub days: Vec<DayDto>,
     pub projects: Vec<ProjectStatDto>,
     pub tools: Vec<(String, u64)>,
@@ -336,6 +337,7 @@ impl From<Overview> for OverviewDto {
             sessions: o.sessions,
             tokens: (&o.tokens).into(),
             tool_calls: o.tool_calls,
+            median_duration_ms: o.median_duration_ms,
             merge_requests: o.merge_requests,
             days: o.days.into_iter().map(|d| DayDto { day: d.day, sessions: d.sessions, tokens: d.tokens }).collect(),
             projects: o
