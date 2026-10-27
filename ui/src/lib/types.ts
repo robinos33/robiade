@@ -24,8 +24,15 @@ export interface Agent extends Workspace {
   permissionMode: string | null;
   permissive: boolean;
   gauges: Gauges;
+  /** Fichiers affichables écrits par l'agent, le plus récent en tête. */
+  assets: Asset[];
   resumedFrom: string | null;
 }
+
+export type AssetKind = 'image' | 'html' | 'markdown' | 'text';
+export interface Asset { path: string; name: string; kind: AssetKind; writtenAt: number }
+/** Contenu d'un asset : `dataUrl` pour une image, `text` pour le reste. */
+export interface AssetContent { kind: AssetKind; text: string | null; dataUrl: string | null }
 
 export interface Gauge { percent: number; level: 'comfortable' | 'watch' | 'critical' }
 

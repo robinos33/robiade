@@ -7,12 +7,16 @@
   import MrBadge from '../components/MrBadge.svelte';
   import ModeBadge from '../components/ModeBadge.svelte';
   import GaugeBar from '../components/GaugeBar.svelte';
+  import AssetViewer from '../components/AssetViewer.svelte';
   import Icon from '../components/Icon.svelte';
 
   let container: HTMLDivElement | undefined = $state();
+  /** Chemin de l'asset ouvert en aperçu, pour l'agent actif. */
+  let viewing = $state<string | null>(null);
 
   const active = $derived(app.agents.find((a) => a.id === app.activeAgentId) ?? app.visibleAgents[0]);
   const session = $derived(active ? app.sessionOf(active) : undefined);
+  const viewed = $derived(active?.assets.find((a) => a.path === viewing));
 
   $effect(() => {
     if (!active || !container) return;
@@ -106,11 +110,32 @@
           {#if !session}
             <p class="muted note">Tokens et modèle apparaissent dès que le transcript existe (après le premier échange).</p>
           {/if}
+
+          <h2 class="section-title assets-title">Assets {#if active.assets.length}<span class="num">{active.assets.length}</span>{/if}</h2>
+          {#if active.assets.length === 0}
+            <p class="muted note">Images, pages HTML et notes que l'agent écrit apparaissent ici.</p>
+          {:else}
+            <ul class="assets">
+              {#each active.assets as f (f.path)}
+                <li>
+                  <button class="asset" onclick={() => (viewing = f.path)} title={f.path}>
+                    <Icon name={f.kind === 'image' ? 'image' : 'file'} size={14} />
+                    <span class="ellipsis">{f.name}</span>
+                    <span class="muted num right">{ago(f.writtenAt, app.now)}</span>
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {/if}
         </aside>
       {/if}
     </div>
   {/if}
 </section>
+
+{#if active && viewed}
+  <AssetViewer agentId={active.id} asset={viewed} onclose={() => (viewing = null)} />
+{/if}
 
 <style>
   .page { display: flex; flex-direction: column; min-height: 0; flex: 1; }
@@ -142,4 +167,11 @@
   dt { color: var(--ink-3); }
   dd { margin: 0; text-align: right; min-width: 0; }
   .note { font-size: 11.5px; margin: 16px 0 0; }
+  .assets-title { margin-top: 24px; display: flex; gap: 6px; }
+  .assets { list-style: none; margin: 6px -6px 0; padding: 0; }
+  .asset {
+    display: flex; align-items: center; gap: 8px; width: 100%; height: 28px; padding: 0 6px;
+    border: 0; border-radius: var(--radius-sm); background: none; color: var(--ink-2); text-align: left;
+  }
+  .asset:hover { background: var(--bg-hover); color: var(--ink); }
 </style>

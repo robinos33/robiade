@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { Agent, Entry, Environment, Overview, SearchHit, Session, Task, TaskStatus } from './types';
+import type { Agent, AssetContent, Entry, Environment, Overview, SearchHit, Session, Task, TaskStatus } from './types';
 
 export const api = {
   environment: () => invoke<Environment>('environment'),
@@ -24,5 +24,6 @@ export const api = {
   resizeAgent: (id: string, cols: number, rows: number) => invoke<void>('resize_agent', { id, cols, rows }),
   killAgent: (id: string) => invoke<void>('kill_agent', { id }),
   markAgentSeen: (id: string) => invoke<void>('mark_agent_seen', { id }),
+  readAsset: (id: string, path: string) => invoke<AssetContent>('read_asset', { id, path }),
   quit: () => invoke<void>('quit'),
 };
