@@ -302,7 +302,7 @@
   }
   .spacer { flex: 1; }
   .branch { display: inline-flex; align-items: center; gap: 4px; color: var(--ink-2); }
-  .term { flex: 1; min-height: 0; padding: 10px 0 4px 12px; }
+  .term { flex: 1; min-height: 0; padding: 10px 0 4px 12px; background: #24273a; /* TERMINAL_THEME.background */ }
   .term :global(.term-host) { height: 100%; }
   .stats { border-left: 1px solid var(--line); padding: 16px; overflow-y: auto; }
   dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; margin: 0; }

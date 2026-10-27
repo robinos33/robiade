@@ -14,15 +14,34 @@ function cssVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
-function theme() {
-  return {
-    background: cssVar('--bg-sunken'),
-    foreground: cssVar('--ink'),
-    cursor: cssVar('--accent'),
-    cursorAccent: cssVar('--bg-sunken'),
-    selectionBackground: cssVar('--accent-soft'),
-  };
-}
+/**
+ * Catppuccin Macchiato, repris à l'identique du profil iTerm (mêmes couleurs en mode clair et sombre) :
+ * Claude Code s'affiche comme dans mon terminal habituel.
+ */
+export const TERMINAL_THEME = {
+  background: '#24273a',
+  foreground: '#cad3f5',
+  cursor: '#f4dbd6',
+  cursorAccent: '#24273a',
+  selectionBackground: '#5b6078',
+  selectionForeground: '#cad3f5',
+  black: '#494d64',
+  red: '#ed8796',
+  green: '#a6da95',
+  yellow: '#eed49f',
+  blue: '#8aadf4',
+  magenta: '#f5bde6',
+  cyan: '#8bd5ca',
+  white: '#a5adcb',
+  brightBlack: '#5b6078',
+  brightRed: '#ec7486',
+  brightGreen: '#8ccf7f',
+  brightYellow: '#e1c682',
+  brightBlue: '#78a1f6',
+  brightMagenta: '#f2a9dd',
+  brightCyan: '#63cbc0',
+  brightWhite: '#b8c0e0',
+};
 
 function host(id: string): Host {
   let h = hosts.get(id);
@@ -35,7 +54,7 @@ function host(id: string): Host {
     scrollback: 10000,
     allowProposedApi: false,
     macOptionIsMeta: true,
-    theme: theme(),
+    theme: TERMINAL_THEME,
   });
   const fit = new FitAddon();
   term.loadAddon(fit);
