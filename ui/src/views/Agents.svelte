@@ -9,6 +9,7 @@
   import GaugeBar from '../components/GaugeBar.svelte';
   import AssetViewer from '../components/AssetViewer.svelte';
   import Icon from '../components/Icon.svelte';
+  import type { Agent } from '../lib/types';
 
   let container: HTMLDivElement | undefined = $state();
   /** Chemin de l'asset ouvert en aperçu, pour l'agent actif. */
@@ -17,6 +18,40 @@
   const active = $derived(app.agents.find((a) => a.id === app.activeAgentId) ?? app.visibleAgents[0]);
   const session = $derived(active ? app.sessionOf(active) : undefined);
   const viewed = $derived(active?.assets.find((a) => a.path === viewing));
+
+  const running = $derived(app.visibleAgents.filter((a) => a.status !== 'ended'));
+  const recent = $derived(
+    app.visibleAgents.filter((a) => a.status === 'ended').sort((a, b) => b.lastActivityAt - a.lastActivityAt),
+  );
+
+  /** Nom en cours d'édition, et l'agent qu'il concerne ; `null` hors édition. */
+  let draft = $state<{ id: string; value: string } | null>(null);
+  let nameField: HTMLInputElement | undefined = $state();
+  const renaming = $derived(draft !== null && draft.id === active?.id);
+
+  $effect(() => nameField?.select());
+
+  function startRename(id: string) {
+    app.openAgent(id);
+    draft = { id, value: app.agents.find((a) => a.id === id)?.name ?? '' };
+  }
+
+  async function saveName() {
+    if (draft === null) return;
+    const { id, value } = draft;
+    draft = null;
+    await api.renameAgent(id, value).catch((e) => app.notify(String(e)));
+    void app.refreshHistory();
+  }
+
+  function onNameKey(e: KeyboardEvent) {
+    if (e.key === 'Enter') void saveName();
+    if (e.key === 'Escape') draft = null;
+  }
+
+  async function forget(id: string) {
+    await api.forgetAgent(id).catch((e) => app.notify(String(e)));
+  }
 
   $effect(() => {
     if (!active || !container) return;
@@ -49,29 +84,64 @@
     </div>
   {:else}
     <div class="split">
-      <ul class="list">
-        {#each app.visibleAgents as a (a.id)}
-          <li>
-            <button class="agent" class:active={active?.id === a.id} onclick={() => app.openAgent(a.id)}>
-              <div class="line">
-                <StatusBadge status={a.status} compact />
-                <strong class="ellipsis">{a.projectName}</strong>
-                {#if a.worktreeName}<span class="mono muted ellipsis wt">{a.worktreeName}</span>{/if}
-                <span class="muted num right">{ago(a.lastActivityAt, app.now)}</span>
-              </div>
-              <div class="line sub">
+      {#snippet tab(a: Agent)}
+        <li class="tab">
+          <button
+            class="agent"
+            class:active={active?.id === a.id}
+            onclick={() => app.openAgent(a.id)}
+            ondblclick={() => startRename(a.id)}
+            title="Double-clic pour renommer"
+          >
+            <div class="line">
+              <StatusBadge status={a.status} compact />
+              <strong class="ellipsis">{a.name ?? a.projectName}</strong>
+              <span class="muted num right">{ago(a.lastActivityAt, app.now)}</span>
+            </div>
+            <div class="line sub">
+              {#if a.name}<span class="muted ellipsis">{a.projectName}</span>{/if}
+              {#if a.worktreeName}<span class="mono muted ellipsis wt">{a.worktreeName}</span>{/if}
+              {#if a.status !== 'ended'}
                 <StatusBadge status={a.status} />
                 <ModeBadge mode={a.permissionMode} permissive={a.permissive} compact />
                 {#if a.lastTool}<span class="mono muted ellipsis">· {a.lastTool}</span>{/if}
-              </div>
+              {/if}
+            </div>
+          </button>
+          {#if a.status === 'ended'}
+            <button class="close" onclick={() => forget(a.id)} title="Fermer l'onglet (la session reste dans l'historique)">
+              <Icon name="close" size={12} />
             </button>
-          </li>
-        {/each}
+          {/if}
+        </li>
+      {/snippet}
+      <ul class="list">
+        {#each running as a (a.id)}{@render tab(a)}{/each}
+        {#if recent.length}
+          <li class="group section-title">Récents · à reprendre</li>
+          {#each recent as a (a.id)}{@render tab(a)}{/each}
+        {/if}
       </ul>
 
       {#if active}
         <div class="term-wrap">
           <div class="term-bar">
+            {#if renaming && draft}
+              <input
+                class="field name-field"
+                bind:this={nameField}
+                bind:value={draft.value}
+                onkeydown={onNameKey}
+                onblur={saveName}
+                placeholder={active.projectName}
+                maxlength="60"
+                aria-label="Nom de l'onglet"
+              />
+            {:else}
+              <button class="name" onclick={() => startRename(active.id)} title="Renommer l'onglet">
+                <span class="ellipsis">{active.name ?? 'Sans nom'}</span><Icon name="pencil" size={12} />
+              </button>
+            {/if}
             <StatusBadge status={active.status} />
             <ModeBadge mode={active.permissionMode} permissive={active.permissive} />
             <span class="mono muted ellipsis">{shortPath(active.projectPath, app.env?.home ?? '')}</span>
@@ -146,6 +216,22 @@
     border: 0; border-radius: var(--radius-sm); background: none; text-align: left;
   }
   .agent:hover { background: var(--bg-hover); }
+  .tab { position: relative; }
+  .close {
+    position: absolute; top: 7px; right: 6px; display: none; padding: 3px; border: 0; border-radius: 4px;
+    background: var(--bg-raised); color: var(--ink-3);
+  }
+  .tab:hover .close { display: grid; }
+  .close:hover { color: var(--ink); background: var(--bg-hover); }
+  .group { padding: 14px 10px 4px; }
+  .name {
+    display: inline-flex; align-items: center; gap: 6px; max-width: 220px; padding: 2px 6px; margin-left: -6px;
+    border: 0; border-radius: var(--radius-sm); background: none; color: var(--ink); font-weight: 600;
+  }
+  .name :global(svg) { color: var(--ink-3); opacity: 0; }
+  .name:hover { background: var(--bg-hover); }
+  .name:hover :global(svg) { opacity: 1; }
+  .name-field { width: 220px; height: 26px; }
   .agent.active { background: var(--bg-active); }
   .line { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .sub { padding-left: 20px; }

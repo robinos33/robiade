@@ -27,6 +27,8 @@ export interface Agent extends Workspace {
   /** Fichiers affichables écrits par l'agent, le plus récent en tête. */
   assets: Asset[];
   resumedFrom: string | null;
+  /** Nom donné à l'onglet ; l'historique l'affiche aussi à la place du titre. */
+  name: string | null;
 }
 
 export type AssetKind = 'image' | 'html' | 'markdown' | 'text';

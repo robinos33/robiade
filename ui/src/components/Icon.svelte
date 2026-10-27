@@ -39,6 +39,8 @@
     <rect x="2" y="2.5" width="12" height="11" rx="1.5" /><circle cx="5.8" cy="6" r="1.2" /><path d="m2.5 12 3.8-3.6 2.4 2.2 2-1.8 2.8 2.7" />
   {:else if name === 'file'}
     <path d="M4 1.8h5l3 3V14a.5.5 0 0 1-.5.5h-7.5A.5.5 0 0 1 3.5 14V2.3c0-.3.2-.5.5-.5zM9 1.8v3h3M5.8 8.5h4.4M5.8 11h4.4" />
+  {:else if name === 'pencil'}
+    <path d="m10.5 2.8 2.7 2.7-7.7 7.7H2.8v-2.7zM9 4.3l2.7 2.7" />
   {:else if name === 'close'}
     <path d="m4 4 8 8M12 4l-8 8" />
   {:else if name === 'lock'}
