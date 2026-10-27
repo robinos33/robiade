@@ -4,6 +4,7 @@
 //! Les adapters l'alimentent par les ports déclarés dans chaque module.
 
 pub mod agents;
+pub mod assets;
 pub mod history;
 pub mod project;
 pub mod stats;

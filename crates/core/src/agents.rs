@@ -1,5 +1,6 @@
 //! Agents : sessions Claude Code lancées par Robiade, et leur status.
 
+use crate::assets::Assets;
 use crate::Millis;
 
 /// Identifiant d'un agent, attribué par Robiade au lancement.
@@ -159,6 +160,7 @@ pub struct Agent {
     last_tool: Option<String>,
     permission_mode: Option<PermissionMode>,
     gauges: Gauges,
+    assets: Assets,
     resumed_from: Option<String>,
 }
 
@@ -176,6 +178,7 @@ impl Agent {
             last_tool: None,
             permission_mode: None,
             gauges: Gauges::default(),
+            assets: Assets::default(),
             resumed_from,
         }
     }
@@ -199,6 +202,11 @@ impl Agent {
     /// La statusline est rafraîchie en continu : le dernier relevé remplace le précédent.
     pub fn observe_gauges(&mut self, gauges: Gauges) {
         self.gauges = gauges;
+    }
+
+    /// L'agent a écrit un fichier : il rejoint les assets s'il en est un.
+    pub fn observe_file_written(&mut self, path: &str, now: Millis) {
+        self.assets.record(path, now);
     }
 
     /// J'ai ouvert la session : un tour terminé n'est plus « non lu ».
@@ -251,6 +259,9 @@ impl Agent {
     }
     pub fn gauges(&self) -> &Gauges {
         &self.gauges
+    }
+    pub fn assets(&self) -> &Assets {
+        &self.assets
     }
     pub fn resumed_from(&self) -> Option<&str> {
         self.resumed_from.as_deref()
