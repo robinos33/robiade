@@ -1,5 +1,7 @@
 //! Agents : sessions Claude Code lancées par Robiade, et leur status.
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use crate::assets::Assets;
 use crate::Millis;
 
@@ -159,7 +161,11 @@ pub struct Agent {
     last_activity_at: Millis,
     waiting_since: Option<Millis>,
     waited_ms: Millis,
+    permission_since: Option<Millis>,
+    permission_ms: Millis,
     tool_calls: u32,
+    tools: BTreeMap<String, u32>,
+    files_modified: BTreeSet<String>,
     last_tool: Option<String>,
     permission_mode: Option<PermissionMode>,
     gauges: Gauges,
@@ -178,7 +184,11 @@ impl Agent {
             last_activity_at: now,
             waiting_since: None,
             waited_ms: 0,
+            permission_since: None,
+            permission_ms: 0,
             tool_calls: 0,
+            tools: BTreeMap::new(),
+            files_modified: BTreeSet::new(),
             last_tool: None,
             permission_mode: None,
             gauges: Gauges::default(),
@@ -219,6 +229,7 @@ impl Agent {
         if let AgentEvent::ToolStarted { tool } = &event {
             self.tool_calls += 1;
             self.last_tool = Some(tool.clone());
+            *self.tools.entry(tool.clone()).or_default() += 1;
         }
         let next = self.status.next(&event);
         self.track_waiting(next, now);
@@ -236,8 +247,9 @@ impl Agent {
         self.gauges = gauges;
     }
 
-    /// L'agent a écrit un fichier : il rejoint les assets s'il en est un.
+    /// L'agent a écrit un fichier : il est compté, et rejoint les assets s'il en est un.
     pub fn observe_file_written(&mut self, path: &str, now: Millis) {
+        self.files_modified.insert(path.to_owned());
         self.assets.record(path, now);
     }
 
@@ -254,7 +266,20 @@ impl Agent {
         self.waited_ms + self.waiting_since.map_or(0, |since| (now - since).max(0))
     }
 
+    /// Part de l'attente passée sur une demande de permission, en cours comprise.
+    pub fn permission_ms(&self, now: Millis) -> Millis {
+        self.permission_ms + self.permission_since.map_or(0, |since| (now - since).max(0))
+    }
+
     fn track_waiting(&mut self, next: AgentStatus, now: Millis) {
+        match (self.permission_since, next == AgentStatus::AwaitingPermission) {
+            (None, true) => self.permission_since = Some(now),
+            (Some(since), false) => {
+                self.permission_ms += (now - since).max(0);
+                self.permission_since = None;
+            }
+            _ => {}
+        }
         match (self.waiting_since, next.is_waiting_on_me()) {
             (None, true) => self.waiting_since = Some(now),
             (Some(since), false) => {
@@ -282,6 +307,19 @@ impl Agent {
     }
     pub fn tool_calls(&self) -> u32 {
         self.tool_calls
+    }
+    /// Appels par outil, le plus fréquent en tête.
+    pub fn tools(&self) -> Vec<(&str, u32)> {
+        let mut tools: Vec<(&str, u32)> = self.tools.iter().map(|(t, n)| (t.as_str(), *n)).collect();
+        tools.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+        tools
+    }
+    /// Sous-agents lancés par l'outil `Agent` (anciennement `Task`).
+    pub fn subagents(&self) -> u32 {
+        ["Agent", "Task"].iter().filter_map(|t| self.tools.get(*t)).sum()
+    }
+    pub fn files_modified(&self) -> usize {
+        self.files_modified.len()
     }
     pub fn last_tool(&self) -> Option<&str> {
         self.last_tool.as_deref()
@@ -362,7 +400,22 @@ mod tests {
         a.mark_seen(20);
         assert_eq!(a.status(), AgentStatus::Idle);
         assert_eq!(a.waited_ms(100), (10 - 4) + (20 - 12));
+        assert_eq!(a.permission_ms(100), 10 - 4);
         assert_eq!(a.tool_calls(), 1);
+    }
+
+    #[test]
+    fn counts_tools_subagents_and_distinct_files() {
+        let mut a = agent();
+        for tool in ["Bash", "Agent", "Bash", "Edit"] {
+            a.apply(AgentEvent::ToolStarted { tool: tool.into() }, 1);
+        }
+        a.observe_file_written("/p/a.rs", 2);
+        a.observe_file_written("/p/a.rs", 3);
+        a.observe_file_written("/p/b.md", 4);
+        assert_eq!(a.tools(), [("Bash", 2), ("Agent", 1), ("Edit", 1)]);
+        assert_eq!(a.subagents(), 1);
+        assert_eq!(a.files_modified(), 2);
     }
 
     #[test]
