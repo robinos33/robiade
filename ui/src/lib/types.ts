@@ -93,6 +93,8 @@ export interface Overview {
   tokens: Tokens;
   toolCalls: number;
   mergeRequests: number;
+  /** Du premier au dernier message ; `null` sans session sur la période. */
+  medianDurationMs: number | null;
   days: { day: number; sessions: number; tokens: number }[];
   projects: { projectPath: string; projectName: string; sessions: number; tokens: Tokens; lastActivityAt: number }[];
   tools: [string, number][];

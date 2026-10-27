@@ -1,7 +1,7 @@
 <script lang="ts">
   import { app } from '../lib/state.svelte';
   import { api } from '../lib/api';
-  import { count, dayLabel, tokens } from '../lib/format';
+  import { count, dayLabel, duration, tokens } from '../lib/format';
   import type { Overview } from '../lib/types';
 
   const WINDOWS = [7, 30, 90, 365];
@@ -65,6 +65,10 @@
         <div class="tile">
           <span class="k">Tokens</span><span class="v num">{tokens(data.tokens.total)}</span>
           <span class="s num">{tokens(data.tokens.output)} en sortie · {tokens(data.tokens.cacheRead)} lus en cache</span>
+        </div>
+        <div class="tile" title="Du premier au dernier message de chaque session">
+          <span class="k">Durée médiane</span>
+          <span class="v num">{data.medianDurationMs === null ? '—' : duration(data.medianDurationMs)}</span>
         </div>
         <div class="tile"><span class="k">Appels d'outils</span><span class="v num">{count(data.toolCalls)}</span></div>
         <div class="tile"><span class="k">Sessions avec MR</span><span class="v num">{count(data.mergeRequests)}</span></div>
@@ -152,7 +156,7 @@
   .seg button { border: 0; background: none; padding: 0 10px; height: 26px; color: var(--ink-2); font-size: 12px; }
   .seg button + button { border-left: 1px solid var(--line-strong); }
   .seg button.on { background: var(--bg-active); color: var(--ink); font-weight: 600; }
-  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
   .tile, .panel { background: var(--bg-raised); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
   .tile { display: flex; flex-direction: column; gap: 2px; }
   .k { color: var(--ink-3); font-size: 12px; }
