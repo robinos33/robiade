@@ -1,0 +1,17 @@
+[package]
+name = "robiade"
+edition.workspace = true
+version.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+robiade-core.workspace = true
+robiade-adapters.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+base64 = "0.22"
+uuid = { version = "1", features = ["v4"] }

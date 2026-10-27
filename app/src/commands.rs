@@ -1,0 +1,159 @@
+//! Commandes IPC. Chaque entrée venant du front est validée ici avant d'atteindre le domaine.
+
+use std::path::PathBuf;
+
+use robiade_core::agents::AgentId;
+use robiade_core::history::TranscriptReader;
+use robiade_core::{project, stats};
+use robiade_core::tasks::{Task, TaskId, TaskRepository};
+use tauri::{Manager, State};
+
+use crate::dto::{AgentDto, EntryDto, EnvironmentDto, OverviewDto, SessionDto, TaskDto, TaskStatusDto};
+use crate::{now, AppState};
+
+type CmdResult<T> = Result<T, String>;
+
+fn agent_id(raw: &str) -> CmdResult<AgentId> {
+    AgentId::parse(raw).map_err(|e| e.to_string())
+}
+
+/// Un dossier existant, désigné par un chemin absolu et canonique.
+fn project_dir(raw: &str) -> CmdResult<PathBuf> {
+    let path = PathBuf::from(raw);
+    if !path.is_absolute() {
+        return Err("chemin de projet non absolu".into());
+    }
+    let canonical = path.canonicalize().map_err(|_| "dossier de projet introuvable".to_owned())?;
+    canonical.is_dir().then_some(canonical).ok_or_else(|| "le chemin n'est pas un dossier".into())
+}
+
+#[tauri::command]
+pub fn environment(app: tauri::AppHandle, state: State<AppState>) -> EnvironmentDto {
+    EnvironmentDto {
+        claude_path: state.agents.claude_path().map(str::to_owned),
+        home: app.path().home_dir().map(|h| h.to_string_lossy().into_owned()).unwrap_or_default(),
+    }
+}
+
+#[tauri::command]
+pub async fn list_history(state: State<'_, AppState>) -> CmdResult<Vec<SessionDto>> {
+    let store = state.transcripts.clone();
+    let summaries = tauri::async_runtime::spawn_blocking(move || store.summaries())
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+    Ok(summaries.iter().map(SessionDto::from).collect())
+}
+
+#[tauri::command]
+pub async fn read_transcript(state: State<'_, AppState>, session_id: String) -> CmdResult<Vec<EntryDto>> {
+    if session_id.is_empty() || !session_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return Err("identifiant de session invalide".into());
+    }
+    let store = state.transcripts.clone();
+    let entries = tauri::async_runtime::spawn_blocking(move || store.entries(&session_id))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+    Ok(entries.into_iter().map(EntryDto::from).collect())
+}
+
+#[tauri::command]
+pub async fn stats(
+    state: State<'_, AppState>,
+    window_days: i64,
+    utc_offset_minutes: i64,
+    project_root: Option<String>,
+) -> CmdResult<OverviewDto> {
+    let window_days = window_days.clamp(1, 366);
+    let offset_ms = utc_offset_minutes.clamp(-14 * 60, 14 * 60) * 60_000;
+    let store = state.transcripts.clone();
+    let mut summaries = tauri::async_runtime::spawn_blocking(move || store.summaries())
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+    if let Some(root) = project_root {
+        summaries.retain(|s| project::root_of(&s.project_path) == root);
+    }
+    Ok(stats::overview(&summaries, now(), offset_ms, window_days).into())
+}
+
+#[tauri::command]
+pub fn list_tasks(state: State<AppState>) -> CmdResult<Vec<TaskDto>> {
+    Ok(state.tasks.all().map_err(|e| e.to_string())?.iter().map(TaskDto::from).collect())
+}
+
+#[tauri::command]
+pub fn create_task(state: State<AppState>, title: String, project_path: Option<String>) -> CmdResult<TaskDto> {
+    let id = TaskId(uuid::Uuid::new_v4().to_string());
+    let task = Task::create(id, &title, project_path, now()).map_err(|e| e.to_string())?;
+    state.tasks.save(&task).map_err(|e| e.to_string())?;
+    Ok((&task).into())
+}
+
+#[tauri::command]
+pub fn update_task(
+    state: State<AppState>,
+    id: String,
+    title: Option<String>,
+    notes: Option<String>,
+    status: Option<TaskStatusDto>,
+) -> CmdResult<TaskDto> {
+    let mut task = state.tasks.get(&TaskId(id)).map_err(|e| e.to_string())?;
+    if let Some(title) = title {
+        task.rename(&title).map_err(|e| e.to_string())?;
+    }
+    if let Some(notes) = notes {
+        task.set_notes(&notes);
+    }
+    if let Some(status) = status {
+        task.move_to(status.into(), now());
+    }
+    state.tasks.save(&task).map_err(|e| e.to_string())?;
+    Ok((&task).into())
+}
+
+#[tauri::command]
+pub fn delete_task(state: State<AppState>, id: String) -> CmdResult<()> {
+    state.tasks.delete(&TaskId(id)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_agents(state: State<AppState>) -> Vec<AgentDto> {
+    state.agents.list()
+}
+
+#[tauri::command]
+pub fn spawn_agent(
+    state: State<AppState>,
+    project_path: String,
+    resume_session_id: Option<String>,
+    cols: u16,
+    rows: u16,
+) -> CmdResult<AgentDto> {
+    let cwd = project_dir(&project_path)?;
+    let resume = resume_session_id.as_deref().map(agent_id).transpose()?;
+    state.agents.spawn(&cwd, resume, cols.clamp(20, 500), rows.clamp(5, 200))
+}
+
+#[tauri::command]
+pub fn write_agent(state: State<AppState>, id: String, data: String) -> CmdResult<()> {
+    state.agents.process(&agent_id(&id)?)?.write(data.as_bytes())
+}
+
+#[tauri::command]
+pub fn resize_agent(state: State<AppState>, id: String, cols: u16, rows: u16) -> CmdResult<()> {
+    state.agents.process(&agent_id(&id)?)?.resize(cols.clamp(20, 500), rows.clamp(5, 200))
+}
+
+#[tauri::command]
+pub fn kill_agent(state: State<AppState>, id: String) -> CmdResult<()> {
+    state.agents.process(&agent_id(&id)?)?.kill();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn mark_agent_seen(state: State<AppState>, id: String) -> CmdResult<()> {
+    state.agents.mark_seen(&agent_id(&id)?);
+    Ok(())
+}

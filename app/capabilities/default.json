@@ -1,0 +1,20 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Fenêtre principale : événements, déplacement de fenêtre, ouverture d'URL GitLab dans le navigateur. Ni fs, ni shell, ni http.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:event:default",
+    "core:window:allow-start-dragging",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        {
+          "url": "https://gitlab.example.com/*"
+        }
+      ]
+    }
+  ]
+}

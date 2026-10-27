@@ -1,0 +1,8 @@
+[package]
+name = "robiade-core"
+edition.workspace = true
+version.workspace = true
+
+# Règle hexagonale vérifiée par le compilateur : aucune dépendance d'I/O ici.
+[dependencies]
+thiserror.workspace = true
