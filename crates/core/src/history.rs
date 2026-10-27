@@ -69,3 +69,20 @@ pub trait TranscriptReader: Send + Sync {
     fn summaries(&self) -> Result<Vec<SessionSummary>, HistoryError>;
     fn entries(&self, session_id: &str) -> Result<Vec<TranscriptEntry>, HistoryError>;
 }
+
+/// Session trouvée par la recherche plein texte.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchHit {
+    pub session_id: String,
+    /// Extrait non fiable, texte brut. Les passages trouvés sont encadrés par
+    /// [`HIT_START`] et [`HIT_END`], à rendre en surbrillance sans jamais interpréter de HTML.
+    pub snippet: String,
+}
+
+pub const HIT_START: char = '\u{2}';
+pub const HIT_END: char = '\u{3}';
+
+pub trait SessionSearch: Send + Sync {
+    /// Sessions dont le texte contient tous les mots de `query`, les plus pertinentes d'abord.
+    fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchHit>, HistoryError>;
+}
