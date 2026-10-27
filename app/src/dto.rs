@@ -5,7 +5,7 @@ use robiade_core::assets::{Asset, AssetKind};
 use robiade_core::project::{self, Workspace};
 use robiade_core::history::{EntryKind, SearchHit, SessionSummary, TokenUsage, TranscriptEntry, HIT_END, HIT_START};
 use robiade_core::pricing::{Estimate, PRICES_AS_OF};
-use robiade_core::stats::{self, Overview};
+use robiade_core::stats::{self, AgentsOverview, Overview};
 use robiade_core::tasks::{Task, TaskStatus};
 use serde::{Deserialize, Serialize};
 
@@ -336,6 +336,22 @@ pub struct ProjectStatDto {
     pub last_activity_at: i64,
 }
 
+/// Mesures tirées des hooks : seulement les agents lancés dans Robiade.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentsStatDto {
+    pub agents: u32,
+    pub failed: u32,
+    pub waited_ms: i64,
+    pub permission_ms: i64,
+}
+
+impl From<AgentsOverview> for AgentsStatDto {
+    fn from(o: AgentsOverview) -> Self {
+        Self { agents: o.agents, failed: o.failed, waited_ms: o.waited_ms, permission_ms: o.permission_ms }
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelStatDto {
@@ -359,10 +375,11 @@ pub struct OverviewDto {
     pub projects: Vec<ProjectStatDto>,
     pub models: Vec<ModelStatDto>,
     pub tools: Vec<(String, u64)>,
+    pub agents: AgentsStatDto,
 }
 
-impl From<Overview> for OverviewDto {
-    fn from(o: Overview) -> Self {
+impl OverviewDto {
+    pub fn new(o: Overview, agents: AgentsOverview) -> Self {
         Self {
             sessions: o.sessions,
             tokens: (&o.tokens).into(),
@@ -390,6 +407,7 @@ impl From<Overview> for OverviewDto {
                 .map(|m| ModelStatDto { model: m.model, tokens: (&m.tokens).into(), cost: m.cost })
                 .collect(),
             tools: o.tools.into_iter().take(12).collect(),
+            agents: agents.into(),
         }
     }
 }

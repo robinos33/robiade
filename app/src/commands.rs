@@ -98,10 +98,15 @@ pub async fn stats(
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;
     let project_of = |path: &str| state.workspaces.resolve(path).project_root;
-    if let Some(root) = project_root {
-        summaries.retain(|s| project_of(&s.project_path) == root);
-    }
-    Ok(stats::overview(&summaries, project_of, now(), offset_ms, window_days).into())
+    let in_scope = |path: &str| project_root.as_deref().is_none_or(|root| project_of(path) == root);
+    summaries.retain(|s| in_scope(&s.project_path));
+    let at = now();
+    let mut agents = state.agents.activity_since(at - window_days * 86_400_000);
+    agents.retain(|a| in_scope(a.project_path()));
+    Ok(OverviewDto::new(
+        stats::overview(&summaries, project_of, at, offset_ms, window_days),
+        stats::agents_overview(&agents, at - window_days * 86_400_000, at),
+    ))
 }
 
 #[tauri::command]

@@ -278,6 +278,16 @@ impl AgentRegistry {
         }
     }
 
+    /// Agents actifs depuis `since`, ceux de cette exécution comme ceux des précédentes.
+    pub fn activity_since(&self, since: i64) -> Vec<Agent> {
+        let mut agents: HashMap<AgentId, Agent> =
+            self.journal.since(since).unwrap_or_default().into_iter().map(|a| (a.id().clone(), a)).collect();
+        if let Ok(live) = self.live.lock() {
+            agents.extend(live.values().map(|l| (l.agent.id().clone(), l.agent.clone())));
+        }
+        agents.into_values().collect()
+    }
+
     /// Diffuse la liste complète : quelques agents, pas besoin de deltas.
     fn publish(&self) {
         let agents = self.list();
