@@ -19,7 +19,13 @@ export interface Agent extends Workspace {
   startedAt: number;
   lastActivityAt: number;
   waitedMs: number;
+  /** Part de `waitedMs` passée sur une demande de permission. */
+  permissionMs: number;
   toolCalls: number;
+  /** Appels par outil, le plus fréquent en tête. */
+  tools: [string, number][];
+  subagents: number;
+  filesModified: number;
   lastTool: string | null;
   permissionMode: string | null;
   permissive: boolean;

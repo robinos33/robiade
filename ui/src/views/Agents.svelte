@@ -203,11 +203,15 @@
           <dl>
             <dt>Durée</dt><dd class="num">{duration(app.now - active.startedAt)}</dd>
             <dt>T'a attendu</dt><dd class="num">{duration(active.waitedMs)}</dd>
+            <dt>dont permission</dt><dd class="num">{duration(active.permissionMs)}</dd>
             <dt>Appels d'outils</dt><dd class="num">{active.toolCalls}</dd>
-            <dt>Dernier outil</dt><dd class="mono">{active.lastTool ?? '—'}</dd>
+            <dt>Sous-agents</dt><dd class="num">{active.subagents}</dd>
+            <dt>Fichiers modifiés</dt><dd class="num">{active.filesModified}</dd>
             {#if session}
               <dt>Tokens</dt><dd class="num">{tokens(session.tokens.total)}</dd>
-              <dt>dont sortie</dt><dd class="num">{tokens(session.tokens.output)}</dd>
+              <dt>entrée</dt><dd class="num">{tokens(session.tokens.input)}</dd>
+              <dt>sortie</dt><dd class="num">{tokens(session.tokens.output)}</dd>
+              <dt>cache</dt><dd class="num">{tokens(session.tokens.cacheRead + session.tokens.cacheCreation)}</dd>
               <dt>Messages</dt><dd class="num">{session.userMessages} / {session.assistantMessages}</dd>
               <dt>Modèle</dt><dd class="mono ellipsis">{active.gauges.model ?? session.models.at(-1) ?? '—'}</dd>
             {/if}
@@ -215,6 +219,15 @@
           </dl>
           {#if !session}
             <p class="muted note">Tokens et modèle apparaissent dès que le transcript existe (après le premier échange).</p>
+          {/if}
+
+          {#if active.tools.length}
+            <h2 class="section-title assets-title">Outils</h2>
+            <dl class="tools">
+              {#each active.tools.slice(0, 10) as [tool, n] (tool)}
+                <dt class="mono ellipsis">{tool}</dt><dd class="num">{n}</dd>
+              {/each}
+            </dl>
           {/if}
 
           <h2 class="section-title assets-title">Assets {#if active.assets.length}<span class="num">{active.assets.length}</span>{/if}</h2>
@@ -295,6 +308,8 @@
   dd { margin: 0; text-align: right; min-width: 0; }
   .note { font-size: 11.5px; margin: 16px 0 0; }
   .assets-title { margin-top: 24px; display: flex; gap: 6px; }
+  .tools { margin-top: 6px; gap: 4px 12px; font-size: 12px; }
+  .tools dt { min-width: 0; }
   .assets { list-style: none; margin: 6px -6px 0; padding: 0; }
   .asset {
     display: flex; align-items: center; gap: 8px; width: 100%; height: 28px; padding: 0 6px;
