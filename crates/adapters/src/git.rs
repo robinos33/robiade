@@ -12,6 +12,11 @@ const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 /// Un diff plus long est tronqué : l'aperçu n'est pas un outil de revue de 50 000 lignes.
 const MAX_DIFF_BYTES: usize = 2 * 1024 * 1024;
 
+/// Réglages imposés à chaque appel : la config d'un dépôt peut déclarer des commandes que `status`
+/// ou `diff` exécuteraient (`core.fsmonitor`, filtres `textconv`, diff externe). Robiade lance git
+/// sans que je le demande, sur des dépôts où un agent écrit : aucune de ces commandes ne doit tourner.
+const HARDENING: &[&str] = &["-c", "core.fsmonitor=false", "-c", "core.quotepath=off", "-c", "diff.external="];
+
 pub struct GitCli {
     git: String,
 }
@@ -27,7 +32,8 @@ impl GitCli {
         let out = Command::new(&self.git)
             .arg("-C")
             .arg(dir)
-            .args(["-c", "core.quotepath=off", "--no-pager"])
+            .args(HARDENING)
+            .arg("--no-pager")
             .args(args)
             .env("GIT_OPTIONAL_LOCKS", "0")
             .env("LC_ALL", "C")
@@ -114,7 +120,8 @@ impl WorkingTree for GitCli {
         let root = self.root(dir)?;
         let status = self.run(&root, &["status", "--porcelain=v1", "-z", "--untracked-files=all"])?;
         let base = self.base(&root);
-        let stats = parse_numstat(&self.run(&root, &["diff", "--numstat", "-z", "-M", "--no-ext-diff", base])?);
+        let numstat = ["diff", "--numstat", "-z", "-M", "--no-ext-diff", "--no-textconv", base];
+        let stats = parse_numstat(&self.run(&root, &numstat)?);
         let mut changes: Vec<FileChange> = parse_status(&status)
             .into_iter()
             .map(|(path, kind)| {
@@ -142,14 +149,16 @@ impl WorkingTree for GitCli {
             let out = Command::new(&self.git)
                 .arg("-C")
                 .arg(&root)
-                .args(["--no-pager", "diff", "--no-color", "--no-ext-diff", "--no-index", "--", "/dev/null", path])
+                .args(HARDENING)
+                .args(["--no-pager", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--no-index", "--"])
+                .args(["/dev/null", path])
                 .env("GIT_OPTIONAL_LOCKS", "0")
                 .output()
                 .map_err(|e| VcsError::Git(e.to_string()))?;
             return Ok(truncate(out.stdout));
         }
         let base = self.base(&root);
-        let diff = self.run(&root, &["diff", "--no-color", "--no-ext-diff", "-M", base, "--", path])?;
+        let diff = self.run(&root, &["diff", "--no-color", "--no-ext-diff", "--no-textconv", "-M", base, "--", path])?;
         Ok(truncate(diff))
     }
 }
@@ -190,6 +199,26 @@ mod tests {
         assert!(repo.diff(d, "a.txt").unwrap().contains("+trois"));
         assert!(repo.diff(d, "b.md").unwrap().contains("+# titre"));
         assert_eq!(repo.diff(d, "../etc/passwd"), Err(VcsError::UnknownFile));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn never_runs_commands_declared_by_the_repository() {
+        let dir = std::env::temp_dir().join(format!("robiade-git-trap-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        git(&dir, &["init", "-q"]);
+        let witness = dir.join("piege-declenche");
+        let trap = format!("touch {}", witness.display());
+        git(&dir, &["config", "core.fsmonitor", &trap]);
+        git(&dir, &["config", "diff.piege.textconv", &trap]);
+        std::fs::write(dir.join(".gitattributes"), "*.txt diff=piege\n").unwrap();
+        std::fs::write(dir.join("a.txt"), "un\n").unwrap();
+        let repo = GitCli::default();
+        let d = dir.to_str().unwrap();
+        repo.changes(d).unwrap();
+        repo.diff(d, "a.txt").unwrap();
+        assert!(!witness.exists(), "une commande du dépôt a été exécutée");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
