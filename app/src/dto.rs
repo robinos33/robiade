@@ -1,6 +1,7 @@
 //! Objets échangés avec l'interface. Le front n'a aucune logique métier : il affiche ces DTO.
 
 use robiade_core::agents::{Agent, AgentStatus, Gauges, Level};
+use robiade_core::assets::{Asset, AssetKind};
 use robiade_core::project::{self, Workspace};
 use robiade_core::history::{EntryKind, SearchHit, SessionSummary, TokenUsage, TranscriptEntry, HIT_END, HIT_START};
 use robiade_core::stats::Overview;
@@ -31,7 +32,60 @@ pub struct AgentDto {
     pub permission_mode: Option<String>,
     pub permissive: bool,
     pub gauges: GaugesDto,
+    pub assets: Vec<AssetDto>,
     pub resumed_from: Option<String>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetDto {
+    pub path: String,
+    pub name: String,
+    pub kind: &'static str,
+    pub written_at: i64,
+}
+
+fn kind_name(kind: AssetKind) -> &'static str {
+    match kind {
+        AssetKind::Image => "image",
+        AssetKind::Html => "html",
+        AssetKind::Markdown => "markdown",
+        AssetKind::Text => "text",
+    }
+}
+
+impl From<&Asset> for AssetDto {
+    fn from(a: &Asset) -> Self {
+        Self {
+            path: a.path.clone(),
+            name: a.path.rsplit('/').next().unwrap_or(&a.path).to_owned(),
+            kind: kind_name(a.kind),
+            written_at: a.written_at,
+        }
+    }
+}
+
+/// Contenu d'un asset : les images en URL `data:`, le reste en texte brut.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetContentDto {
+    pub kind: &'static str,
+    pub text: Option<String>,
+    pub data_url: Option<String>,
+}
+
+impl AssetContentDto {
+    pub fn new(asset: &Asset, bytes: Vec<u8>) -> Self {
+        use base64::Engine;
+        let kind = kind_name(asset.kind);
+        match AssetKind::image_mime(&asset.path) {
+            Some(mime) if asset.kind == AssetKind::Image => {
+                let data = base64::engine::general_purpose::STANDARD.encode(bytes);
+                Self { kind, text: None, data_url: Some(format!("data:{mime};base64,{data}")) }
+            }
+            _ => Self { kind, text: Some(String::from_utf8_lossy(&bytes).into_owned()), data_url: None },
+        }
+    }
 }
 
 /// Une jauge en pourcentage, avec son niveau calculé côté Rust.
@@ -127,6 +181,7 @@ impl AgentDto {
             permission_mode: a.permission_mode().map(|m| m.as_str().to_owned()),
             permissive: a.permission_mode().is_some_and(|m| m.is_permissive()),
             gauges: a.gauges().into(),
+            assets: a.assets().iter().map(AssetDto::from).collect(),
             resumed_from: a.resumed_from().map(str::to_owned),
         }
     }

@@ -10,6 +10,7 @@ use robiade_adapters::pty::{AgentProcess, LaunchSpec};
 use robiade_adapters::shell_env::LoginEnv;
 use robiade_adapters::workspace::WorkspaceResolver;
 use robiade_core::agents::{Agent, AgentEvent, AgentId, AgentStatus, PermissionMode};
+use robiade_core::assets::Asset;
 use robiade_core::project::Workspace;
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_notification::NotificationExt;
@@ -169,6 +170,13 @@ impl AgentRegistry {
     pub fn process(&self, id: &AgentId) -> Result<Arc<AgentProcess>, String> {
         let live = self.live.lock().map_err(|e| e.to_string())?;
         live.get(id).and_then(|l| l.process.clone()).ok_or_else(|| "agent inconnu ou terminé".to_owned())
+    }
+
+    /// Un asset de l'agent : seuls les fichiers qu'il a écrits sont lisibles depuis l'interface.
+    pub fn asset(&self, id: &AgentId, path: &str) -> Result<Asset, String> {
+        let live = self.live.lock().map_err(|e| e.to_string())?;
+        let entry = live.get(id).ok_or("agent inconnu")?;
+        entry.agent.assets().get(path).cloned().ok_or_else(|| "fichier inconnu de cet agent".to_owned())
     }
 
     pub fn list(&self) -> Vec<AgentDto> {

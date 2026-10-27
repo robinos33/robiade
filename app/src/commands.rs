@@ -8,7 +8,7 @@ use robiade_core::stats;
 use robiade_core::tasks::{Task, TaskId, TaskRepository};
 use tauri::{Manager, State};
 
-use crate::dto::{AgentDto, EntryDto, EnvironmentDto, OverviewDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto};
+use crate::dto::{AgentDto, AssetContentDto, EntryDto, EnvironmentDto, OverviewDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto};
 use crate::{now, AppState};
 
 type CmdResult<T> = Result<T, String>;
@@ -172,6 +172,25 @@ pub fn kill_agent(state: State<AppState>, id: String) -> CmdResult<()> {
 pub fn mark_agent_seen(state: State<AppState>, id: String) -> CmdResult<()> {
     state.agents.mark_seen(&agent_id(&id)?);
     Ok(())
+}
+
+/// Taille au-delà de laquelle un asset n'est pas chargé dans l'interface.
+const MAX_ASSET_BYTES: u64 = 20 * 1024 * 1024;
+
+#[tauri::command]
+pub async fn read_asset(state: State<'_, AppState>, id: String, path: String) -> CmdResult<AssetContentDto> {
+    let asset = state.agents.asset(&agent_id(&id)?, &path)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let missing = |_| "fichier introuvable : déplacé ou supprimé ?".to_owned();
+        let size = std::fs::metadata(&asset.path).map_err(missing)?.len();
+        if size > MAX_ASSET_BYTES {
+            return Err(format!("fichier trop lourd pour l'aperçu ({} Mo)", size / (1024 * 1024)));
+        }
+        let bytes = std::fs::read(&asset.path).map_err(|e| e.to_string())?;
+        Ok(AssetContentDto::new(&asset, bytes))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Fermeture confirmée : les agents sont arrêtés, leurs sessions restent reprenables.

@@ -130,6 +130,7 @@ fn main() {
             commands::resize_agent,
             commands::kill_agent,
             commands::mark_agent_seen,
+            commands::read_asset,
             commands::quit,
         ])
         .build(tauri::generate_context!())
