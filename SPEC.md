@@ -436,11 +436,16 @@ requête, une grille performante) et le moins lié aux agents ; DataGrip fait le
    la bonne cible : identifiants à durée de vie courte, révoqués à la fermeture de la connexion,
    et la lecture seule garantie par le rôle Vault, pas par l'ADE. Une connexion prod est marquée
    de façon impossible à confondre (couleur de fenêtre, bandeau permanent).
-2. **Contexte consommé** : la donnée existe dans l'entrée JSON de la statusline et dans l'`usage`
-   des messages du transcript, mais pas dans les hooks. À valider par un spike avant de la promettre.
 
 Décidé le 2026-10-27 : pilotage par CLI intégré (PTY) ; seules les sessions lancées par l'ADE
 sont vivantes dans l'ADE ; status par session (§4.1) ; tâches = issues GitLab ; client DB avec
 console et grille sur PostgreSQL, MariaDB, MongoDB, Elasticsearch ; page de stats + stats de la
 session en cours ; deux types de tâches (perso dans l'ADE, équipe dans GitLab) ; stats GitLab ;
 historique antérieur à l'ADE consultable en lecture seule ; prod accessible via Vault.
+
+Décidé le 2026-10-27 (après coup) : **contexte consommé et quotas lus par la statusline.** Robiade
+déclare sa propre `statusLine` dans le `--settings` de ses agents ; `robiade statusline` relaie le
+JSON sur le socket des hooks et n'écrit rien dans le terminal. L'interface dessine une barre native
+(modèle, contexte, quotas 5 h et semaine, seuils 50 % / 80 %). La statusline de `~/.claude` reste
+celle d'iTerm. Les champs lus viennent de la statusline existante, pas d'un contrat documenté :
+même règle de tolérance que pour les transcripts.
