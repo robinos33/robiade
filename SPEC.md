@@ -340,10 +340,11 @@ Le niveau d'exigence est celui d'un outil d'administration.
 
 **Données non fiables**
 - Tout ce qui vient des transcripts, de GitLab (titres, descriptions, commentaires, logs de jobs)
-  et de Docker est **non fiable** : rendu comme texte, jamais en `{@html}`. Markdown rendu par une
-  bibliothèque avec sanitisation stricte (liste blanche de balises, pas de liens `javascript:`).
+  et de Docker est **non fiable** : rendu comme texte, jamais en `{@html}`. Markdown et HTML rendus
+  dans une iframe `srcdoc` sandboxée (ni script, ni origine, ni navigation hors de l'app) : aucun
+  nettoyage à maintenir, le contenu ne peut rien exécuter.
 - Un transcript peut contenir des secrets collés par erreur : la recherche plein texte est locale
-  et la base SQLite est exclue de Time Machine.
+  et son index SQLite vit dans le cache de l'app, exclu de Time Machine (`tmutil addexclusion`).
 
 **Actions**
 - Toute action sortante (GitLab, DB en écriture, suppression de worktree, arrêt de conteneur)
