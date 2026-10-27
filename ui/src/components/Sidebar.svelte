@@ -23,6 +23,7 @@
   }
 
   const liveIn = (root: string) => app.liveAgents.filter((a) => a.projectRoot === root);
+  const liveInWorktree = (path: string) => app.liveAgents.filter((a) => a.worktreePath === path);
 </script>
 
 <nav>
@@ -64,7 +65,7 @@
 
   <div class="projects">
     <h2 class="section-title">Projets</h2>
-    <button class="item" class:active={app.project === null} onclick={() => (app.project = null)}>
+    <button class="item" class:active={app.project === null} onclick={() => app.selectProject(null)}>
       <Icon name="globe" />
       <span class="label">Global</span>
     </button>
@@ -72,7 +73,7 @@
       {#each app.projects as p (p.root)}
         {@const live = liveIn(p.root)}
         <li>
-          <button class="item" class:active={app.project === p.root} onclick={() => app.selectProject(p.root)} title={p.root}>
+          <button class="item" class:active={app.project === p.root && app.worktree === null} onclick={() => app.selectProject(p.root)} title={p.root}>
             <Icon name="folder" />
             <span class="label">{p.name}</span>
             {#if live.some((a) => a.needsAttention)}
@@ -85,6 +86,29 @@
       {/each}
     </ul>
   </div>
+
+  {#if app.worktrees.length > 0}
+    <div class="projects worktrees">
+      <h2 class="section-title">Worktrees</h2>
+      <ul>
+        {#each app.worktrees as w (w.path)}
+          {@const live = liveInWorktree(w.path)}
+          <li>
+            <button class="item" class:active={app.worktree === w.path} onclick={() => app.selectWorktree(w)} title={w.path}>
+              <Icon name="branch" />
+              <span class="label">{w.name}</span>
+              {#if app.project === null}<span class="of">{w.projectName}</span>{/if}
+              {#if live.some((a) => a.needsAttention)}
+                <span class="dot hot" title="Un agent attend"></span>
+              {:else if live.length}
+                <span class="dot" title="{live.length} agent(s) actif(s)"></span>
+              {/if}
+            </button>
+          </li>
+        {/each}
+      </ul>
+    </div>
+  {/if}
 </nav>
 
 <style>
@@ -129,6 +153,8 @@
   .projects { margin-top: 18px; display: flex; flex-direction: column; min-height: 0; flex: 1; }
   .projects h2 { padding: 0 8px; }
   .projects ul { overflow-y: auto; margin-top: 2px; }
+  .worktrees { flex: 0 1 auto; max-height: 40%; margin-top: 12px; }
+  .of { font-size: 11px; color: var(--ink-3); max-width: 70px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--info); }
   .dot.hot { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 </style>

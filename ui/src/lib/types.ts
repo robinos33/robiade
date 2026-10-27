@@ -1,11 +1,19 @@
 export type AgentStatus =
   | 'starting' | 'running' | 'awaitingPermission' | 'awaitingInput' | 'idle' | 'failed' | 'ended';
 
-export interface Agent {
-  id: string;
-  projectPath: string;
+/** Rattachement d'un dossier de travail : dépôt principal, et worktree lié s'il existe encore. */
+export interface Workspace {
   projectRoot: string;
   projectName: string;
+  /** Le projet est un dépôt Git présent : il a sa place dans la liste des projets. */
+  inRepository: boolean;
+  worktreePath: string | null;
+  worktreeName: string | null;
+}
+
+export interface Agent extends Workspace {
+  id: string;
+  projectPath: string;
   status: AgentStatus;
   needsAttention: boolean;
   startedAt: number;
@@ -34,11 +42,9 @@ export interface Gauges {
 
 export interface Tokens { input: number; output: number; cacheRead: number; cacheCreation: number; total: number }
 
-export interface Session {
+export interface Session extends Workspace {
   sessionId: string;
   projectPath: string;
-  projectRoot: string;
-  projectName: string;
   title: string;
   gitBranch: string | null;
   startedAt: number;
@@ -80,3 +86,4 @@ export interface Overview {
 export interface Environment { claudePath: string | null; home: string }
 
 export interface Project { root: string; name: string; lastActivityAt: number; sessions: number }
+export interface Worktree { path: string; name: string; root: string; projectName: string; lastActivityAt: number }

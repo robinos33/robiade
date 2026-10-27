@@ -1,7 +1,7 @@
 import { listen } from '@tauri-apps/api/event';
 import { api } from './api';
 import { writeOutput } from './terminals';
-import type { Agent, Environment, Project, Session, Task } from './types';
+import type { Agent, Environment, Project, Session, Task, Workspace, Worktree } from './types';
 
 export type View = 'inbox' | 'agents' | 'history' | 'tasks' | 'stats';
 
@@ -11,6 +11,8 @@ class AppState {
   view = $state<View>('inbox');
   /** Racine du projet sélectionné ; `null` = vue globale. */
   project = $state<string | null>(null);
+  /** Worktree sélectionné, dans le projet sélectionné ; `null` = tout le projet. */
+  worktree = $state<string | null>(null);
   env = $state<Environment | null>(null);
   agents = $state<Agent[]>([]);
   history = $state<Session[]>([]);
@@ -25,15 +27,16 @@ class AppState {
   toast = $state<string | null>(null);
   now = $state(Date.now());
 
+  /** Dépôts principaux seulement : ni worktree, ni sous-dossier, ni dossier disparu. */
   projects: Project[] = $derived.by(() => {
     const byRoot = new Map<string, Project>();
-    for (const s of this.history) {
+    for (const s of this.history.filter((s) => s.inRepository)) {
       const p = byRoot.get(s.projectRoot) ?? { root: s.projectRoot, name: s.projectName, lastActivityAt: 0, sessions: 0 };
       p.sessions += 1;
       p.lastActivityAt = Math.max(p.lastActivityAt, s.lastActivityAt);
       byRoot.set(s.projectRoot, p);
     }
-    for (const a of this.agents) {
+    for (const a of this.agents.filter((a) => a.inRepository)) {
       const p = byRoot.get(a.projectRoot) ?? { root: a.projectRoot, name: a.projectName, lastActivityAt: 0, sessions: 0 };
       p.lastActivityAt = Math.max(p.lastActivityAt, a.lastActivityAt);
       byRoot.set(a.projectRoot, p);
@@ -41,16 +44,37 @@ class AppState {
     return [...byRoot.values()].sort((a, b) => b.lastActivityAt - a.lastActivityAt);
   });
 
-  inProject = (root: string | null | undefined) => this.project === null || root === this.project;
+  /** Worktrees encore présents, du projet sélectionné (ou de tous), les plus récents d'abord. */
+  worktrees: Worktree[] = $derived.by(() => {
+    const byPath = new Map<string, Worktree>();
+    for (const w of [...this.history, ...this.agents]) {
+      if (!w.worktreePath || !this.inProject(w.projectRoot)) continue;
+      const at = 'lastActivityAt' in w ? w.lastActivityAt : 0;
+      const known = byPath.get(w.worktreePath);
+      if (known) known.lastActivityAt = Math.max(known.lastActivityAt, at);
+      else
+        byPath.set(w.worktreePath, {
+          path: w.worktreePath,
+          name: w.worktreeName ?? w.worktreePath,
+          root: w.projectRoot,
+          projectName: w.projectName,
+          lastActivityAt: at,
+        });
+    }
+    return [...byPath.values()].sort((a, b) => b.lastActivityAt - a.lastActivityAt);
+  });
 
-  visibleAgents = $derived(this.agents.filter((a) => this.inProject(a.projectRoot)));
+  inProject = (root: string | null | undefined) => this.project === null || root === this.project;
+  inScope = (w: Workspace) => this.inProject(w.projectRoot) && (this.worktree === null || w.worktreePath === this.worktree);
+
+  visibleAgents = $derived(this.agents.filter((a) => this.inScope(a)));
   attention = $derived(
     this.visibleAgents
       .filter((a) => a.needsAttention)
       .sort((a, b) => (ATTENTION_ORDER[a.status] ?? 9) - (ATTENTION_ORDER[b.status] ?? 9)),
   );
   liveAgents = $derived(this.agents.filter((a) => a.status !== 'ended'));
-  visibleHistory = $derived(this.history.filter((s) => this.inProject(s.projectRoot)));
+  visibleHistory = $derived(this.history.filter((s) => this.inScope(s)));
   visibleTasks = $derived(
     this.tasks.filter((t) => this.project === null || t.projectPath === this.project),
   );
@@ -102,9 +126,21 @@ class AppState {
   }
 
   /** Filtre sur le projet ; s'il a des agents, ouvre le premier de la liste (vivant de préférence). */
-  selectProject(root: string) {
+  selectProject(root: string | null) {
     this.project = root;
-    const agents = this.agents.filter((a) => a.projectRoot === root);
+    this.worktree = null;
+    if (root !== null) this.openFirstAgent((a) => a.projectRoot === root);
+  }
+
+  /** Comme pour un projet : filtre sur le worktree et ouvre son premier agent s'il en a un. */
+  selectWorktree(w: Worktree) {
+    this.project = w.root;
+    this.worktree = w.path;
+    this.openFirstAgent((a) => a.worktreePath === w.path);
+  }
+
+  private openFirstAgent(match: (a: Agent) => boolean) {
+    const agents = this.agents.filter(match);
     const first = agents.find((a) => a.status !== 'ended') ?? agents[0];
     if (first) this.openAgent(first.id);
   }

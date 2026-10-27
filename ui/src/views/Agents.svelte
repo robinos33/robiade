@@ -52,6 +52,7 @@
               <div class="line">
                 <StatusBadge status={a.status} compact />
                 <strong class="ellipsis">{a.projectName}</strong>
+                {#if a.worktreeName}<span class="mono muted ellipsis wt">{a.worktreeName}</span>{/if}
                 <span class="muted num right">{ago(a.lastActivityAt, app.now)}</span>
               </div>
               <div class="line sub">
@@ -124,6 +125,7 @@
   .line { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .sub { padding-left: 20px; }
   .sub :global(.badge svg) { display: none; }
+  .wt { font-size: 11.5px; }
   .right { margin-left: auto; font-size: 11.5px; }
   .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .term-wrap { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg-sunken); }
