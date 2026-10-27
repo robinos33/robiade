@@ -1,7 +1,7 @@
 <script lang="ts">
   import { app } from '../lib/state.svelte';
   import { api } from '../lib/api';
-  import { count, dayLabel, duration, tokens } from '../lib/format';
+  import { count, dayLabel, dollars, duration, tokens } from '../lib/format';
   import type { Overview } from '../lib/types';
 
   const WINDOWS = [7, 30, 90, 365];
@@ -66,6 +66,12 @@
           <span class="k">Tokens</span><span class="v num">{tokens(data.tokens.total)}</span>
           <span class="s num">{tokens(data.tokens.output)} en sortie · {tokens(data.tokens.cacheRead)} lus en cache</span>
         </div>
+        <div class="tile" title="Tokens × tarif public de l'API, relevé le {data.pricesAsOf}. Avec un abonnement, ce n'est pas ce que tu paies.">
+          <span class="k">Coût estimé</span><span class="v num">{dollars(data.cost.dollars)}</span>
+          <span class="s">
+            {data.cost.unpricedTokens ? `${tokens(data.cost.unpricedTokens)} tokens sans prix connu` : `tarif API du ${data.pricesAsOf}`}
+          </span>
+        </div>
         <div class="tile" title="Du premier au dernier message de chaque session">
           <span class="k">Durée médiane</span>
           <span class="v num">{data.medianDurationMs === null ? '—' : duration(data.medianDurationMs)}</span>
@@ -119,7 +125,22 @@
                   <td class="name" title={p.projectPath}>{p.projectName}</td>
                   <td class="barcell"><span class="hbar" style="width: {(p.tokens.total / maxProjectTokens) * 100}%"></span></td>
                   <td class="num right">{tokens(p.tokens.total)}</td>
+                  <td class="num right muted">{dollars(p.cost.dollars)}</td>
                   <td class="num right muted">{p.sessions} s.</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <h2 class="section-title">Par modèle</h2>
+          <table>
+            <tbody>
+              {#each data.models as m (m.model)}
+                <tr>
+                  <td class="name mono">{m.model}</td>
+                  <td class="num right">{tokens(m.tokens.total)}</td>
+                  <td class="num right muted">{m.cost === null ? 'sans prix' : dollars(m.cost)}</td>
                 </tr>
               {/each}
             </tbody>
@@ -156,7 +177,7 @@
   .seg button { border: 0; background: none; padding: 0 10px; height: 26px; color: var(--ink-2); font-size: 12px; }
   .seg button + button { border-left: 1px solid var(--line-strong); }
   .seg button.on { background: var(--bg-active); color: var(--ink); font-weight: 600; }
-  .tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
   .tile, .panel { background: var(--bg-raised); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
   .tile { display: flex; flex-direction: column; gap: 2px; }
   .k { color: var(--ink-3); font-size: 12px; }
@@ -176,7 +197,7 @@
     display: flex; flex-direction: column; gap: 1px; padding: 7px 10px; white-space: nowrap;
     background: var(--bg-raised); border-radius: 6px; box-shadow: var(--shadow); font-size: 12px;
   }
-  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
   table { width: 100%; border-collapse: collapse; }
   td { padding: 5px 0; }
   .name { width: 34%; max-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 10px; }

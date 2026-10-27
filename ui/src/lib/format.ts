@@ -24,6 +24,11 @@ export function duration(ms: number): string {
 }
 
 export const tokens = (n: number) => compact.format(n);
+
+const usd = new Intl.NumberFormat('fr', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
+const usdRound = new Intl.NumberFormat('fr', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+/** Coût estimé : jamais une facture, toujours précédé de « ≈ ». */
+export const dollars = (n: number) => `≈ ${(n >= 100 ? usdRound : usd).format(n)}`;
 export const count = (n: number) => integer.format(n);
 export const dateTime = (at: number) => dateTimeFmt.format(at);
 export const time = (at: number) => timeFmt.format(at);

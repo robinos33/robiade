@@ -55,6 +55,9 @@ export interface Gauges {
   week: Gauge | null;
 }
 
+/** Coût estimé au tarif public de l'API ; `unpricedTokens` : tokens de modèles sans prix connu. */
+export interface Cost { dollars: number; unpricedTokens: number }
+
 export interface Tokens { input: number; output: number; cacheRead: number; cacheCreation: number; total: number }
 
 export interface Session extends Workspace {
@@ -67,6 +70,7 @@ export interface Session extends Workspace {
   userMessages: number;
   assistantMessages: number;
   tokens: Tokens;
+  cost: Cost;
   toolCalls: number;
   models: string[];
   mergeRequestUrl: string | null;
@@ -91,12 +95,16 @@ export interface Task {
 export interface Overview {
   sessions: number;
   tokens: Tokens;
+  cost: Cost;
+  /** Date du relevé de la grille tarifaire. */
+  pricesAsOf: string;
   toolCalls: number;
   mergeRequests: number;
   /** Du premier au dernier message ; `null` sans session sur la période. */
   medianDurationMs: number | null;
   days: { day: number; sessions: number; tokens: number }[];
-  projects: { projectPath: string; projectName: string; sessions: number; tokens: Tokens; lastActivityAt: number }[];
+  projects: { projectPath: string; projectName: string; sessions: number; tokens: Tokens; cost: Cost; lastActivityAt: number }[];
+  models: { model: string; tokens: Tokens; cost: number | null }[];
   tools: [string, number][];
 }
 

@@ -2,7 +2,7 @@
   import { app } from '../lib/state.svelte';
   import { api } from '../lib/api';
   import { attach, refit } from '../lib/terminals';
-  import { ago, duration, shortPath, tokens } from '../lib/format';
+  import { ago, dollars, duration, shortPath, tokens } from '../lib/format';
   import StatusBadge from '../components/StatusBadge.svelte';
   import MrBadge from '../components/MrBadge.svelte';
   import ModeBadge from '../components/ModeBadge.svelte';
@@ -212,6 +212,8 @@
               <dt>entrée</dt><dd class="num">{tokens(session.tokens.input)}</dd>
               <dt>sortie</dt><dd class="num">{tokens(session.tokens.output)}</dd>
               <dt>cache</dt><dd class="num">{tokens(session.tokens.cacheRead + session.tokens.cacheCreation)}</dd>
+              <dt title="Tokens × tarif public de l'API ; avec un abonnement, ce n'est pas ce que tu paies">Coût estimé</dt>
+              <dd class="num">{dollars(session.cost.dollars)}</dd>
               <dt>Messages</dt><dd class="num">{session.userMessages} / {session.assistantMessages}</dd>
               <dt>Modèle</dt><dd class="mono ellipsis">{active.gauges.model ?? session.models.at(-1) ?? '—'}</dd>
             {/if}
