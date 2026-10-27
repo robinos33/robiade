@@ -9,7 +9,10 @@
   import GaugeBar from '../components/GaugeBar.svelte';
   import AssetViewer from '../components/AssetViewer.svelte';
   import Icon from '../components/Icon.svelte';
-  import type { Agent } from '../lib/types';
+  import type { Agent, Session } from '../lib/types';
+
+  /** Sessions reprenables proposées sous les onglets, comme le fait `/resume`. */
+  const RECENT_SESSIONS = 15;
 
   let container: HTMLDivElement | undefined = $state();
   /** Chemin de l'asset ouvert en aperçu, pour l'agent actif. */
@@ -20,9 +23,20 @@
   const viewed = $derived(active?.assets.find((a) => a.path === viewing));
 
   const running = $derived(app.visibleAgents.filter((a) => a.status !== 'ended'));
-  const recent = $derived(
-    app.visibleAgents.filter((a) => a.status === 'ended').sort((a, b) => b.lastActivityAt - a.lastActivityAt),
-  );
+  /** Onglets terminés et sessions de l'historique (y compris celles d'iTerm) sans onglet, les plus récents d'abord. */
+  type Recent = { kind: 'tab'; agent: Agent; at: number } | { kind: 'session'; session: Session; at: number };
+  const recent = $derived.by((): Recent[] => {
+    const tabs = app.visibleAgents.filter((a) => a.status === 'ended');
+    const covered = new Set(app.agents.map((a) => a.resumedFrom ?? a.id));
+    const sessions = app.visibleHistory
+      .filter((s) => !covered.has(s.sessionId))
+      .sort((a, b) => b.lastActivityAt - a.lastActivityAt)
+      .slice(0, RECENT_SESSIONS);
+    return [
+      ...tabs.map((agent): Recent => ({ kind: 'tab', agent, at: agent.lastActivityAt })),
+      ...sessions.map((session): Recent => ({ kind: 'session', session, at: session.lastActivityAt })),
+    ].sort((a, b) => b.at - a.at);
+  });
 
   /** Nom en cours d'édition, et l'agent qu'il concerne ; `null` hors édition. */
   let draft = $state<{ id: string; value: string } | null>(null);
@@ -75,7 +89,7 @@
     <button class="btn primary" onclick={() => (app.newAgentOpen = true)}><Icon name="plus" size={14} /> Nouvel agent</button>
   </header>
 
-  {#if app.visibleAgents.length === 0}
+  {#if app.visibleAgents.length === 0 && recent.length === 0}
     <div class="empty">
       <div>
         <strong>Aucun agent pour l'instant.</strong>
@@ -119,7 +133,29 @@
         {#each running as a (a.id)}{@render tab(a)}{/each}
         {#if recent.length}
           <li class="group section-title">Récents · à reprendre</li>
-          {#each recent as a (a.id)}{@render tab(a)}{/each}
+          {#each recent as r (r.kind === 'tab' ? r.agent.id : r.session.sessionId)}
+            {#if r.kind === 'tab'}
+              {@render tab(r.agent)}
+            {:else}
+              <li>
+                <button
+                  class="agent"
+                  onclick={() => app.spawn(r.session.projectPath, r.session.sessionId)}
+                  title="Reprendre cette session dans un nouvel onglet"
+                >
+                  <div class="line">
+                    <Icon name="resume" size={11} />
+                    <span class="ellipsis">{r.session.title}</span>
+                    <span class="muted num right">{ago(r.at, app.now)}</span>
+                  </div>
+                  <div class="line sub">
+                    <span class="muted ellipsis">{r.session.projectName}</span>
+                    {#if r.session.worktreeName}<span class="mono muted ellipsis wt">{r.session.worktreeName}</span>{/if}
+                  </div>
+                </button>
+              </li>
+            {/if}
+          {/each}
         {/if}
       </ul>
 
@@ -198,6 +234,10 @@
             </ul>
           {/if}
         </aside>
+      {:else}
+        <div class="empty pick">
+          <div><strong>Aucun agent ouvert.</strong>Reprends une session récente à gauche, ou lance-en une avec <kbd>⌘N</kbd>.</div>
+        </div>
       {/if}
     </div>
   {/if}
@@ -224,6 +264,7 @@
   .tab:hover .close { display: grid; }
   .close:hover { color: var(--ink); background: var(--bg-hover); }
   .group { padding: 14px 10px 4px; }
+  .pick { grid-column: 2 / 4; }
   .name {
     display: inline-flex; align-items: center; gap: 6px; max-width: 220px; padding: 2px 6px; margin-left: -6px;
     border: 0; border-radius: var(--radius-sm); background: none; color: var(--ink); font-weight: 600;
