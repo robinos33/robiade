@@ -42,6 +42,8 @@ fn main_window(app: &tauri::App) -> tauri::Result<()> {
         .hidden_title(true)
         .on_navigation(|url| match url.scheme() {
             "tauri" => true,
+            // Aperçu HTML d'un asset : iframe `srcdoc` sandboxée, sans script ni accès réseau.
+            "about" => url.as_str() == "about:srcdoc",
             "http" => cfg!(debug_assertions) && url.host_str() == Some("localhost"),
             _ => false,
         })
