@@ -23,4 +23,5 @@ export const api = {
   resizeAgent: (id: string, cols: number, rows: number) => invoke<void>('resize_agent', { id, cols, rows }),
   killAgent: (id: string) => invoke<void>('kill_agent', { id }),
   markAgentSeen: (id: string) => invoke<void>('mark_agent_seen', { id }),
+  quit: () => invoke<void>('quit'),
 };

@@ -4,6 +4,7 @@
   import Sidebar from './components/Sidebar.svelte';
   import NewAgent from './components/NewAgent.svelte';
   import Palette from './components/Palette.svelte';
+  import QuitConfirm from './components/QuitConfirm.svelte';
   import Inbox from './views/Inbox.svelte';
   import Agents from './views/Agents.svelte';
   import History from './views/History.svelte';
@@ -42,6 +43,7 @@
 
 {#if app.newAgentOpen}<NewAgent />{/if}
 {#if app.paletteOpen}<Palette />{/if}
+{#if app.quitRequest}<QuitConfirm />{/if}
 {#if app.toast}<div class="toast" role="status">{app.toast}</div>{/if}
 
 <style>

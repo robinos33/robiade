@@ -20,6 +20,8 @@ class AppState {
   selectedSessionId = $state<string | null>(null);
   newAgentOpen = $state(false);
   paletteOpen = $state(false);
+  /** Agents qu'une fermeture interromprait ; non nul tant que la confirmation est affichée. */
+  quitRequest = $state<Agent[] | null>(null);
   toast = $state<string | null>(null);
   now = $state(Date.now());
 
@@ -63,6 +65,7 @@ class AppState {
     await Promise.all([
       listen<Agent[]>('agents:changed', (e) => (this.agents = e.payload)),
       listen<{ id: string; data: string }>('agent:output', (e) => writeOutput(e.payload.id, e.payload.data)),
+      listen<Agent[]>('app:quit-requested', (e) => (this.quitRequest = e.payload)),
     ]);
     this.env = await api.environment();
     this.agents = await api.listAgents();

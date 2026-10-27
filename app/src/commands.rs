@@ -157,3 +157,11 @@ pub fn mark_agent_seen(state: State<AppState>, id: String) -> CmdResult<()> {
     state.agents.mark_seen(&agent_id(&id)?);
     Ok(())
 }
+
+/// Fermeture confirmée : les agents sont arrêtés, leurs sessions restent reprenables.
+#[tauri::command]
+pub fn quit(app: tauri::AppHandle, state: State<AppState>) {
+    state.quit_confirmed.store(true, std::sync::atomic::Ordering::SeqCst);
+    state.agents.kill_all();
+    app.exit(0);
+}

@@ -85,6 +85,11 @@ impl AgentStatus {
         matches!(self, Self::AwaitingPermission | Self::AwaitingInput | Self::Failed)
     }
 
+    /// Fermer Robiade interromprait un travail en cours : la fermeture demande confirmation.
+    pub fn interrupted_by_quit(self) -> bool {
+        matches!(self, Self::Running | Self::AwaitingPermission)
+    }
+
     fn is_waiting_on_me(self) -> bool {
         matches!(self, Self::AwaitingPermission | Self::AwaitingInput)
     }

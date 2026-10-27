@@ -5,17 +5,20 @@ mod agents;
 mod commands;
 mod dto;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use robiade_adapters::claude_code::TranscriptStore;
 use robiade_adapters::sqlite_tasks::SqliteTaskRepository;
 use robiade_adapters::{hooks, shell_env};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 pub struct AppState {
     pub transcripts: Arc<TranscriptStore>,
     pub tasks: SqliteTaskRepository,
     pub agents: Arc<agents::AgentRegistry>,
+    /// Fermeture confirmée dans l'interface malgré des agents au travail.
+    pub quit_confirmed: AtomicBool,
 }
 
 pub fn now() -> i64 {
@@ -40,6 +43,21 @@ fn main_window(app: &tauri::App) -> tauri::Result<()> {
         })
         .build()?;
     Ok(())
+}
+
+/// Retient la fermeture si elle interromprait un agent, et demande confirmation à l'interface,
+/// qui affiche les agents concernés. Renvoie `true` si la fermeture doit être annulée.
+fn hold_quit(app: &tauri::AppHandle) -> bool {
+    let Some(state) = app.try_state::<AppState>() else { return false };
+    if state.quit_confirmed.load(Ordering::SeqCst) {
+        return false;
+    }
+    let busy = state.agents.interrupted_by_quit();
+    if busy.is_empty() || app.get_webview_window("main").is_none() {
+        return false;
+    }
+    let _ = app.emit("app:quit-requested", &busy);
+    true
 }
 
 fn main() {
@@ -69,8 +87,16 @@ fn main() {
                 transcripts: Arc::new(TranscriptStore::new(home.join(".claude").join("projects"))),
                 tasks: SqliteTaskRepository::open(&data_dir.join("robiade.db"))?,
                 agents: registry,
+                quit_confirmed: AtomicBool::new(false),
             });
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if hold_quit(window.app_handle()) {
+                    api.prevent_close();
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::environment,
@@ -87,12 +113,13 @@ fn main() {
             commands::resize_agent,
             commands::kill_agent,
             commands::mark_agent_seen,
+            commands::quit,
         ])
         .build(tauri::generate_context!())
         .expect("échec du démarrage de Robiade")
-        .run(|app, event| {
-            if let tauri::RunEvent::Exit = event {
-                app.state::<AppState>().agents.kill_all();
-            }
+        .run(|app, event| match event {
+            tauri::RunEvent::ExitRequested { api, .. } if hold_quit(app) => api.prevent_exit(),
+            tauri::RunEvent::Exit => app.state::<AppState>().agents.kill_all(),
+            _ => {}
         });
 }

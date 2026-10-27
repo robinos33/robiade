@@ -130,6 +130,16 @@ impl AgentRegistry {
         out
     }
 
+    /// Agents qu'une fermeture de Robiade interromprait en plein travail.
+    pub fn interrupted_by_quit(&self) -> Vec<AgentDto> {
+        let at = now();
+        let Ok(live) = self.live.lock() else { return vec![] };
+        live.values()
+            .filter(|l| l.process.is_some() && l.agent.status().interrupted_by_quit())
+            .map(|l| AgentDto::from_agent(&l.agent, at))
+            .collect()
+    }
+
     pub fn kill_all(&self) {
         if let Ok(live) = self.live.lock() {
             live.values().filter_map(|l| l.process.as_ref()).for_each(|p| p.kill());
