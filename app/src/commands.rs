@@ -3,12 +3,12 @@
 use std::path::PathBuf;
 
 use robiade_core::agents::AgentId;
-use robiade_core::history::TranscriptReader;
+use robiade_core::history::{SessionSearch, TranscriptReader};
 use robiade_core::{project, stats};
 use robiade_core::tasks::{Task, TaskId, TaskRepository};
 use tauri::{Manager, State};
 
-use crate::dto::{AgentDto, EntryDto, EnvironmentDto, OverviewDto, SessionDto, TaskDto, TaskStatusDto};
+use crate::dto::{AgentDto, EntryDto, EnvironmentDto, OverviewDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto};
 use crate::{now, AppState};
 
 type CmdResult<T> = Result<T, String>;
@@ -56,6 +56,21 @@ pub async fn read_transcript(state: State<'_, AppState>, session_id: String) -> 
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;
     Ok(entries.into_iter().map(EntryDto::from).collect())
+}
+
+/// Recherche plein texte. L'index est d'abord remis à jour : seuls les transcripts modifiés sont relus.
+#[tauri::command]
+pub async fn search_history(state: State<'_, AppState>, query: String) -> CmdResult<Vec<SearchHitDto>> {
+    let query: String = query.chars().take(200).collect();
+    let (store, index) = (state.transcripts.clone(), state.search.clone());
+    let hits = tauri::async_runtime::spawn_blocking(move || {
+        index.sync(&store.transcript_files())?;
+        index.search(&query, 300)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+    Ok(hits.into_iter().map(SearchHitDto::from).collect())
 }
 
 #[tauri::command]

@@ -1,10 +1,11 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { Agent, Entry, Environment, Overview, Session, Task, TaskStatus } from './types';
+import type { Agent, Entry, Environment, Overview, SearchHit, Session, Task, TaskStatus } from './types';
 
 export const api = {
   environment: () => invoke<Environment>('environment'),
   listHistory: () => invoke<Session[]>('list_history'),
   readTranscript: (sessionId: string) => invoke<Entry[]>('read_transcript', { sessionId }),
+  searchHistory: (query: string) => invoke<SearchHit[]>('search_history', { query }),
   stats: (windowDays: number, projectRoot: string | null) =>
     invoke<Overview>('stats', {
       windowDays,

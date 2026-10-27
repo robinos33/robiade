@@ -2,7 +2,7 @@
   import { app } from '../lib/state.svelte';
   import { api } from '../lib/api';
   import { ago, count, dateTime, time, tokens } from '../lib/format';
-  import type { Entry } from '../lib/types';
+  import type { Entry, SearchHit } from '../lib/types';
   import MrBadge from '../components/MrBadge.svelte';
   import Icon from '../components/Icon.svelte';
 
@@ -12,12 +12,39 @@
   let entries = $state<Entry[] | null>(null);
   let loadError = $state<string | null>(null);
 
+  /** Résultats plein texte de la dernière recherche, par ordre de pertinence. */
+  let hits = $state<SearchHit[]>([]);
+  const snippets = $derived(new Map(hits.map((h) => [h.sessionId, h.snippet])));
+
+  $effect(() => {
+    const q = query.trim();
+    if (q.length < 2) {
+      hits = [];
+      return;
+    }
+    const timer = setTimeout(() => {
+      api.searchHistory(q).then(
+        (found) => query.trim() === q && (hits = found),
+        (e) => app.notify(`Recherche impossible : ${e}`),
+      );
+    }, 150);
+    return () => clearTimeout(timer);
+  });
+
+  // Titre, projet ou branche d'abord (du plus récent au plus ancien), puis le contenu des échanges.
   const filtered = $derived.by(() => {
     const q = query.trim().toLowerCase();
     if (!q) return app.visibleHistory;
-    return app.visibleHistory.filter((s) =>
+    const byMeta = app.visibleHistory.filter((s) =>
       `${s.title} ${s.projectName} ${s.gitBranch ?? ''}`.toLowerCase().includes(q),
     );
+    const listed = new Set(byMeta.map((s) => s.sessionId));
+    const visible = new Map(app.visibleHistory.map((s) => [s.sessionId, s]));
+    const byContent = hits.flatMap((h) => {
+      const s = visible.get(h.sessionId);
+      return s && !listed.has(s.sessionId) ? [s] : [];
+    });
+    return [...byMeta, ...byContent];
   });
   const selected = $derived(app.history.find((s) => s.sessionId === app.selectedSessionId));
 
@@ -40,7 +67,7 @@
     <span class="spacer"></span>
     <div class="search">
       <Icon name="search" size={14} />
-      <input class="field" placeholder="Titre, projet, branche…" bind:value={query} oninput={() => (limit = PAGE)} />
+      <input class="field" placeholder="Titre, projet, branche, contenu…" bind:value={query} oninput={() => (limit = PAGE)} />
     </div>
   </header>
 
@@ -50,6 +77,11 @@
         <li>
           <button class="session" class:active={s.sessionId === app.selectedSessionId} onclick={() => (app.selectedSessionId = s.sessionId)}>
             <span class="title">{s.title}</span>
+            {#if snippets.get(s.sessionId)}
+              <span class="snippet">
+                {#each snippets.get(s.sessionId) ?? [] as [text, hit], i (i)}{#if hit}<mark>{text}</mark>{:else}{text}{/if}{/each}
+              </span>
+            {/if}
             <span class="meta">
               <span class="proj">{s.projectName}</span>
               {#if s.gitBranch && s.gitBranch !== 'HEAD'}<span class="mono ellipsis">{s.gitBranch}</span>{/if}
@@ -126,6 +158,11 @@
   .session:hover { background: var(--bg-hover); }
   .session.active { background: var(--bg-active); }
   .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+  .snippet {
+    font-size: 12px; color: var(--ink-2); line-height: 1.4;
+    display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  mark { background: var(--accent-soft); color: var(--ink); border-radius: 2px; padding: 0 1px; }
   .meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-3); min-width: 0; }
   .proj { color: var(--ink-2); }
   .spacer { flex: 1; }

@@ -2,7 +2,7 @@
 
 use robiade_core::agents::{Agent, AgentStatus};
 use robiade_core::project;
-use robiade_core::history::{EntryKind, SessionSummary, TokenUsage, TranscriptEntry};
+use robiade_core::history::{EntryKind, SearchHit, SessionSummary, TokenUsage, TranscriptEntry, HIT_END, HIT_START};
 use robiade_core::stats::Overview;
 use robiade_core::tasks::{Task, TaskStatus};
 use serde::{Deserialize, Serialize};
@@ -137,6 +137,35 @@ impl From<TranscriptEntry> for EntryDto {
     }
 }
 
+/// Extrait découpé en segments : le front surligne les passages trouvés sans jamais produire de HTML.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchHitDto {
+    pub session_id: String,
+    /// `(texte, trouvé)` dans l'ordre de lecture.
+    pub snippet: Vec<(String, bool)>,
+}
+
+impl From<SearchHit> for SearchHitDto {
+    fn from(h: SearchHit) -> Self {
+        // `avant␂trouvé␃après␂trouvé␃…` : le premier segment n'a jamais de passage trouvé.
+        let mut snippet = vec![];
+        let mut push = |text: &str, hit: bool| {
+            if !text.is_empty() {
+                snippet.push((text.replace(['\n', '\r'], " "), hit));
+            }
+        };
+        let mut parts = h.snippet.split(HIT_START);
+        push(parts.next().unwrap_or_default(), false);
+        for part in parts {
+            let (hit, rest) = part.split_once(HIT_END).unwrap_or((part, ""));
+            push(hit, true);
+            push(rest, false);
+        }
+        Self { session_id: h.session_id, snippet }
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DayDto {
@@ -250,4 +279,17 @@ impl From<&Task> for TaskDto {
 pub struct EnvironmentDto {
     pub claude_path: Option<String>,
     pub home: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn splits_a_snippet_into_highlighted_segments() {
+        let hit = SearchHit { session_id: "s".into(), snippet: "le \u{2}rebase\u{3} du\n\u{2}wagon\u{3}".into() };
+        let dto = SearchHitDto::from(hit);
+        let expected = [("le ", false), ("rebase", true), (" du ", false), ("wagon", true)];
+        assert_eq!(dto.snippet, expected.map(|(t, h)| (t.to_owned(), h)));
+    }
 }

@@ -37,6 +37,9 @@ export interface Session {
   mergeRequestUrl: string | null;
 }
 
+/** Extrait d'une session trouvée : segments `[texte, trouvé]`, rendus comme texte. */
+export interface SearchHit { sessionId: string; snippet: [string, boolean][] }
+
 export interface Entry { kind: 'user' | 'assistant' | 'tool'; at: number; text: string }
 
 export type TaskStatus = 'todo' | 'doing' | 'done';

@@ -9,12 +9,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use robiade_adapters::claude_code::TranscriptStore;
+use robiade_adapters::sqlite_search::SearchIndex;
 use robiade_adapters::sqlite_tasks::SqliteTaskRepository;
 use robiade_adapters::{hooks, shell_env};
 use tauri::{Emitter, Manager};
 
 pub struct AppState {
     pub transcripts: Arc<TranscriptStore>,
+    pub search: Arc<SearchIndex>,
     pub tasks: SqliteTaskRepository,
     pub agents: Arc<agents::AgentRegistry>,
     /// Fermeture confirmée dans l'interface malgré des agents au travail.
@@ -84,8 +86,15 @@ fn main() {
             let on_event = registry.clone();
             hooks::serve(registry.socket(), move |id, event, mode| on_event.observe(&id, event, mode))?;
 
+            let transcripts = Arc::new(TranscriptStore::new(home.join(".claude").join("projects")));
+            let search = Arc::new(SearchIndex::open(&data_dir.join("cache.db"))?);
+            // Premier remplissage de l'index en tâche de fond : l'interface n'attend pas.
+            let (warm_store, warm_index) = (transcripts.clone(), search.clone());
+            std::thread::spawn(move || warm_index.sync(&warm_store.transcript_files()));
+
             app.manage(AppState {
-                transcripts: Arc::new(TranscriptStore::new(home.join(".claude").join("projects"))),
+                transcripts,
+                search,
                 tasks: SqliteTaskRepository::open(&data_dir.join("robiade.db"))?,
                 agents: registry,
                 quit_confirmed: AtomicBool::new(false),
@@ -103,6 +112,7 @@ fn main() {
             commands::environment,
             commands::list_history,
             commands::read_transcript,
+            commands::search_history,
             commands::stats,
             commands::list_tasks,
             commands::create_task,
