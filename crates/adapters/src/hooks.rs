@@ -60,14 +60,23 @@ pub fn relay_from_stdin() {
     if std::io::stdin().take(16 * 1024 * 1024).read_to_string(&mut input).is_err() {
         return;
     }
-    let Ok(v) = serde_json::from_str::<Value>(&input) else { return };
-    let field = |k: &str| v.get(k).and_then(Value::as_str).map(str::to_owned);
-    let Some(event) = field("hook_event_name") else { return };
-    let message = Relayed { agent_id, event, tool: field("tool_name"), notification: field("notification_type") };
+    let Some(message) = relayed_from(&input, agent_id) else { return };
     let Ok(mut stream) = UnixStream::connect(socket) else { return };
     let _ = stream.set_write_timeout(Some(Duration::from_secs(1)));
     let _ = serde_json::to_writer(&mut stream, &message);
     let _ = stream.flush();
+}
+
+/// Extrait de l'entrée d'un hook les seuls champs utiles à Robiade.
+fn relayed_from(hook_input: &str, agent_id: String) -> Option<Relayed> {
+    let v = serde_json::from_str::<Value>(hook_input).ok()?;
+    let field = |k: &str| v.get(k).and_then(Value::as_str).map(str::to_owned);
+    Some(Relayed {
+        agent_id,
+        event: field("hook_event_name")?,
+        tool: field("tool_name"),
+        notification: field("notification_type"),
+    })
 }
 
 fn translate(r: &Relayed) -> Option<AgentEvent> {
