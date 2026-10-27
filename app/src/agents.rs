@@ -96,12 +96,14 @@ impl AgentRegistry {
     }
 
     pub fn apply(&self, id: &AgentId, event: AgentEvent) {
-        self.on_event(id, event, None);
+        self.on_event(id, event, None, None);
     }
 
     pub fn observe(&self, id: &AgentId, observation: Observation) {
         match observation {
-            Observation::Event { event, permission_mode } => self.on_event(id, event, permission_mode),
+            Observation::Event { event, permission_mode, written_file } => {
+                self.on_event(id, event, permission_mode, written_file.as_deref())
+            }
             Observation::Gauges(gauges) => {
                 if let Ok(mut live) = self.live.lock() {
                     match live.get_mut(id) {
@@ -114,7 +116,7 @@ impl AgentRegistry {
         }
     }
 
-    fn on_event(&self, id: &AgentId, event: AgentEvent, mode: Option<PermissionMode>) {
+    fn on_event(&self, id: &AgentId, event: AgentEvent, mode: Option<PermissionMode>, written_file: Option<&str>) {
         let ended = matches!(event, AgentEvent::ProcessExited);
         let now_waiting = {
             let Ok(mut live) = self.live.lock() else { return };
@@ -122,6 +124,9 @@ impl AgentRegistry {
             let Some(entry) = live.get_mut(id) else { return };
             if let Some(mode) = mode {
                 entry.agent.observe_permission_mode(mode);
+            }
+            if let Some(path) = written_file {
+                entry.agent.observe_file_written(path, now());
             }
             let before = entry.agent.status();
             entry.agent.apply(event, now());

@@ -19,7 +19,8 @@ pub const ENV_SOCKET: &str = "ROBIADE_HOOK_SOCKET";
 pub const ENV_AGENT_ID: &str = "ROBIADE_AGENT_ID";
 const MAX_MESSAGE_BYTES: u64 = 64 * 1024;
 
-/// Ce qui transite sur le socket : jamais le prompt ni l'entrée des outils.
+/// Ce qui transite sur le socket : jamais le prompt ni l'entrée des outils,
+/// hormis le chemin d'un fichier écrit par `Write` (pas son contenu).
 #[derive(Debug, Serialize, Deserialize)]
 struct Relayed {
     agent_id: String,
@@ -30,6 +31,8 @@ struct Relayed {
     permission_mode: Option<String>,
     #[serde(default)]
     gauges: Option<RelayedGauges>,
+    #[serde(default)]
+    written_file: Option<String>,
 }
 
 /// Pseudo-événement porté par les relevés de la statusline.
@@ -49,7 +52,7 @@ struct RelayedGauges {
 /// Ce que Robiade observe d'un agent par le socket.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Observation {
-    Event { event: AgentEvent, permission_mode: Option<PermissionMode> },
+    Event { event: AgentEvent, permission_mode: Option<PermissionMode>, written_file: Option<String> },
     Gauges(Gauges),
 }
 
@@ -126,6 +129,7 @@ fn status_from(input: &str, agent_id: String) -> Option<Relayed> {
         notification: None,
         permission_mode: None,
         gauges: Some(gauges),
+        written_file: None,
     })
 }
 
@@ -133,13 +137,21 @@ fn status_from(input: &str, agent_id: String) -> Option<Relayed> {
 fn relayed_from(hook_input: &str, agent_id: String) -> Option<Relayed> {
     let v = serde_json::from_str::<Value>(hook_input).ok()?;
     let field = |k: &str| v.get(k).and_then(Value::as_str).map(str::to_owned);
+    let event = field("hook_event_name")?;
+    let tool = field("tool_name");
+    let written_file = (event == "PostToolUse" && tool.as_deref() == Some("Write"))
+        .then(|| v.pointer("/tool_input/file_path").and_then(Value::as_str))
+        .flatten()
+        .filter(|p| p.len() <= 4096)
+        .map(str::to_owned);
     Some(Relayed {
         agent_id,
-        event: field("hook_event_name")?,
-        tool: field("tool_name"),
+        event,
+        tool,
         notification: field("notification_type"),
         permission_mode: field("permission_mode"),
         gauges: None,
+        written_file,
     })
 }
 
@@ -158,7 +170,7 @@ fn observe(r: Relayed) -> Option<Observation> {
     }
     let event = translate(&r)?;
     let permission_mode = r.permission_mode.as_deref().and_then(PermissionMode::parse);
-    Some(Observation::Event { event, permission_mode })
+    Some(Observation::Event { event, permission_mode, written_file: r.written_file })
 }
 
 fn translate(r: &Relayed) -> Option<AgentEvent> {
@@ -240,6 +252,7 @@ mod tests {
             notification: None,
             permission_mode: Some("acceptEdits".into()),
             gauges: None,
+            written_file: None,
         };
         serde_json::to_writer(&mut stream, &msg).unwrap();
         drop(stream);
@@ -250,6 +263,7 @@ mod tests {
             Observation::Event {
                 event: AgentEvent::ToolStarted { tool: "Bash".into() },
                 permission_mode: PermissionMode::parse("acceptEdits"),
+                written_file: None,
             }
         );
         assert_eq!(std::fs::metadata(&socket).unwrap().permissions().mode() & 0o777, 0o600);
@@ -272,8 +286,21 @@ mod tests {
         for (input, (event, mode)) in inputs.into_iter().zip(expected) {
             let observed = observe(relayed_from(input, "id".into()).unwrap());
             let permission_mode = mode.and_then(PermissionMode::parse);
-            assert_eq!(observed, Some(Observation::Event { event, permission_mode }));
+            assert_eq!(observed, Some(Observation::Event { event, permission_mode, written_file: None }));
         }
+    }
+
+    #[test]
+    fn relays_the_path_of_a_written_file_but_not_its_content() {
+        let input = r#"{"hook_event_name":"PostToolUse","tool_name":"Write","permission_mode":"default",
+            "tool_input":{"file_path":"/tmp/projet/capture.png","content":"secret"}}"#;
+        let relayed = relayed_from(input, "id".into()).unwrap();
+        assert!(!serde_json::to_string(&relayed).unwrap().contains("secret"));
+        let Some(Observation::Event { written_file, .. }) = observe(relayed) else { panic!() };
+        assert_eq!(written_file.as_deref(), Some("/tmp/projet/capture.png"));
+
+        let pre = input.replace("PostToolUse", "PreToolUse");
+        assert_eq!(relayed_from(&pre, "id".into()).unwrap().written_file, None);
     }
 
     #[test]
