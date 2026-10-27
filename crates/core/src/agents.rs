@@ -90,7 +90,8 @@ impl AgentStatus {
         matches!(self, Self::Running | Self::AwaitingPermission)
     }
 
-    fn is_waiting_on_me(self) -> bool {
+    /// L'agent est bloqué tant que je n'agis pas (niveau 1 de l'Inbox).
+    pub fn is_waiting_on_me(self) -> bool {
         matches!(self, Self::AwaitingPermission | Self::AwaitingInput)
     }
 

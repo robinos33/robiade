@@ -8,8 +8,10 @@ use base64::Engine;
 use robiade_adapters::hooks;
 use robiade_adapters::pty::{AgentProcess, LaunchSpec};
 use robiade_adapters::shell_env::LoginEnv;
-use robiade_core::agents::{Agent, AgentEvent, AgentId, PermissionMode};
+use robiade_core::agents::{Agent, AgentEvent, AgentId, AgentStatus, PermissionMode};
+use robiade_core::project;
 use tauri::{AppHandle, Emitter};
+use tauri_plugin_notification::NotificationExt;
 
 use crate::dto::{AgentDto, AgentOutput};
 use crate::now;
@@ -93,19 +95,40 @@ impl AgentRegistry {
 
     pub fn observe(&self, id: &AgentId, event: AgentEvent, mode: Option<PermissionMode>) {
         let ended = matches!(event, AgentEvent::ProcessExited);
-        {
+        let now_waiting = {
             let Ok(mut live) = self.live.lock() else { return };
             // Un événement d'un agent inconnu (session hors Robiade, agent déjà retiré) est ignoré.
             let Some(entry) = live.get_mut(id) else { return };
             if let Some(mode) = mode {
                 entry.agent.observe_permission_mode(mode);
             }
+            let before = entry.agent.status();
             entry.agent.apply(event, now());
             if ended {
                 entry.process = None;
             }
+            let after = entry.agent.status();
+            (after != before && after.is_waiting_on_me()).then(|| (after, entry.agent.project_path().to_owned()))
+        };
+        if let Some((status, path)) = now_waiting {
+            self.notify_waiting(status, &path);
         }
         self.publish();
+    }
+
+    /// Notification macOS quand un agent se met à m'attendre et que je regarde ailleurs.
+    /// Le texte ne reprend rien du transcript : seulement le projet et la raison.
+    fn notify_waiting(&self, status: AgentStatus, project_path: &str) {
+        let focused = tauri::Manager::get_webview_window(&self.app, "main")
+            .is_some_and(|w| w.is_focused().unwrap_or(false));
+        if focused {
+            return;
+        }
+        let reason = match status {
+            AgentStatus::AwaitingPermission => "attend ta permission",
+            _ => "a fini son tour",
+        };
+        let _ = self.app.notification().builder().title(project::display_name(project_path)).body(reason).show();
     }
 
     pub fn mark_seen(&self, id: &AgentId) {

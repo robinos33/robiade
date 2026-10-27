@@ -69,6 +69,7 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             main_window(app)?;
             let data_dir = app.path().app_data_dir()?;
