@@ -30,6 +30,8 @@ pub struct Overview {
     pub tokens: TokenUsage,
     pub tool_calls: u64,
     pub merge_requests: u32,
+    /// Du premier au dernier message ; une session laissée ouverte une nuit compte sa nuit.
+    pub median_duration_ms: Option<Millis>,
     /// Jours consécutifs, de `from_day` à aujourd'hui inclus, y compris les jours vides.
     pub days: Vec<DayActivity>,
     pub projects: Vec<ProjectActivity>,
@@ -54,10 +56,12 @@ pub fn overview(
         (from_day..=today).map(|day| (day, DayActivity { day, ..Default::default() })).collect();
     let mut projects: BTreeMap<String, ProjectActivity> = BTreeMap::new();
     let mut tools: BTreeMap<&str, u64> = BTreeMap::new();
+    let mut durations: Vec<Millis> = Vec::new();
 
     for s in sessions.iter().filter(|s| local_day(s.last_activity_at) >= from_day) {
         out.sessions += 1;
         out.tokens.add(&s.tokens);
+        durations.push((s.last_activity_at - s.started_at).max(0));
         out.merge_requests += u32::from(s.merge_request_url.is_some());
         if let Some(d) = days.get_mut(&local_day(s.started_at.max(now - window_days * DAY_MS))) {
             d.sessions += 1;
@@ -77,12 +81,24 @@ pub fn overview(
         }
     }
 
+    durations.sort_unstable();
+    out.median_duration_ms = median(&durations);
     out.days = days.into_values().collect();
     out.projects = projects.into_values().collect();
     out.projects.sort_by_key(|p| Reverse(p.tokens.total()));
     out.tools = tools.into_iter().map(|(n, c)| (n.to_owned(), c)).collect();
     out.tools.sort_by_key(|t| Reverse(t.1));
     out
+}
+
+/// Médiane d'une liste triée ; moyenne des deux valeurs centrales pour un nombre pair.
+fn median(sorted: &[Millis]) -> Option<Millis> {
+    let mid = sorted.len() / 2;
+    match sorted.len() {
+        0 => None,
+        n if n % 2 == 1 => Some(sorted[mid]),
+        _ => Some((sorted[mid - 1] + sorted[mid]) / 2),
+    }
 }
 
 #[cfg(test)]
@@ -121,5 +137,18 @@ mod tests {
         assert_eq!(o.days[5].sessions, 1);
         assert_eq!(o.tools[0], ("Read".into(), 4));
         assert_eq!(o.projects[0].project_path, "b");
+    }
+
+    #[test]
+    fn median_duration_runs_from_first_to_last_message() {
+        let now = 10 * DAY_MS;
+        let mut sessions: Vec<SessionSummary> = [10, 30, 20, 1000]
+            .iter()
+            .map(|m| SessionSummary { started_at: now - m * 60_000, ..session("a", now, 0, &[]) })
+            .collect();
+        assert_eq!(overview(&sessions, str::to_owned, now, 0, 7).median_duration_ms, Some(25 * 60_000));
+        sessions.truncate(3);
+        assert_eq!(overview(&sessions, str::to_owned, now, 0, 7).median_duration_ms, Some(20 * 60_000));
+        assert_eq!(overview(&[], str::to_owned, now, 0, 7).median_duration_ms, None);
     }
 }
