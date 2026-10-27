@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use robiade_adapters::claude_code::TranscriptStore;
+use robiade_adapters::sqlite_agents::SqliteAgentJournal;
 use robiade_adapters::sqlite_search::SearchIndex;
 use robiade_adapters::workspace::WorkspaceResolver;
 use robiade_adapters::sqlite_tasks::SqliteTaskRepository;
@@ -87,6 +88,7 @@ fn main() {
             let registry = Arc::new(agents::AgentRegistry::new(
                 app.handle().clone(),
                 workspaces.clone(),
+                Arc::new(SqliteAgentJournal::open(&data_dir.join("robiade.db"))?),
                 shell_env::resolve(),
                 data_dir.join("hooks.sock"),
             ));
@@ -132,6 +134,8 @@ fn main() {
             commands::resize_agent,
             commands::kill_agent,
             commands::mark_agent_seen,
+            commands::rename_agent,
+            commands::forget_agent,
             commands::read_asset,
             commands::quit,
         ])

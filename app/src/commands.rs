@@ -42,7 +42,17 @@ pub async fn list_history(state: State<'_, AppState>) -> CmdResult<Vec<SessionDt
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;
-    Ok(summaries.iter().map(|s| SessionDto::new(s, &state.workspaces.resolve(&s.project_path))).collect())
+    let names = state.agents.names_by_session();
+    Ok(summaries
+        .iter()
+        .map(|s| {
+            let mut dto = SessionDto::new(s, &state.workspaces.resolve(&s.project_path));
+            if let Some(name) = names.get(&s.session_id) {
+                dto.title = name.clone();
+            }
+            dto
+        })
+        .collect())
 }
 
 #[tauri::command]
@@ -166,6 +176,16 @@ pub fn resize_agent(state: State<AppState>, id: String, cols: u16, rows: u16) ->
 pub fn kill_agent(state: State<AppState>, id: String) -> CmdResult<()> {
     state.agents.process(&agent_id(&id)?)?.kill();
     Ok(())
+}
+
+#[tauri::command]
+pub fn rename_agent(state: State<AppState>, id: String, name: String) -> CmdResult<()> {
+    state.agents.rename(&agent_id(&id)?, &name)
+}
+
+#[tauri::command]
+pub fn forget_agent(state: State<AppState>, id: String) -> CmdResult<()> {
+    state.agents.forget(&agent_id(&id)?)
 }
 
 #[tauri::command]

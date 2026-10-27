@@ -34,6 +34,7 @@ pub struct AgentDto {
     pub gauges: GaugesDto,
     pub assets: Vec<AssetDto>,
     pub resumed_from: Option<String>,
+    pub name: Option<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -183,6 +184,7 @@ impl AgentDto {
             gauges: a.gauges().into(),
             assets: a.assets().iter().map(AssetDto::from).collect(),
             resumed_from: a.resumed_from().map(str::to_owned),
+            name: a.name().map(str::to_owned),
         }
     }
 }

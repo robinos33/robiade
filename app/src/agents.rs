@@ -9,7 +9,7 @@ use robiade_adapters::hooks::{self, Observation};
 use robiade_adapters::pty::{AgentProcess, LaunchSpec};
 use robiade_adapters::shell_env::LoginEnv;
 use robiade_adapters::workspace::WorkspaceResolver;
-use robiade_core::agents::{Agent, AgentEvent, AgentId, AgentStatus, PermissionMode};
+use robiade_core::agents::{Agent, AgentEvent, AgentId, AgentJournal, AgentStatus, PermissionMode};
 use robiade_core::assets::Asset;
 use robiade_core::project::Workspace;
 use tauri::{AppHandle, Emitter};
@@ -24,9 +24,13 @@ struct Live {
     process: Option<Arc<AgentProcess>>,
 }
 
+/// Les onglets inactifs depuis plus longtemps ne sont pas rouverts au démarrage.
+const REOPEN_WITHIN_MS: i64 = 7 * 24 * 3600 * 1000;
+
 pub struct AgentRegistry {
     app: AppHandle,
     workspaces: Arc<WorkspaceResolver>,
+    journal: Arc<dyn AgentJournal>,
     login: LoginEnv,
     socket: PathBuf,
     live: Mutex<HashMap<AgentId, Live>>,
@@ -38,8 +42,23 @@ fn shell_quote(s: &str) -> String {
 }
 
 impl AgentRegistry {
-    pub fn new(app: AppHandle, workspaces: Arc<WorkspaceResolver>, login: LoginEnv, socket: PathBuf) -> Self {
-        Self { app, workspaces, login, socket, live: Mutex::new(HashMap::new()) }
+    /// Rouvre les onglets récents de l'exécution précédente, terminés : ils se reprennent d'un clic.
+    pub fn new(
+        app: AppHandle,
+        workspaces: Arc<WorkspaceResolver>,
+        journal: Arc<dyn AgentJournal>,
+        login: LoginEnv,
+        socket: PathBuf,
+    ) -> Self {
+        let reopened = journal.recent(now() - REOPEN_WITHIN_MS).unwrap_or_default();
+        let live = reopened
+            .into_iter()
+            .map(|agent| {
+                let workspace = workspaces.resolve(agent.project_path());
+                (agent.id().clone(), Live { agent, workspace, process: None })
+            })
+            .collect();
+        Self { app, workspaces, journal, login, socket, live: Mutex::new(live) }
     }
 
     pub fn socket(&self) -> &Path {
@@ -88,10 +107,26 @@ impl AgentRegistry {
 
         let path = cwd.to_string_lossy().into_owned();
         let workspace = self.workspaces.resolve(&path);
-        let agent = Agent::start(id.clone(), path, resume.map(|r| r.as_str().to_owned()), now());
+        let mut agent = Agent::start(id.clone(), path, resume.as_ref().map(|r| r.as_str().to_owned()), now());
+        let mut live = self.live.lock().map_err(|e| e.to_string())?;
+        // Reprendre une session remplace son onglet terminé, qui lui passe son nom.
+        if let Some(session) = &resume {
+            let replaced: Vec<AgentId> = live
+                .values()
+                .filter(|l| l.process.is_none() && l.agent.session_id() == session.as_str())
+                .map(|l| l.agent.id().clone())
+                .collect();
+            for old in replaced {
+                if let Some(name) = live.remove(&old).and_then(|l| l.agent.name().map(str::to_owned)) {
+                    agent.rename(&name);
+                }
+                let _ = self.journal.forget(&old);
+            }
+        }
+        let _ = self.journal.save(&agent);
         let dto = AgentDto::from_agent(&agent, &workspace, now());
-        let live = Live { agent, workspace, process: Some(Arc::new(process)) };
-        self.live.lock().map_err(|e| e.to_string())?.insert(id, live);
+        live.insert(id, Live { agent, workspace, process: Some(Arc::new(process)) });
+        drop(live);
         self.publish();
         Ok(dto)
     }
@@ -135,6 +170,9 @@ impl AgentRegistry {
                 entry.process = None;
             }
             let after = entry.agent.status();
+            if after != before {
+                let _ = self.journal.save(&entry.agent);
+            }
             (after != before && after.is_waiting_on_me()).then(|| (after, entry.workspace.project_name().to_owned()))
         };
         if let Some((status, project)) = now_waiting {
@@ -156,6 +194,39 @@ impl AgentRegistry {
             _ => "a fini son tour",
         };
         let _ = self.app.notification().builder().title(project).body(reason).show();
+    }
+
+    pub fn rename(&self, id: &AgentId, name: &str) -> Result<(), String> {
+        {
+            let mut live = self.live.lock().map_err(|e| e.to_string())?;
+            let entry = live.get_mut(id).ok_or("agent inconnu")?;
+            entry.agent.rename(name);
+            self.journal.save(&entry.agent).map_err(|e| e.to_string())?;
+        }
+        self.publish();
+        Ok(())
+    }
+
+    /// Ferme l'onglet d'un agent terminé ; sa session reste dans l'historique.
+    pub fn forget(&self, id: &AgentId) -> Result<(), String> {
+        {
+            let mut live = self.live.lock().map_err(|e| e.to_string())?;
+            if live.get(id).is_some_and(|l| l.process.is_some()) {
+                return Err("agent encore en cours : arrête-le d'abord".into());
+            }
+            live.remove(id);
+            self.journal.forget(id).map_err(|e| e.to_string())?;
+        }
+        self.publish();
+        Ok(())
+    }
+
+    /// Noms donnés aux onglets, par session Claude Code : l'historique les affiche aussi.
+    pub fn names_by_session(&self) -> HashMap<String, String> {
+        let Ok(live) = self.live.lock() else { return HashMap::new() };
+        live.values()
+            .filter_map(|l| Some((l.agent.session_id().to_owned(), l.agent.name()?.to_owned())))
+            .collect()
     }
 
     pub fn mark_seen(&self, id: &AgentId) {
