@@ -5,6 +5,7 @@
   import { ago, duration, shortPath, tokens } from '../lib/format';
   import StatusBadge from '../components/StatusBadge.svelte';
   import MrBadge from '../components/MrBadge.svelte';
+  import ModeBadge from '../components/ModeBadge.svelte';
   import Icon from '../components/Icon.svelte';
 
   let container: HTMLDivElement | undefined = $state();
@@ -54,6 +55,7 @@
               </div>
               <div class="line sub">
                 <StatusBadge status={a.status} />
+                <ModeBadge mode={a.permissionMode} permissive={a.permissive} compact />
                 {#if a.lastTool}<span class="mono muted ellipsis">· {a.lastTool}</span>{/if}
               </div>
             </button>
@@ -65,6 +67,7 @@
         <div class="term-wrap">
           <div class="term-bar">
             <StatusBadge status={active.status} />
+            <ModeBadge mode={active.permissionMode} permissive={active.permissive} />
             <span class="mono muted ellipsis">{shortPath(active.projectPath, app.env?.home ?? '')}</span>
             {#if session?.gitBranch}
               <span class="branch mono"><Icon name="branch" size={12} /> {session.gitBranch}</span>

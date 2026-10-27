@@ -11,7 +11,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use robiade_core::agents::{AgentEvent, AgentId};
+use robiade_core::agents::{AgentEvent, AgentId, PermissionMode};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -26,6 +26,8 @@ struct Relayed {
     event: String,
     tool: Option<String>,
     notification: Option<String>,
+    #[serde(default)]
+    permission_mode: Option<String>,
 }
 
 /// Événements déclarés dans le `--settings` passé à chaque agent.
@@ -76,6 +78,7 @@ fn relayed_from(hook_input: &str, agent_id: String) -> Option<Relayed> {
         event: field("hook_event_name")?,
         tool: field("tool_name"),
         notification: field("notification_type"),
+        permission_mode: field("permission_mode"),
     })
 }
 
@@ -107,7 +110,10 @@ fn peer_is_me(stream: &UnixStream) -> bool {
 }
 
 /// Écoute le socket et appelle `on_event` pour chaque événement reconnu.
-pub fn serve(socket: &Path, on_event: impl Fn(AgentId, AgentEvent) + Send + Sync + 'static) -> std::io::Result<PathBuf> {
+pub fn serve(
+    socket: &Path,
+    on_event: impl Fn(AgentId, AgentEvent, Option<PermissionMode>) + Send + Sync + 'static,
+) -> std::io::Result<PathBuf> {
     if let Some(dir) = socket.parent() {
         std::fs::create_dir_all(dir)?;
         std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
@@ -132,7 +138,7 @@ pub fn serve(socket: &Path, on_event: impl Fn(AgentId, AgentEvent) + Send + Sync
                 let (Ok(id), Some(event)) = (AgentId::parse(&relayed.agent_id), translate(&relayed)) else {
                     return;
                 };
-                on_event(id, event);
+                on_event(id, event, relayed.permission_mode.as_deref().and_then(PermissionMode::parse));
             });
         }
     });
@@ -149,19 +155,21 @@ mod tests {
         let socket = std::env::temp_dir().join(format!("robiade-hooks-{}/h.sock", std::process::id()));
         let (tx, rx) = mpsc::channel();
         let tx = std::sync::Mutex::new(tx);
-        serve(&socket, move |id, e| tx.lock().unwrap().send((id, e)).unwrap()).unwrap();
+        serve(&socket, move |id, e, mode| tx.lock().unwrap().send((id, e, mode)).unwrap()).unwrap();
         let mut stream = UnixStream::connect(&socket).unwrap();
         let msg = Relayed {
             agent_id: "0b6f1c2e-6b1d-4a5e-9c33-2f1e8d7a4b10".into(),
             event: "PreToolUse".into(),
             tool: Some("Bash".into()),
             notification: None,
+            permission_mode: Some("acceptEdits".into()),
         };
         serde_json::to_writer(&mut stream, &msg).unwrap();
         drop(stream);
-        let (id, event) = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let (id, event, mode) = rx.recv_timeout(Duration::from_secs(2)).unwrap();
         assert_eq!(id.as_str(), "0b6f1c2e-6b1d-4a5e-9c33-2f1e8d7a4b10");
         assert_eq!(event, AgentEvent::ToolStarted { tool: "Bash".into() });
+        assert_eq!(mode.unwrap().as_str(), "acceptEdits");
         assert_eq!(std::fs::metadata(&socket).unwrap().permissions().mode() & 0o777, 0o600);
     }
 

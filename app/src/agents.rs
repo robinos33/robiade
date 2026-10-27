@@ -8,7 +8,7 @@ use base64::Engine;
 use robiade_adapters::hooks;
 use robiade_adapters::pty::{AgentProcess, LaunchSpec};
 use robiade_adapters::shell_env::LoginEnv;
-use robiade_core::agents::{Agent, AgentEvent, AgentId};
+use robiade_core::agents::{Agent, AgentEvent, AgentId, PermissionMode};
 use tauri::{AppHandle, Emitter};
 
 use crate::dto::{AgentDto, AgentOutput};
@@ -88,11 +88,18 @@ impl AgentRegistry {
     }
 
     pub fn apply(&self, id: &AgentId, event: AgentEvent) {
+        self.observe(id, event, None);
+    }
+
+    pub fn observe(&self, id: &AgentId, event: AgentEvent, mode: Option<PermissionMode>) {
         let ended = matches!(event, AgentEvent::ProcessExited);
         {
             let Ok(mut live) = self.live.lock() else { return };
             // Un événement d'un agent inconnu (session hors Robiade, agent déjà retiré) est ignoré.
             let Some(entry) = live.get_mut(id) else { return };
+            if let Some(mode) = mode {
+                entry.agent.observe_permission_mode(mode);
+            }
             entry.agent.apply(event, now());
             if ended {
                 entry.process = None;

@@ -31,6 +31,28 @@ impl AgentId {
 #[error("identifiant d'agent invalide")]
 pub struct InvalidAgentId;
 
+/// Mode de permission de Claude Code (`default`, `acceptEdits`, `plan`, `auto`, `bypassPermissions`…),
+/// tel que rapporté par les hooks. Les modes inconnus sont gardés tels quels : le CLI en ajoute.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PermissionMode(String);
+
+impl PermissionMode {
+    /// Un identifiant court en lettres ASCII ; toute autre valeur est ignorée.
+    pub fn parse(raw: &str) -> Option<Self> {
+        let well_formed = (1..=32).contains(&raw.len()) && raw.chars().all(|c| c.is_ascii_alphabetic());
+        well_formed.then(|| Self(raw.to_owned()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// L'agent agit sans me demander : indicateur de sécurité, pas de confort.
+    pub fn is_permissive(&self) -> bool {
+        matches!(self.0.as_str(), "auto" | "bypassPermissions")
+    }
+}
+
 /// Événement de cycle de vie, traduit depuis les hooks Claude Code par l'adapter.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentEvent {
@@ -97,6 +119,7 @@ pub struct Agent {
     waited_ms: Millis,
     tool_calls: u32,
     last_tool: Option<String>,
+    permission_mode: Option<PermissionMode>,
     resumed_from: Option<String>,
 }
 
@@ -112,6 +135,7 @@ impl Agent {
             waited_ms: 0,
             tool_calls: 0,
             last_tool: None,
+            permission_mode: None,
             resumed_from,
         }
     }
@@ -125,6 +149,11 @@ impl Agent {
         self.track_waiting(next, now);
         self.status = next;
         self.last_activity_at = now;
+    }
+
+    /// Le mode peut changer en cours de session (`Shift+Tab`) : le dernier rapporté fait foi.
+    pub fn observe_permission_mode(&mut self, mode: PermissionMode) {
+        self.permission_mode = Some(mode);
     }
 
     /// J'ai ouvert la session : un tour terminé n'est plus « non lu ».
@@ -172,6 +201,9 @@ impl Agent {
     pub fn last_tool(&self) -> Option<&str> {
         self.last_tool.as_deref()
     }
+    pub fn permission_mode(&self) -> Option<&PermissionMode> {
+        self.permission_mode.as_ref()
+    }
     pub fn resumed_from(&self) -> Option<&str> {
         self.resumed_from.as_deref()
     }
@@ -191,6 +223,15 @@ mod tests {
         assert!(AgentId::parse("0b6f1c2e-6b1d-4a5e-9c33-2f1e8d7a4b10").is_ok());
         assert_eq!(AgentId::parse("'; rm -rf / #"), Err(InvalidAgentId));
         assert_eq!(AgentId::parse("0b6f1c2e06b1d04a5e09c3302f1e8d7a4b10"), Err(InvalidAgentId));
+    }
+
+    #[test]
+    fn permission_mode_is_a_short_identifier_and_only_auto_or_bypass_is_permissive() {
+        assert!(PermissionMode::parse("bypassPermissions").unwrap().is_permissive());
+        assert!(PermissionMode::parse("auto").unwrap().is_permissive());
+        assert!(!PermissionMode::parse("acceptEdits").unwrap().is_permissive());
+        assert_eq!(PermissionMode::parse(""), None);
+        assert_eq!(PermissionMode::parse("<script>"), None);
     }
 
     #[test]

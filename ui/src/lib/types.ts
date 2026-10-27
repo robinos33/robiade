@@ -13,6 +13,8 @@ export interface Agent {
   waitedMs: number;
   toolCalls: number;
   lastTool: string | null;
+  permissionMode: string | null;
+  permissive: boolean;
   resumedFrom: string | null;
 }
 

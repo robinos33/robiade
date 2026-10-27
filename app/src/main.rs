@@ -63,7 +63,7 @@ fn main() {
                 data_dir.join("hooks.sock"),
             ));
             let on_event = registry.clone();
-            hooks::serve(registry.socket(), move |id, event| on_event.apply(&id, event))?;
+            hooks::serve(registry.socket(), move |id, event, mode| on_event.observe(&id, event, mode))?;
 
             app.manage(AppState {
                 transcripts: Arc::new(TranscriptStore::new(home.join(".claude").join("projects"))),

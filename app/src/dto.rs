@@ -28,6 +28,8 @@ pub struct AgentDto {
     pub waited_ms: i64,
     pub tool_calls: u32,
     pub last_tool: Option<String>,
+    pub permission_mode: Option<String>,
+    pub permissive: bool,
     pub resumed_from: Option<String>,
 }
 
@@ -53,6 +55,8 @@ impl AgentDto {
             waited_ms: a.waited_ms(now),
             tool_calls: a.tool_calls(),
             last_tool: a.last_tool().map(str::to_owned),
+            permission_mode: a.permission_mode().map(|m| m.as_str().to_owned()),
+            permissive: a.permission_mode().is_some_and(|m| m.is_permissive()),
             resumed_from: a.resumed_from().map(str::to_owned),
         }
     }
