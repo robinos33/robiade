@@ -4,6 +4,7 @@ use std::cmp::Reverse;
 use std::collections::BTreeMap;
 
 use crate::history::{SessionSummary, TokenUsage};
+use crate::pricing::{self, Estimate};
 use crate::Millis;
 
 const DAY_MS: Millis = 86_400_000;
@@ -21,13 +22,23 @@ pub struct ProjectActivity {
     pub project_path: String,
     pub sessions: u32,
     pub tokens: TokenUsage,
+    pub cost: Estimate,
     pub last_activity_at: Millis,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ModelActivity {
+    pub model: String,
+    pub tokens: TokenUsage,
+    /// `None` si le modèle n'est pas dans la grille tarifaire.
+    pub cost: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct Overview {
     pub sessions: u32,
     pub tokens: TokenUsage,
+    pub cost: Estimate,
     pub tool_calls: u64,
     pub merge_requests: u32,
     /// Du premier au dernier message ; une session laissée ouverte une nuit compte sa nuit.
@@ -35,6 +46,7 @@ pub struct Overview {
     /// Jours consécutifs, de `from_day` à aujourd'hui inclus, y compris les jours vides.
     pub days: Vec<DayActivity>,
     pub projects: Vec<ProjectActivity>,
+    pub models: Vec<ModelActivity>,
     pub tools: Vec<(String, u64)>,
 }
 
@@ -57,11 +69,17 @@ pub fn overview(
     let mut projects: BTreeMap<String, ProjectActivity> = BTreeMap::new();
     let mut tools: BTreeMap<&str, u64> = BTreeMap::new();
     let mut durations: Vec<Millis> = Vec::new();
+    let mut models: BTreeMap<&str, TokenUsage> = BTreeMap::new();
 
     for s in sessions.iter().filter(|s| local_day(s.last_activity_at) >= from_day) {
         out.sessions += 1;
         out.tokens.add(&s.tokens);
         durations.push((s.last_activity_at - s.started_at).max(0));
+        let cost = session_cost(s);
+        out.cost.add(cost);
+        for (model, usage) in &s.tokens_by_model {
+            models.entry(model).or_default().add(usage);
+        }
         out.merge_requests += u32::from(s.merge_request_url.is_some());
         if let Some(d) = days.get_mut(&local_day(s.started_at.max(now - window_days * DAY_MS))) {
             d.sessions += 1;
@@ -74,6 +92,7 @@ pub fn overview(
         });
         p.sessions += 1;
         p.tokens.add(&s.tokens);
+        p.cost.add(cost);
         p.last_activity_at = p.last_activity_at.max(s.last_activity_at);
         for (name, count) in &s.tools {
             *tools.entry(name).or_default() += u64::from(*count);
@@ -86,9 +105,23 @@ pub fn overview(
     out.days = days.into_values().collect();
     out.projects = projects.into_values().collect();
     out.projects.sort_by_key(|p| Reverse(p.tokens.total()));
+    out.models = models
+        .into_iter()
+        .map(|(model, tokens)| ModelActivity {
+            model: model.to_owned(),
+            cost: pricing::price_of(model).map(|p| pricing::cost(&tokens, &p)),
+            tokens,
+        })
+        .collect();
+    out.models.sort_by_key(|m| Reverse(m.tokens.total()));
     out.tools = tools.into_iter().map(|(n, c)| (n.to_owned(), c)).collect();
     out.tools.sort_by_key(|t| Reverse(t.1));
     out
+}
+
+/// Coût estimé d'une session, sous-agents compris.
+pub fn session_cost(s: &SessionSummary) -> Estimate {
+    Estimate::of(s.tokens_by_model.iter().map(|(m, u)| (m.as_str(), u)))
 }
 
 /// Médiane d'une liste triée ; moyenne des deux valeurs centrales pour un nombre pair.
@@ -138,6 +171,24 @@ mod tests {
         assert_eq!(o.days[5].sessions, 1);
         assert_eq!(o.tools[0], ("Read".into(), 4));
         assert_eq!(o.projects[0].project_path, "b");
+    }
+
+    #[test]
+    fn costs_add_up_by_project_and_by_model() {
+        let now = 10 * DAY_MS;
+        let usage = TokenUsage { output: 1_000_000, ..Default::default() };
+        let mut a = session("a", now, 0, &[]);
+        a.tokens_by_model =
+            vec![("claude-opus-5-5".into(), usage.clone()), ("claude-haiku-4-5-20251001".into(), usage.clone())];
+        let mut b = session("b", now, 0, &[]);
+        b.tokens_by_model = vec![("claude-opus-5-5".into(), usage.clone()), ("modele-inconnu".into(), usage)];
+        let o = overview(&[a, b], str::to_owned, now, 0, 7);
+        assert!((o.cost.dollars - (20.0 + 5.0 + 20.0)).abs() < 1e-9);
+        assert_eq!(o.cost.unpriced_tokens, 1_000_000);
+        assert_eq!(o.models[0].model, "claude-opus-5-5");
+        assert_eq!(o.models.iter().find(|m| m.model == "modele-inconnu").unwrap().cost, None);
+        let project_a = o.projects.iter().find(|p| p.project_path == "a").unwrap();
+        assert!((project_a.cost.dollars - 25.0).abs() < 1e-9);
     }
 
     #[test]
