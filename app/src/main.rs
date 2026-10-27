@@ -13,7 +13,7 @@ use robiade_adapters::sqlite_agents::SqliteAgentJournal;
 use robiade_adapters::sqlite_search::SearchIndex;
 use robiade_adapters::workspace::WorkspaceResolver;
 use robiade_adapters::sqlite_tasks::SqliteTaskRepository;
-use robiade_adapters::{hooks, shell_env};
+use robiade_adapters::{backup, hooks, shell_env};
 use tauri::{Emitter, Manager};
 
 pub struct AppState {
@@ -96,7 +96,16 @@ fn main() {
             hooks::serve(registry.socket(), move |id, observation| on_event.observe(&id, observation))?;
 
             let transcripts = Arc::new(TranscriptStore::new(home.join(".claude").join("projects")));
-            let search = Arc::new(SearchIndex::open(&data_dir.join("cache.db"))?);
+            // L'index recopie le texte des transcripts : il vit dans le cache, exclu de Time Machine.
+            let cache_dir = app.path().app_cache_dir()?;
+            std::fs::create_dir_all(&cache_dir)?;
+            if let Err(e) = backup::exclude_from_backups(&cache_dir) {
+                eprintln!("index de recherche non exclu de Time Machine : {e}");
+            }
+            for old in ["cache.db", "cache.db-wal", "cache.db-shm"] {
+                let _ = std::fs::remove_file(data_dir.join(old));
+            }
+            let search = Arc::new(SearchIndex::open(&cache_dir.join("cache.db"))?);
             // Premier remplissage de l'index en tâche de fond : l'interface n'attend pas.
             let (warm_store, warm_index) = (transcripts.clone(), search.clone());
             std::thread::spawn(move || warm_index.sync(&warm_store.transcript_files()));
