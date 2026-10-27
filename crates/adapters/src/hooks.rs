@@ -1,8 +1,8 @@
 //! Canal hooks Claude Code → Robiade.
 //!
-//! Claude Code exécute `robiade hook` à chaque événement ; ce relais lit l'entrée JSON du hook,
-//! n'en garde que les champs utiles et les pousse sur un socket Unix réservé à mon utilisateur.
-//! Aucun port réseau n'est ouvert.
+//! Claude Code exécute `robiade hook` à chaque événement, et `robiade statusline` à chaque
+//! rafraîchissement de la statusline ; ce relais lit l'entrée JSON, n'en garde que les champs
+//! utiles et les pousse sur un socket Unix réservé à mon utilisateur. Aucun port réseau n'est ouvert.
 
 use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
@@ -11,7 +11,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use robiade_core::agents::{AgentEvent, AgentId, PermissionMode};
+use robiade_core::agents::{AgentEvent, AgentId, Gauges, PermissionMode};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -28,6 +28,29 @@ struct Relayed {
     notification: Option<String>,
     #[serde(default)]
     permission_mode: Option<String>,
+    #[serde(default)]
+    gauges: Option<RelayedGauges>,
+}
+
+/// Pseudo-événement porté par les relevés de la statusline.
+const STATUS_LINE: &str = "StatusLine";
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct RelayedGauges {
+    model: Option<String>,
+    context_percent: Option<u8>,
+    context_tokens: Option<u64>,
+    context_window: Option<u64>,
+    five_hour_percent: Option<u8>,
+    five_hour_resets_at: Option<i64>,
+    week_percent: Option<u8>,
+}
+
+/// Ce que Robiade observe d'un agent par le socket.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Observation {
+    Event { event: AgentEvent, permission_mode: Option<PermissionMode> },
+    Gauges(Gauges),
 }
 
 /// Événements déclarés dans le `--settings` passé à chaque agent.
@@ -44,17 +67,30 @@ pub const HOOK_EVENTS: &[&str] = &[
     "SessionEnd",
 ];
 
-/// JSON de `--settings` : les hooks de Robiade n'existent que pour ses propres agents.
-pub fn settings_json(relay_command: &str) -> String {
-    let hook = serde_json::json!([{ "hooks": [{ "type": "command", "command": relay_command, "timeout": 5 }] }]);
+/// JSON de `--settings` : les hooks et la statusline de Robiade n'existent que pour ses propres agents.
+/// `relay` est le binaire Robiade, déjà échappé pour le shell qui exécute les commandes.
+pub fn settings_json(relay: &str) -> String {
+    let command = format!("{relay} hook");
+    let hook = serde_json::json!([{ "hooks": [{ "type": "command", "command": command, "timeout": 5 }] }]);
     let hooks: serde_json::Map<String, Value> =
         HOOK_EVENTS.iter().map(|e| ((*e).to_owned(), hook.clone())).collect();
-    serde_json::json!({ "hooks": hooks }).to_string()
+    let status_line = serde_json::json!({ "type": "command", "command": format!("{relay} statusline"), "padding": 0 });
+    serde_json::json!({ "hooks": hooks, "statusLine": status_line }).to_string()
 }
 
 /// Côté relais (`robiade hook`). Ne doit jamais bloquer ni faire échouer Claude Code :
 /// toute erreur est avalée, le code de sortie reste 0.
 pub fn relay_from_stdin() {
+    relay_with(relayed_from);
+}
+
+/// Côté relais (`robiade statusline`). N'écrit rien : la barre est dessinée par Robiade,
+/// pas dans le terminal.
+pub fn relay_status_from_stdin() {
+    relay_with(status_from);
+}
+
+fn relay_with(read: fn(&str, String) -> Option<Relayed>) {
     let (Ok(socket), Ok(agent_id)) = (std::env::var(ENV_SOCKET), std::env::var(ENV_AGENT_ID)) else {
         return;
     };
@@ -62,11 +98,35 @@ pub fn relay_from_stdin() {
     if std::io::stdin().take(16 * 1024 * 1024).read_to_string(&mut input).is_err() {
         return;
     }
-    let Some(message) = relayed_from(&input, agent_id) else { return };
+    let Some(message) = read(&input, agent_id) else { return };
     let Ok(mut stream) = UnixStream::connect(socket) else { return };
     let _ = stream.set_write_timeout(Some(Duration::from_secs(1)));
     let _ = serde_json::to_writer(&mut stream, &message);
     let _ = stream.flush();
+}
+
+/// Extrait de l'entrée de la statusline les jauges affichées par Robiade.
+fn status_from(input: &str, agent_id: String) -> Option<Relayed> {
+    let v = serde_json::from_str::<Value>(input).ok()?;
+    let at = |path: &str| v.pointer(path);
+    let percent = |path: &str| at(path).and_then(Value::as_f64).map(|p| p.clamp(0.0, 100.0).round() as u8);
+    let gauges = RelayedGauges {
+        model: at("/model/display_name").and_then(Value::as_str).map(|m| m.chars().take(40).collect()),
+        context_percent: percent("/context_window/used_percentage"),
+        context_tokens: at("/context_window/total_input_tokens").and_then(Value::as_u64),
+        context_window: at("/context_window/context_window_size").and_then(Value::as_u64),
+        five_hour_percent: percent("/rate_limits/five_hour/used_percentage"),
+        five_hour_resets_at: at("/rate_limits/five_hour/resets_at").and_then(Value::as_i64).map(|s| s * 1000),
+        week_percent: percent("/rate_limits/seven_day/used_percentage"),
+    };
+    Some(Relayed {
+        agent_id,
+        event: STATUS_LINE.to_owned(),
+        tool: None,
+        notification: None,
+        permission_mode: None,
+        gauges: Some(gauges),
+    })
 }
 
 /// Extrait de l'entrée d'un hook les seuls champs utiles à Robiade.
@@ -79,7 +139,26 @@ fn relayed_from(hook_input: &str, agent_id: String) -> Option<Relayed> {
         tool: field("tool_name"),
         notification: field("notification_type"),
         permission_mode: field("permission_mode"),
+        gauges: None,
     })
+}
+
+fn observe(r: Relayed) -> Option<Observation> {
+    if r.event == STATUS_LINE {
+        let g = r.gauges?;
+        return Some(Observation::Gauges(Gauges {
+            model: g.model,
+            context_percent: g.context_percent.map(|p| p.min(100)),
+            context_tokens: g.context_tokens,
+            context_window: g.context_window,
+            five_hour_percent: g.five_hour_percent.map(|p| p.min(100)),
+            five_hour_resets_at: g.five_hour_resets_at,
+            week_percent: g.week_percent.map(|p| p.min(100)),
+        }));
+    }
+    let event = translate(&r)?;
+    let permission_mode = r.permission_mode.as_deref().and_then(PermissionMode::parse);
+    Some(Observation::Event { event, permission_mode })
 }
 
 fn translate(r: &Relayed) -> Option<AgentEvent> {
@@ -109,11 +188,8 @@ fn peer_is_me(stream: &UnixStream) -> bool {
     ok && uid == unsafe { libc::getuid() }
 }
 
-/// Écoute le socket et appelle `on_event` pour chaque événement reconnu.
-pub fn serve(
-    socket: &Path,
-    on_event: impl Fn(AgentId, AgentEvent, Option<PermissionMode>) + Send + Sync + 'static,
-) -> std::io::Result<PathBuf> {
+/// Écoute le socket et appelle `on_event` pour chaque observation reconnue.
+pub fn serve(socket: &Path, on_event: impl Fn(AgentId, Observation) + Send + Sync + 'static) -> std::io::Result<PathBuf> {
     if let Some(dir) = socket.parent() {
         std::fs::create_dir_all(dir)?;
         std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
@@ -135,10 +211,10 @@ pub fn serve(
                     return;
                 }
                 let Ok(relayed) = serde_json::from_str::<Relayed>(&raw) else { return };
-                let (Ok(id), Some(event)) = (AgentId::parse(&relayed.agent_id), translate(&relayed)) else {
-                    return;
-                };
-                on_event(id, event, relayed.permission_mode.as_deref().and_then(PermissionMode::parse));
+                let Ok(id) = AgentId::parse(&relayed.agent_id) else { return };
+                if let Some(observation) = observe(relayed) {
+                    on_event(id, observation);
+                }
             });
         }
     });
@@ -155,7 +231,7 @@ mod tests {
         let socket = std::env::temp_dir().join(format!("robiade-hooks-{}/h.sock", std::process::id()));
         let (tx, rx) = mpsc::channel();
         let tx = std::sync::Mutex::new(tx);
-        serve(&socket, move |id, e, mode| tx.lock().unwrap().send((id, e, mode)).unwrap()).unwrap();
+        serve(&socket, move |id, o| tx.lock().unwrap().send((id, o)).unwrap()).unwrap();
         let mut stream = UnixStream::connect(&socket).unwrap();
         let msg = Relayed {
             agent_id: "0b6f1c2e-6b1d-4a5e-9c33-2f1e8d7a4b10".into(),
@@ -163,13 +239,19 @@ mod tests {
             tool: Some("Bash".into()),
             notification: None,
             permission_mode: Some("acceptEdits".into()),
+            gauges: None,
         };
         serde_json::to_writer(&mut stream, &msg).unwrap();
         drop(stream);
-        let (id, event, mode) = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let (id, observation) = rx.recv_timeout(Duration::from_secs(2)).unwrap();
         assert_eq!(id.as_str(), "0b6f1c2e-6b1d-4a5e-9c33-2f1e8d7a4b10");
-        assert_eq!(event, AgentEvent::ToolStarted { tool: "Bash".into() });
-        assert_eq!(mode.unwrap().as_str(), "acceptEdits");
+        assert_eq!(
+            observation,
+            Observation::Event {
+                event: AgentEvent::ToolStarted { tool: "Bash".into() },
+                permission_mode: PermissionMode::parse("acceptEdits"),
+            }
+        );
         assert_eq!(std::fs::metadata(&socket).unwrap().permissions().mode() & 0o777, 0o600);
     }
 
@@ -188,16 +270,31 @@ mod tests {
         let inputs: Vec<&str> = include_str!("../fixtures/hooks-2.1.311.jsonl").lines().collect();
         assert_eq!(inputs.len(), expected.len());
         for (input, (event, mode)) in inputs.into_iter().zip(expected) {
-            let relayed = relayed_from(input, "id".into()).unwrap();
-            assert_eq!(translate(&relayed), Some(event));
-            assert_eq!(relayed.permission_mode.as_deref(), mode);
+            let observed = observe(relayed_from(input, "id".into()).unwrap());
+            let permission_mode = mode.and_then(PermissionMode::parse);
+            assert_eq!(observed, Some(Observation::Event { event, permission_mode }));
         }
     }
 
     #[test]
-    fn settings_declare_every_hook() {
-        let v: Value = serde_json::from_str(&settings_json("'/x/robiade' hook")).unwrap();
+    fn reads_the_gauges_of_the_status_line() {
+        let input = r#"{"model":{"display_name":"Opus 5.5"},"context_window":{"used_percentage":42.6,
+            "total_input_tokens":85200,"context_window_size":200000},
+            "rate_limits":{"five_hour":{"used_percentage":130,"resets_at":1793120000},"seven_day":{}}}"#;
+        let Some(Observation::Gauges(g)) = observe(status_from(input, "id".into()).unwrap()) else { panic!() };
+        assert_eq!(g.model.as_deref(), Some("Opus 5.5"));
+        assert_eq!(g.context_percent, Some(43));
+        assert_eq!(g.context_window, Some(200_000));
+        assert_eq!(g.five_hour_percent, Some(100));
+        assert_eq!(g.five_hour_resets_at, Some(1_793_120_000_000));
+        assert_eq!(g.week_percent, None);
+    }
+
+    #[test]
+    fn settings_declare_every_hook_and_the_status_line() {
+        let v: Value = serde_json::from_str(&settings_json("'/x/robiade'")).unwrap();
         assert_eq!(v["hooks"].as_object().unwrap().len(), HOOK_EVENTS.len());
         assert_eq!(v["hooks"]["Stop"][0]["hooks"][0]["command"], "'/x/robiade' hook");
+        assert_eq!(v["statusLine"]["command"], "'/x/robiade' statusline");
     }
 }

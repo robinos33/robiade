@@ -53,6 +53,38 @@ impl PermissionMode {
     }
 }
 
+/// Jauges rapportées par la statusline de Claude Code : modèle, contexte, quotas.
+/// Chaque champ est optionnel : le JSON de la statusline n'est pas un contrat stable.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Gauges {
+    pub model: Option<String>,
+    pub context_percent: Option<u8>,
+    pub context_tokens: Option<u64>,
+    pub context_window: Option<u64>,
+    /// Quotas du compte, pas de la session : le dernier agent à les rapporter fait foi.
+    pub five_hour_percent: Option<u8>,
+    pub five_hour_resets_at: Option<Millis>,
+    pub week_percent: Option<u8>,
+}
+
+/// Seuils de ma statusline : sous 50 % tout va bien, à partir de 80 % il faut agir.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Level {
+    Comfortable,
+    Watch,
+    Critical,
+}
+
+impl Level {
+    pub fn of(percent: u8) -> Self {
+        match percent {
+            0..=49 => Self::Comfortable,
+            50..=79 => Self::Watch,
+            _ => Self::Critical,
+        }
+    }
+}
+
 /// Événement de cycle de vie, traduit depuis les hooks Claude Code par l'adapter.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentEvent {
@@ -126,6 +158,7 @@ pub struct Agent {
     tool_calls: u32,
     last_tool: Option<String>,
     permission_mode: Option<PermissionMode>,
+    gauges: Gauges,
     resumed_from: Option<String>,
 }
 
@@ -142,6 +175,7 @@ impl Agent {
             tool_calls: 0,
             last_tool: None,
             permission_mode: None,
+            gauges: Gauges::default(),
             resumed_from,
         }
     }
@@ -160,6 +194,11 @@ impl Agent {
     /// Le mode peut changer en cours de session (`Shift+Tab`) : le dernier rapporté fait foi.
     pub fn observe_permission_mode(&mut self, mode: PermissionMode) {
         self.permission_mode = Some(mode);
+    }
+
+    /// La statusline est rafraîchie en continu : le dernier relevé remplace le précédent.
+    pub fn observe_gauges(&mut self, gauges: Gauges) {
+        self.gauges = gauges;
     }
 
     /// J'ai ouvert la session : un tour terminé n'est plus « non lu ».
@@ -210,6 +249,9 @@ impl Agent {
     pub fn permission_mode(&self) -> Option<&PermissionMode> {
         self.permission_mode.as_ref()
     }
+    pub fn gauges(&self) -> &Gauges {
+        &self.gauges
+    }
     pub fn resumed_from(&self) -> Option<&str> {
         self.resumed_from.as_deref()
     }
@@ -238,6 +280,13 @@ mod tests {
         assert!(!PermissionMode::parse("acceptEdits").unwrap().is_permissive());
         assert_eq!(PermissionMode::parse(""), None);
         assert_eq!(PermissionMode::parse("<script>"), None);
+    }
+
+    #[test]
+    fn levels_follow_the_statusline_thresholds() {
+        assert_eq!(Level::of(49), Level::Comfortable);
+        assert_eq!(Level::of(50), Level::Watch);
+        assert_eq!(Level::of(80), Level::Critical);
     }
 
     #[test]

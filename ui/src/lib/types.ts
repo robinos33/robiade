@@ -15,7 +15,21 @@ export interface Agent {
   lastTool: string | null;
   permissionMode: string | null;
   permissive: boolean;
+  gauges: Gauges;
   resumedFrom: string | null;
+}
+
+export interface Gauge { percent: number; level: 'comfortable' | 'watch' | 'critical' }
+
+/** Relevés de la statusline de Claude Code ; tout peut manquer avant le premier rafraîchissement. */
+export interface Gauges {
+  model: string | null;
+  context: Gauge | null;
+  contextTokens: number | null;
+  contextWindow: number | null;
+  fiveHour: Gauge | null;
+  fiveHourResetsAt: number | null;
+  week: Gauge | null;
 }
 
 export interface Tokens { input: number; output: number; cacheRead: number; cacheCreation: number; total: number }

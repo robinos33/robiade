@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use base64::Engine;
-use robiade_adapters::hooks;
+use robiade_adapters::hooks::{self, Observation};
 use robiade_adapters::pty::{AgentProcess, LaunchSpec};
 use robiade_adapters::shell_env::LoginEnv;
 use robiade_core::agents::{Agent, AgentEvent, AgentId, AgentStatus, PermissionMode};
@@ -50,7 +50,7 @@ impl AgentRegistry {
         let claude = self.login.claude.as_deref().ok_or("binaire `claude` introuvable dans le PATH du shell de login")?;
         let id = AgentId::parse(&uuid::Uuid::new_v4().to_string()).map_err(|e| e.to_string())?;
         let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-        let relay = format!("{} hook", shell_quote(&exe.to_string_lossy()));
+        let relay = shell_quote(&exe.to_string_lossy());
 
         let mut args = match &resume {
             Some(session) => vec!["--resume".to_owned(), session.as_str().to_owned()],
@@ -90,10 +90,25 @@ impl AgentRegistry {
     }
 
     pub fn apply(&self, id: &AgentId, event: AgentEvent) {
-        self.observe(id, event, None);
+        self.on_event(id, event, None);
     }
 
-    pub fn observe(&self, id: &AgentId, event: AgentEvent, mode: Option<PermissionMode>) {
+    pub fn observe(&self, id: &AgentId, observation: Observation) {
+        match observation {
+            Observation::Event { event, permission_mode } => self.on_event(id, event, permission_mode),
+            Observation::Gauges(gauges) => {
+                if let Ok(mut live) = self.live.lock() {
+                    match live.get_mut(id) {
+                        Some(entry) => entry.agent.observe_gauges(gauges),
+                        None => return,
+                    }
+                }
+                self.publish();
+            }
+        }
+    }
+
+    fn on_event(&self, id: &AgentId, event: AgentEvent, mode: Option<PermissionMode>) {
         let ended = matches!(event, AgentEvent::ProcessExited);
         let now_waiting = {
             let Ok(mut live) = self.live.lock() else { return };

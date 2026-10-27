@@ -1,6 +1,6 @@
 //! Objets échangés avec l'interface. Le front n'a aucune logique métier : il affiche ces DTO.
 
-use robiade_core::agents::{Agent, AgentStatus};
+use robiade_core::agents::{Agent, AgentStatus, Gauges, Level};
 use robiade_core::project;
 use robiade_core::history::{EntryKind, SearchHit, SessionSummary, TokenUsage, TranscriptEntry, HIT_END, HIT_START};
 use robiade_core::stats::Overview;
@@ -30,7 +30,54 @@ pub struct AgentDto {
     pub last_tool: Option<String>,
     pub permission_mode: Option<String>,
     pub permissive: bool,
+    pub gauges: GaugesDto,
     pub resumed_from: Option<String>,
+}
+
+/// Une jauge en pourcentage, avec son niveau calculé côté Rust.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GaugeDto {
+    pub percent: u8,
+    pub level: &'static str,
+}
+
+impl GaugeDto {
+    fn of(percent: Option<u8>) -> Option<Self> {
+        let percent = percent?;
+        let level = match Level::of(percent) {
+            Level::Comfortable => "comfortable",
+            Level::Watch => "watch",
+            Level::Critical => "critical",
+        };
+        Some(Self { percent, level })
+    }
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GaugesDto {
+    pub model: Option<String>,
+    pub context: Option<GaugeDto>,
+    pub context_tokens: Option<u64>,
+    pub context_window: Option<u64>,
+    pub five_hour: Option<GaugeDto>,
+    pub five_hour_resets_at: Option<i64>,
+    pub week: Option<GaugeDto>,
+}
+
+impl From<&Gauges> for GaugesDto {
+    fn from(g: &Gauges) -> Self {
+        Self {
+            model: g.model.clone(),
+            context: GaugeDto::of(g.context_percent),
+            context_tokens: g.context_tokens,
+            context_window: g.context_window,
+            five_hour: GaugeDto::of(g.five_hour_percent),
+            five_hour_resets_at: g.five_hour_resets_at,
+            week: GaugeDto::of(g.week_percent),
+        }
+    }
 }
 
 impl AgentDto {
@@ -57,6 +104,7 @@ impl AgentDto {
             last_tool: a.last_tool().map(str::to_owned),
             permission_mode: a.permission_mode().map(|m| m.as_str().to_owned()),
             permissive: a.permission_mode().is_some_and(|m| m.is_permissive()),
+            gauges: a.gauges().into(),
             resumed_from: a.resumed_from().map(str::to_owned),
         }
     }

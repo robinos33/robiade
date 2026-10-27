@@ -6,6 +6,7 @@
   import StatusBadge from '../components/StatusBadge.svelte';
   import MrBadge from '../components/MrBadge.svelte';
   import ModeBadge from '../components/ModeBadge.svelte';
+  import GaugeBar from '../components/GaugeBar.svelte';
   import Icon from '../components/Icon.svelte';
 
   let container: HTMLDivElement | undefined = $state();
@@ -82,6 +83,7 @@
               </button>
             {/if}
           </div>
+          <GaugeBar gauges={active.gauges} />
           <div class="term" bind:this={container}></div>
         </div>
 
@@ -96,13 +98,13 @@
               <dt>Tokens</dt><dd class="num">{tokens(session.tokens.total)}</dd>
               <dt>dont sortie</dt><dd class="num">{tokens(session.tokens.output)}</dd>
               <dt>Messages</dt><dd class="num">{session.userMessages} / {session.assistantMessages}</dd>
-              <dt>Modèle</dt><dd class="mono ellipsis">{session.models.at(-1) ?? '—'}</dd>
+              <dt>Modèle</dt><dd class="mono ellipsis">{active.gauges.model ?? session.models.at(-1) ?? '—'}</dd>
             {/if}
+            <dt>Contexte</dt><dd class="num">{active.gauges.context ? `${active.gauges.context.percent} %` : '—'}</dd>
           </dl>
           {#if !session}
             <p class="muted note">Tokens et modèle apparaissent dès que le transcript existe (après le premier échange).</p>
           {/if}
-          <p class="muted note">Contexte consommé : à venir, après le spike prévu en §10 de la spec.</p>
         </aside>
       {/if}
     </div>

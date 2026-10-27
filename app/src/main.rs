@@ -63,10 +63,11 @@ fn hold_quit(app: &tauri::AppHandle) -> bool {
 }
 
 fn main() {
-    // Le même binaire sert de relais aux hooks Claude Code : `robiade hook`.
-    if std::env::args().nth(1).as_deref() == Some("hook") {
-        hooks::relay_from_stdin();
-        return;
+    // Le même binaire sert de relais aux hooks et à la statusline de Claude Code.
+    match std::env::args().nth(1).as_deref() {
+        Some("hook") => return hooks::relay_from_stdin(),
+        Some("statusline") => return hooks::relay_status_from_stdin(),
+        _ => {}
     }
 
     tauri::Builder::default()
@@ -84,7 +85,7 @@ fn main() {
                 data_dir.join("hooks.sock"),
             ));
             let on_event = registry.clone();
-            hooks::serve(registry.socket(), move |id, event, mode| on_event.observe(&id, event, mode))?;
+            hooks::serve(registry.socket(), move |id, observation| on_event.observe(&id, observation))?;
 
             let transcripts = Arc::new(TranscriptStore::new(home.join(".claude").join("projects")));
             let search = Arc::new(SearchIndex::open(&data_dir.join("cache.db"))?);
