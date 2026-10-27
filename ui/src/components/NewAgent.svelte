@@ -7,13 +7,18 @@
   let index = $state(0);
   let input: HTMLInputElement | undefined = $state();
 
+  // Projets puis worktrees : un agent se lance aussi bien dans l'un que dans l'autre.
+  const targets = $derived([
+    ...app.projects.map((p) => ({ path: p.root, name: p.name, icon: 'folder', of: null as string | null })),
+    ...app.worktrees.map((w) => ({ path: w.path, name: w.name, icon: 'branch', of: w.projectName })),
+  ]);
   const choices = $derived(
-    app.projects.filter((p) => `${p.name} ${p.root}`.toLowerCase().includes(query.toLowerCase())).slice(0, 12),
+    targets.filter((t) => `${t.name} ${t.of ?? ''} ${t.path}`.toLowerCase().includes(query.toLowerCase())).slice(0, 12),
   );
 
   $effect(() => {
     input?.focus();
-    const current = app.projects.findIndex((p) => p.root === app.project);
+    const current = targets.findIndex((t) => t.path === (app.worktree ?? app.project));
     index = Math.max(0, current);
   });
 
@@ -22,7 +27,7 @@
     else if (e.key === 'ArrowUp') index = Math.max(index - 1, 0);
     else if (e.key === 'Enter') {
       const choice = choices[index];
-      if (choice) void app.spawn(choice.root);
+      if (choice) void app.spawn(choice.path);
     }
     else if (e.key === 'Escape') app.newAgentOpen = false;
     else return;
@@ -36,18 +41,19 @@
       <h2>Nouvel agent</h2>
       <p class="muted">Lance <span class="mono">claude</span> dans le projet choisi, dans un terminal intégré.</p>
     </header>
-    <input class="field" placeholder="Projet…" bind:value={query} bind:this={input} {onkeydown} oninput={() => (index = 0)} />
+    <input class="field" placeholder="Projet ou worktree…" bind:value={query} bind:this={input} {onkeydown} oninput={() => (index = 0)} />
     <ul>
-      {#each choices as p, i (p.root)}
+      {#each choices as t, i (t.path)}
         <li>
-          <button class:active={i === index} onmouseenter={() => (index = i)} onclick={() => app.spawn(p.root)}>
-            <Icon name="folder" size={14} />
-            <span class="name">{p.name}</span>
-            <span class="path mono muted">{shortPath(p.root, app.env?.home ?? '')}</span>
+          <button class:active={i === index} onmouseenter={() => (index = i)} onclick={() => app.spawn(t.path)}>
+            <Icon name={t.icon} size={14} />
+            <span class="name">{t.name}</span>
+            {#if t.of}<span class="muted">{t.of}</span>{/if}
+            <span class="path mono muted">{shortPath(t.path, app.env?.home ?? '')}</span>
           </button>
         </li>
       {:else}
-        <li class="muted none">Aucun projet connu ne correspond.</li>
+        <li class="muted none">Aucun projet ni worktree connu ne correspond.</li>
       {/each}
     </ul>
     {#if !app.env?.claudePath}
