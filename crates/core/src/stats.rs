@@ -3,6 +3,7 @@
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
 
+use crate::agents::Agent;
 use crate::history::{SessionSummary, TokenUsage};
 use crate::pricing::{self, Estimate};
 use crate::Millis;
@@ -119,6 +120,29 @@ pub fn overview(
     out
 }
 
+/// Ce que seuls les hooks savent, donc limité aux agents lancés dans Robiade.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AgentsOverview {
+    pub agents: u32,
+    /// Agents ayant eu au moins un tour en échec (`StopFailure`).
+    pub failed: u32,
+    /// Temps où un agent m'a attendu : permission et tour terminé non lu.
+    pub waited_ms: Millis,
+    pub permission_ms: Millis,
+}
+
+/// Agents actifs depuis `since` ; qui est le goulot, l'agent ou moi.
+pub fn agents_overview<'a>(agents: impl IntoIterator<Item = &'a Agent>, since: Millis, now: Millis) -> AgentsOverview {
+    let mut out = AgentsOverview::default();
+    for a in agents.into_iter().filter(|a| a.last_activity_at() >= since) {
+        out.agents += 1;
+        out.failed += u32::from(a.failed_turns() > 0);
+        out.waited_ms += a.waited_ms(now);
+        out.permission_ms += a.permission_ms(now);
+    }
+    out
+}
+
 /// Coût estimé d'une session, sous-agents compris.
 pub fn session_cost(s: &SessionSummary) -> Estimate {
     Estimate::of(s.tokens_by_model.iter().map(|(m, u)| (m.as_str(), u)))
@@ -189,6 +213,21 @@ mod tests {
         assert_eq!(o.models.iter().find(|m| m.model == "modele-inconnu").unwrap().cost, None);
         let project_a = o.projects.iter().find(|p| p.project_path == "a").unwrap();
         assert!((project_a.cost.dollars - 25.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn agents_overview_counts_failures_and_waits_within_the_window() {
+        use crate::agents::{AgentEvent, AgentId};
+        let id = |n: u8| AgentId::parse(&format!("0b6f1c2e-6b1d-4a5e-9c33-2f1e8d7a4b{n:02}")).unwrap();
+        let mut failed = Agent::start(id(1), "/p".into(), None, 100);
+        failed.apply(AgentEvent::PermissionRequested, 100);
+        failed.apply(AgentEvent::ToolFinished, 130);
+        failed.apply(AgentEvent::TurnFailed, 150);
+        let mut fine = Agent::start(id(2), "/p".into(), None, 100);
+        fine.apply(AgentEvent::TurnFinished, 160);
+        let old = Agent::start(id(3), "/p".into(), None, 10);
+        let o = agents_overview([&failed, &fine, &old], 50, 200);
+        assert_eq!(o, AgentsOverview { agents: 2, failed: 1, waited_ms: 30 + 40, permission_ms: 30 });
     }
 
     #[test]
