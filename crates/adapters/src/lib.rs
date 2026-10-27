@@ -6,3 +6,4 @@ pub mod pty;
 pub mod shell_env;
 pub mod sqlite_search;
 pub mod sqlite_tasks;
+pub mod workspace;

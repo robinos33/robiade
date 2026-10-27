@@ -8,8 +8,9 @@ use base64::Engine;
 use robiade_adapters::hooks::{self, Observation};
 use robiade_adapters::pty::{AgentProcess, LaunchSpec};
 use robiade_adapters::shell_env::LoginEnv;
+use robiade_adapters::workspace::WorkspaceResolver;
 use robiade_core::agents::{Agent, AgentEvent, AgentId, AgentStatus, PermissionMode};
-use robiade_core::project;
+use robiade_core::project::Workspace;
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_notification::NotificationExt;
 
@@ -18,11 +19,13 @@ use crate::now;
 
 struct Live {
     agent: Agent,
+    workspace: Workspace,
     process: Option<Arc<AgentProcess>>,
 }
 
 pub struct AgentRegistry {
     app: AppHandle,
+    workspaces: Arc<WorkspaceResolver>,
     login: LoginEnv,
     socket: PathBuf,
     live: Mutex<HashMap<AgentId, Live>>,
@@ -34,8 +37,8 @@ fn shell_quote(s: &str) -> String {
 }
 
 impl AgentRegistry {
-    pub fn new(app: AppHandle, login: LoginEnv, socket: PathBuf) -> Self {
-        Self { app, login, socket, live: Mutex::new(HashMap::new()) }
+    pub fn new(app: AppHandle, workspaces: Arc<WorkspaceResolver>, login: LoginEnv, socket: PathBuf) -> Self {
+        Self { app, workspaces, login, socket, live: Mutex::new(HashMap::new()) }
     }
 
     pub fn socket(&self) -> &Path {
@@ -82,9 +85,12 @@ impl AgentRegistry {
             move || exit_target.apply(&exit_id, AgentEvent::ProcessExited),
         )?;
 
-        let agent = Agent::start(id.clone(), cwd.to_string_lossy().into_owned(), resume.map(|r| r.as_str().to_owned()), now());
-        let dto = AgentDto::from_agent(&agent, now());
-        self.live.lock().map_err(|e| e.to_string())?.insert(id, Live { agent, process: Some(Arc::new(process)) });
+        let path = cwd.to_string_lossy().into_owned();
+        let workspace = self.workspaces.resolve(&path);
+        let agent = Agent::start(id.clone(), path, resume.map(|r| r.as_str().to_owned()), now());
+        let dto = AgentDto::from_agent(&agent, &workspace, now());
+        let live = Live { agent, workspace, process: Some(Arc::new(process)) };
+        self.live.lock().map_err(|e| e.to_string())?.insert(id, live);
         self.publish();
         Ok(dto)
     }
@@ -123,17 +129,17 @@ impl AgentRegistry {
                 entry.process = None;
             }
             let after = entry.agent.status();
-            (after != before && after.is_waiting_on_me()).then(|| (after, entry.agent.project_path().to_owned()))
+            (after != before && after.is_waiting_on_me()).then(|| (after, entry.workspace.project_name().to_owned()))
         };
-        if let Some((status, path)) = now_waiting {
-            self.notify_waiting(status, &path);
+        if let Some((status, project)) = now_waiting {
+            self.notify_waiting(status, &project);
         }
         self.publish();
     }
 
     /// Notification macOS quand un agent se met à m'attendre et que je regarde ailleurs.
     /// Le texte ne reprend rien du transcript : seulement le projet et la raison.
-    fn notify_waiting(&self, status: AgentStatus, project_path: &str) {
+    fn notify_waiting(&self, status: AgentStatus, project: &str) {
         let focused = tauri::Manager::get_webview_window(&self.app, "main")
             .is_some_and(|w| w.is_focused().unwrap_or(false));
         if focused {
@@ -143,7 +149,7 @@ impl AgentRegistry {
             AgentStatus::AwaitingPermission => "attend ta permission",
             _ => "a fini son tour",
         };
-        let _ = self.app.notification().builder().title(project::display_name(project_path)).body(reason).show();
+        let _ = self.app.notification().builder().title(project).body(reason).show();
     }
 
     pub fn mark_seen(&self, id: &AgentId) {
@@ -163,7 +169,7 @@ impl AgentRegistry {
     pub fn list(&self) -> Vec<AgentDto> {
         let at = now();
         let Ok(live) = self.live.lock() else { return vec![] };
-        let mut out: Vec<AgentDto> = live.values().map(|l| AgentDto::from_agent(&l.agent, at)).collect();
+        let mut out: Vec<AgentDto> = live.values().map(|l| AgentDto::from_agent(&l.agent, &l.workspace, at)).collect();
         out.sort_by_key(|a| std::cmp::Reverse(a.started_at));
         out
     }
@@ -174,7 +180,7 @@ impl AgentRegistry {
         let Ok(live) = self.live.lock() else { return vec![] };
         live.values()
             .filter(|l| l.process.is_some() && l.agent.status().interrupted_by_quit())
-            .map(|l| AgentDto::from_agent(&l.agent, at))
+            .map(|l| AgentDto::from_agent(&l.agent, &l.workspace, at))
             .collect()
     }
 

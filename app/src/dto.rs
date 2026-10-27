@@ -1,7 +1,7 @@
 //! Objets échangés avec l'interface. Le front n'a aucune logique métier : il affiche ces DTO.
 
 use robiade_core::agents::{Agent, AgentStatus, Gauges, Level};
-use robiade_core::project;
+use robiade_core::project::{self, Workspace};
 use robiade_core::history::{EntryKind, SearchHit, SessionSummary, TokenUsage, TranscriptEntry, HIT_END, HIT_START};
 use robiade_core::stats::Overview;
 use robiade_core::tasks::{Task, TaskStatus};
@@ -19,8 +19,8 @@ pub struct AgentOutput {
 pub struct AgentDto {
     pub id: String,
     pub project_path: String,
-    pub project_root: String,
-    pub project_name: String,
+    #[serde(flatten)]
+    pub workspace: WorkspaceDto,
     pub status: &'static str,
     pub needs_attention: bool,
     pub started_at: i64,
@@ -80,13 +80,35 @@ impl From<&Gauges> for GaugesDto {
     }
 }
 
+/// Rattachement d'un dossier de travail : dépôt principal et worktree éventuel.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceDto {
+    pub project_root: String,
+    pub project_name: String,
+    pub in_repository: bool,
+    pub worktree_path: Option<String>,
+    pub worktree_name: Option<String>,
+}
+
+impl From<&Workspace> for WorkspaceDto {
+    fn from(w: &Workspace) -> Self {
+        Self {
+            project_root: w.project_root.clone(),
+            project_name: w.project_name().to_owned(),
+            in_repository: w.is_repository,
+            worktree_path: w.worktree.clone(),
+            worktree_name: w.worktree_name().map(str::to_owned),
+        }
+    }
+}
+
 impl AgentDto {
-    pub fn from_agent(a: &Agent, now: i64) -> Self {
+    pub fn from_agent(a: &Agent, workspace: &Workspace, now: i64) -> Self {
         Self {
             id: a.id().as_str().to_owned(),
             project_path: a.project_path().to_owned(),
-            project_root: project::root_of(a.project_path()).to_owned(),
-            project_name: project::display_name(a.project_path()).to_owned(),
+            workspace: workspace.into(),
             status: match a.status() {
                 AgentStatus::Starting => "starting",
                 AgentStatus::Running => "running",
@@ -131,8 +153,8 @@ impl From<&TokenUsage> for TokensDto {
 pub struct SessionDto {
     pub session_id: String,
     pub project_path: String,
-    pub project_root: String,
-    pub project_name: String,
+    #[serde(flatten)]
+    pub workspace: WorkspaceDto,
     pub title: String,
     pub git_branch: Option<String>,
     pub started_at: i64,
@@ -145,13 +167,12 @@ pub struct SessionDto {
     pub merge_request_url: Option<String>,
 }
 
-impl From<&SessionSummary> for SessionDto {
-    fn from(s: &SessionSummary) -> Self {
+impl SessionDto {
+    pub fn new(s: &SessionSummary, workspace: &Workspace) -> Self {
         Self {
             session_id: s.session_id.clone(),
             project_path: s.project_path.clone(),
-            project_root: project::root_of(&s.project_path).to_owned(),
-            project_name: project::display_name(&s.project_path).to_owned(),
+            workspace: workspace.into(),
             title: s.title.clone(),
             git_branch: s.git_branch.clone(),
             started_at: s.started_at,

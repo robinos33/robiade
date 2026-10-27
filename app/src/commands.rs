@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use robiade_core::agents::AgentId;
 use robiade_core::history::{SessionSearch, TranscriptReader};
-use robiade_core::{project, stats};
+use robiade_core::stats;
 use robiade_core::tasks::{Task, TaskId, TaskRepository};
 use tauri::{Manager, State};
 
@@ -42,7 +42,7 @@ pub async fn list_history(state: State<'_, AppState>) -> CmdResult<Vec<SessionDt
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;
-    Ok(summaries.iter().map(SessionDto::from).collect())
+    Ok(summaries.iter().map(|s| SessionDto::new(s, &state.workspaces.resolve(&s.project_path))).collect())
 }
 
 #[tauri::command]
@@ -87,10 +87,11 @@ pub async fn stats(
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;
+    let project_of = |path: &str| state.workspaces.resolve(path).project_root;
     if let Some(root) = project_root {
-        summaries.retain(|s| project::root_of(&s.project_path) == root);
+        summaries.retain(|s| project_of(&s.project_path) == root);
     }
-    Ok(stats::overview(&summaries, now(), offset_ms, window_days).into())
+    Ok(stats::overview(&summaries, project_of, now(), offset_ms, window_days).into())
 }
 
 #[tauri::command]

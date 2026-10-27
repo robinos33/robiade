@@ -37,7 +37,14 @@ pub struct Overview {
 }
 
 /// `utc_offset_ms` : décalage du fuseau local, pour que « aujourd'hui » soit le mien.
-pub fn overview(sessions: &[SessionSummary], now: Millis, utc_offset_ms: Millis, window_days: i64) -> Overview {
+/// `project_of` : racine du projet d'un dossier de travail (lire le disque est l'affaire des adapters).
+pub fn overview(
+    sessions: &[SessionSummary],
+    project_of: impl Fn(&str) -> String,
+    now: Millis,
+    utc_offset_ms: Millis,
+    window_days: i64,
+) -> Overview {
     let local_day = |at: Millis| (at + utc_offset_ms).div_euclid(DAY_MS);
     let today = local_day(now);
     let from_day = today - window_days + 1;
@@ -45,7 +52,7 @@ pub fn overview(sessions: &[SessionSummary], now: Millis, utc_offset_ms: Millis,
     let mut out = Overview::default();
     let mut days: BTreeMap<i64, DayActivity> =
         (from_day..=today).map(|day| (day, DayActivity { day, ..Default::default() })).collect();
-    let mut projects: BTreeMap<&str, ProjectActivity> = BTreeMap::new();
+    let mut projects: BTreeMap<String, ProjectActivity> = BTreeMap::new();
     let mut tools: BTreeMap<&str, u64> = BTreeMap::new();
 
     for s in sessions.iter().filter(|s| local_day(s.last_activity_at) >= from_day) {
@@ -56,9 +63,9 @@ pub fn overview(sessions: &[SessionSummary], now: Millis, utc_offset_ms: Millis,
             d.sessions += 1;
             d.tokens += s.tokens.total();
         }
-        let root = crate::project::root_of(&s.project_path);
-        let p = projects.entry(root).or_insert_with(|| ProjectActivity {
-            project_path: root.to_owned(),
+        let root = project_of(&s.project_path);
+        let p = projects.entry(root.clone()).or_insert_with(|| ProjectActivity {
+            project_path: root,
             ..Default::default()
         });
         p.sessions += 1;
@@ -107,7 +114,7 @@ mod tests {
             session("b", now - DAY_MS, 7, &[("Bash", 1), ("Read", 4)]),
             session("a", now - 30 * DAY_MS, 100, &[]),
         ];
-        let o = overview(&sessions, now, 0, 7);
+        let o = overview(&sessions, str::to_owned, now, 0, 7);
         assert_eq!(o.sessions, 2);
         assert_eq!(o.days.len(), 7);
         assert_eq!(o.days.last().unwrap().sessions, 1);

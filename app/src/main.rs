@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use robiade_adapters::claude_code::TranscriptStore;
 use robiade_adapters::sqlite_search::SearchIndex;
+use robiade_adapters::workspace::WorkspaceResolver;
 use robiade_adapters::sqlite_tasks::SqliteTaskRepository;
 use robiade_adapters::{hooks, shell_env};
 use tauri::{Emitter, Manager};
@@ -17,6 +18,7 @@ use tauri::{Emitter, Manager};
 pub struct AppState {
     pub transcripts: Arc<TranscriptStore>,
     pub search: Arc<SearchIndex>,
+    pub workspaces: Arc<WorkspaceResolver>,
     pub tasks: SqliteTaskRepository,
     pub agents: Arc<agents::AgentRegistry>,
     /// Fermeture confirmée dans l'interface malgré des agents au travail.
@@ -79,8 +81,10 @@ fn main() {
             std::fs::create_dir_all(&data_dir)?;
             let home = app.path().home_dir()?;
 
+            let workspaces = Arc::new(WorkspaceResolver::default());
             let registry = Arc::new(agents::AgentRegistry::new(
                 app.handle().clone(),
+                workspaces.clone(),
                 shell_env::resolve(),
                 data_dir.join("hooks.sock"),
             ));
@@ -96,6 +100,7 @@ fn main() {
             app.manage(AppState {
                 transcripts,
                 search,
+                workspaces,
                 tasks: SqliteTaskRepository::open(&data_dir.join("robiade.db"))?,
                 agents: registry,
                 quit_confirmed: AtomicBool::new(false),
