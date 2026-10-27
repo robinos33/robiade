@@ -4,7 +4,7 @@
 use std::path::Path;
 use std::sync::Mutex;
 
-use robiade_core::agents::{Agent, AgentId, AgentJournal, JournalError};
+use robiade_core::agents::{Agent, AgentId, AgentJournal, JournalError, Saved};
 use robiade_core::Millis;
 use rusqlite::{params, Connection, Row};
 
@@ -31,51 +31,90 @@ impl SqliteAgentJournal {
              );",
         )
         .map_err(storage)?;
+        // Colonnes ajoutées après la création de la table : ajoutées si elles manquent.
+        for column in [
+            "waited_ms INTEGER NOT NULL DEFAULT 0",
+            "permission_ms INTEGER NOT NULL DEFAULT 0",
+            "failed_turns INTEGER NOT NULL DEFAULT 0",
+            "closed INTEGER NOT NULL DEFAULT 0",
+        ] {
+            let name = column.split(' ').next().unwrap_or_default();
+            let exists: bool = conn
+                .query_row("SELECT count(*) FROM pragma_table_info('agent') WHERE name = ?1", [name], |r| r.get(0))
+                .map_err(storage)?;
+            if !exists {
+                conn.execute_batch(&format!("ALTER TABLE agent ADD COLUMN {column};")).map_err(storage)?;
+            }
+        }
         Ok(Self { conn: Mutex::new(conn) })
     }
 
-    fn from_row(row: &Row) -> rusqlite::Result<Option<Agent>> {
-        let Ok(id) = AgentId::parse(&row.get::<_, String>(0)?) else { return Ok(None) };
-        Ok(Some(Agent::restore(id, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)))
-    }
-}
-
-impl AgentJournal for SqliteAgentJournal {
-    fn recent(&self, since: Millis) -> Result<Vec<Agent>, JournalError> {
+    fn select(&self, filter: &str, since: Millis) -> Result<Vec<Agent>, JournalError> {
         let conn = self.conn.lock().map_err(storage)?;
         let mut stmt = conn
-            .prepare(
-                "SELECT id, project_path, resumed_from, name, started_at, last_activity_at
-                 FROM agent WHERE last_activity_at >= ?1 ORDER BY last_activity_at DESC",
-            )
+            .prepare(&format!(
+                "SELECT {COLUMNS} FROM agent WHERE last_activity_at >= ?1 {filter} ORDER BY last_activity_at DESC"
+            ))
             .map_err(storage)?;
         let rows = stmt.query_map([since], Self::from_row).map_err(storage)?;
         let agents: Vec<Option<Agent>> = rows.collect::<Result<_, _>>().map_err(storage)?;
         Ok(agents.into_iter().flatten().collect())
     }
 
-    fn save(&self, agent: &Agent) -> Result<(), JournalError> {
+    fn from_row(row: &Row) -> rusqlite::Result<Option<Agent>> {
+        let Ok(id) = AgentId::parse(&row.get::<_, String>(0)?) else { return Ok(None) };
+        let saved = Saved {
+            name: row.get(3)?,
+            started_at: row.get(4)?,
+            last_activity_at: row.get(5)?,
+            waited_ms: row.get(6)?,
+            permission_ms: row.get(7)?,
+            failed_turns: row.get(8)?,
+        };
+        Ok(Some(Agent::restore(id, row.get(1)?, row.get(2)?, saved)))
+    }
+}
+
+const COLUMNS: &str =
+    "id, project_path, resumed_from, name, started_at, last_activity_at, waited_ms, permission_ms, failed_turns";
+
+impl AgentJournal for SqliteAgentJournal {
+    fn recent(&self, since: Millis) -> Result<Vec<Agent>, JournalError> {
+        self.select("AND closed = 0", since)
+    }
+
+    fn since(&self, since: Millis) -> Result<Vec<Agent>, JournalError> {
+        self.select("", since)
+    }
+
+    fn save(&self, agent: &Agent, now: Millis) -> Result<(), JournalError> {
+        let saved = agent.saved(now);
         let conn = self.conn.lock().map_err(storage)?;
         conn.execute(
-            "INSERT INTO agent (id, project_path, resumed_from, name, started_at, last_activity_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-             ON CONFLICT(id) DO UPDATE SET name = ?4, last_activity_at = ?6",
+            &format!(
+                "INSERT INTO agent ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                 ON CONFLICT(id) DO UPDATE SET name = ?4, last_activity_at = ?6,
+                     waited_ms = ?7, permission_ms = ?8, failed_turns = ?9"
+            ),
             params![
                 agent.id().as_str(),
                 agent.project_path(),
                 agent.resumed_from(),
-                agent.name(),
-                agent.started_at(),
-                agent.last_activity_at()
+                saved.name,
+                saved.started_at,
+                saved.last_activity_at,
+                saved.waited_ms,
+                saved.permission_ms,
+                saved.failed_turns
             ],
         )
         .map_err(storage)?;
         Ok(())
     }
 
-    fn forget(&self, id: &AgentId) -> Result<(), JournalError> {
+    fn close(&self, id: &AgentId) -> Result<(), JournalError> {
         let conn = self.conn.lock().map_err(storage)?;
-        conn.execute("DELETE FROM agent WHERE id = ?1", [id.as_str()]).map_err(storage)?;
+        conn.execute("UPDATE agent SET closed = 1 WHERE id = ?1", [id.as_str()]).map_err(storage)?;
         Ok(())
     }
 }
@@ -92,16 +131,19 @@ mod tests {
         let mut agent = Agent::start(id.clone(), "/p".into(), Some("s-1".into()), 10);
         agent.rename("login");
         agent.apply(AgentEvent::PromptSubmitted, 50);
-        journal.save(&agent).unwrap();
+        agent.apply(AgentEvent::TurnFailed, 60);
+        journal.save(&agent, 70).unwrap();
 
-        let restored = journal.recent(40).unwrap();
+        let restored = journal.recent(55).unwrap();
         assert_eq!(restored.len(), 1);
         let tab = &restored[0];
         assert_eq!(tab.status(), AgentStatus::Ended);
-        assert_eq!((tab.name(), tab.session_id(), tab.last_activity_at()), (Some("login"), "s-1", 50));
-        assert!(journal.recent(60).unwrap().is_empty());
+        assert_eq!((tab.name(), tab.session_id(), tab.last_activity_at()), (Some("login"), "s-1", 60));
+        assert_eq!(tab.failed_turns(), 1);
+        assert!(journal.recent(61).unwrap().is_empty());
 
-        journal.forget(&id).unwrap();
+        journal.close(&id).unwrap();
         assert!(journal.recent(0).unwrap().is_empty());
+        assert_eq!(journal.since(0).unwrap().len(), 1);
     }
 }

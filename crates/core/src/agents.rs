@@ -151,6 +151,17 @@ impl AgentStatus {
     }
 }
 
+/// Ce qu'un onglet garde d'une exécution de Robiade à l'autre : son nom et ses compteurs.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Saved {
+    pub name: Option<String>,
+    pub started_at: Millis,
+    pub last_activity_at: Millis,
+    pub waited_ms: Millis,
+    pub permission_ms: Millis,
+    pub failed_turns: u32,
+}
+
 /// Un agent vivant dans Robiade.
 #[derive(Debug, Clone)]
 pub struct Agent {
@@ -164,6 +175,7 @@ pub struct Agent {
     permission_since: Option<Millis>,
     permission_ms: Millis,
     tool_calls: u32,
+    failed_turns: u32,
     tools: BTreeMap<String, u32>,
     files_modified: BTreeSet<String>,
     last_tool: Option<String>,
@@ -187,6 +199,7 @@ impl Agent {
             permission_since: None,
             permission_ms: 0,
             tool_calls: 0,
+            failed_turns: 0,
             tools: BTreeMap::new(),
             files_modified: BTreeSet::new(),
             last_tool: None,
@@ -199,19 +212,27 @@ impl Agent {
     }
 
     /// Onglet d'une exécution précédente de Robiade : son process n'existe plus, il se reprend.
-    pub fn restore(
-        id: AgentId,
-        project_path: String,
-        resumed_from: Option<String>,
-        name: Option<String>,
-        started_at: Millis,
-        last_activity_at: Millis,
-    ) -> Self {
-        let mut agent = Self::start(id, project_path, resumed_from, started_at);
+    pub fn restore(id: AgentId, project_path: String, resumed_from: Option<String>, saved: Saved) -> Self {
+        let mut agent = Self::start(id, project_path, resumed_from, saved.started_at);
         agent.status = AgentStatus::Ended;
-        agent.last_activity_at = last_activity_at;
-        agent.name = name;
+        agent.last_activity_at = saved.last_activity_at;
+        agent.name = saved.name;
+        agent.waited_ms = saved.waited_ms;
+        agent.permission_ms = saved.permission_ms;
+        agent.failed_turns = saved.failed_turns;
         agent
+    }
+
+    /// Ce qu'il faut garder pour rouvrir l'onglet, attentes en cours comprises.
+    pub fn saved(&self, now: Millis) -> Saved {
+        Saved {
+            name: self.name.clone(),
+            started_at: self.started_at,
+            last_activity_at: self.last_activity_at,
+            waited_ms: self.waited_ms(now),
+            permission_ms: self.permission_ms(now),
+            failed_turns: self.failed_turns,
+        }
     }
 
     /// Un nom vide efface le nom ; au-delà de la limite, il est tronqué.
@@ -230,6 +251,9 @@ impl Agent {
             self.tool_calls += 1;
             self.last_tool = Some(tool.clone());
             *self.tools.entry(tool.clone()).or_default() += 1;
+        }
+        if event == AgentEvent::TurnFailed && self.status != AgentStatus::Ended {
+            self.failed_turns += 1;
         }
         let next = self.status.next(&event);
         self.track_waiting(next, now);
@@ -318,6 +342,9 @@ impl Agent {
     pub fn subagents(&self) -> u32 {
         ["Agent", "Task"].iter().filter_map(|t| self.tools.get(*t)).sum()
     }
+    pub fn failed_turns(&self) -> u32 {
+        self.failed_turns
+    }
     pub fn files_modified(&self) -> usize {
         self.files_modified.len()
     }
@@ -347,10 +374,13 @@ pub struct JournalError(pub String);
 
 /// Onglets d'agents gardés d'une exécution de Robiade à l'autre : on les retrouve après un redémarrage.
 pub trait AgentJournal: Send + Sync {
-    /// Onglets actifs depuis `since`, le plus récent en tête, restaurés comme terminés.
+    /// Onglets encore ouverts, actifs depuis `since`, le plus récent en tête, restaurés comme terminés.
     fn recent(&self, since: Millis) -> Result<Vec<Agent>, JournalError>;
-    fn save(&self, agent: &Agent) -> Result<(), JournalError>;
-    fn forget(&self, id: &AgentId) -> Result<(), JournalError>;
+    /// Tous les onglets actifs depuis `since`, fermés compris : la matière des statistiques.
+    fn since(&self, since: Millis) -> Result<Vec<Agent>, JournalError>;
+    fn save(&self, agent: &Agent, now: Millis) -> Result<(), JournalError>;
+    /// Ferme l'onglet : il n'est plus rouvert, mais ses compteurs restent dans les statistiques.
+    fn close(&self, id: &AgentId) -> Result<(), JournalError>;
 }
 
 #[cfg(test)]
@@ -441,9 +471,21 @@ mod tests {
     #[test]
     fn a_restored_tab_is_ended_and_points_to_its_session() {
         let id = AgentId::parse("0b6f1c2e-6b1d-4a5e-9c33-2f1e8d7a4b10").unwrap();
-        let a = Agent::restore(id, "/p".into(), Some("s-1".into()), Some("login".into()), 1, 9);
+        let saved =
+            Saved { name: Some("login".into()), started_at: 1, last_activity_at: 9, waited_ms: 4, ..Saved::default() };
+        let a = Agent::restore(id, "/p".into(), Some("s-1".into()), saved.clone());
         assert_eq!(a.status(), AgentStatus::Ended);
-        assert_eq!((a.session_id(), a.name(), a.last_activity_at()), ("s-1", Some("login"), 9));
+        assert_eq!(a.session_id(), "s-1");
+        assert_eq!(a.saved(100), saved);
+    }
+
+    #[test]
+    fn counts_failed_turns() {
+        let mut a = agent();
+        a.apply(AgentEvent::TurnFailed, 1);
+        a.apply(AgentEvent::PromptSubmitted, 2);
+        a.apply(AgentEvent::TurnFailed, 3);
+        assert_eq!(a.failed_turns(), 2);
     }
 
     #[test]

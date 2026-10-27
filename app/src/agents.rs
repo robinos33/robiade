@@ -120,10 +120,10 @@ impl AgentRegistry {
                 if let Some(name) = live.remove(&old).and_then(|l| l.agent.name().map(str::to_owned)) {
                     agent.rename(&name);
                 }
-                let _ = self.journal.forget(&old);
+                let _ = self.journal.close(&old);
             }
         }
-        let _ = self.journal.save(&agent);
+        let _ = self.journal.save(&agent, now());
         let dto = AgentDto::from_agent(&agent, &workspace, now());
         live.insert(id, Live { agent, workspace, process: Some(Arc::new(process)) });
         drop(live);
@@ -171,7 +171,7 @@ impl AgentRegistry {
             }
             let after = entry.agent.status();
             if after != before {
-                let _ = self.journal.save(&entry.agent);
+                let _ = self.journal.save(&entry.agent, now());
             }
             (after != before && after.is_waiting_on_me()).then(|| (after, entry.workspace.project_name().to_owned()))
         };
@@ -201,7 +201,7 @@ impl AgentRegistry {
             let mut live = self.live.lock().map_err(|e| e.to_string())?;
             let entry = live.get_mut(id).ok_or("agent inconnu")?;
             entry.agent.rename(name);
-            self.journal.save(&entry.agent).map_err(|e| e.to_string())?;
+            self.journal.save(&entry.agent, now()).map_err(|e| e.to_string())?;
         }
         self.publish();
         Ok(())
@@ -215,7 +215,7 @@ impl AgentRegistry {
                 return Err("agent encore en cours : arrête-le d'abord".into());
             }
             live.remove(id);
-            self.journal.forget(id).map_err(|e| e.to_string())?;
+            self.journal.close(id).map_err(|e| e.to_string())?;
         }
         self.publish();
         Ok(())
@@ -268,8 +268,12 @@ impl AgentRegistry {
             .collect()
     }
 
+    /// Arrête tous les process ; les compteurs des agents vivants sont gardés avant.
     pub fn kill_all(&self) {
         if let Ok(live) = self.live.lock() {
+            for l in live.values().filter(|l| l.process.is_some()) {
+                let _ = self.journal.save(&l.agent, now());
+            }
             live.values().filter_map(|l| l.process.as_ref()).for_each(|p| p.kill());
         }
     }
