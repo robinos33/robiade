@@ -8,6 +8,7 @@
   import ModeBadge from '../components/ModeBadge.svelte';
   import GaugeBar from '../components/GaugeBar.svelte';
   import AssetViewer from '../components/AssetViewer.svelte';
+  import ChangesPanel from '../components/ChangesPanel.svelte';
   import Icon from '../components/Icon.svelte';
   import type { Agent, Session } from '../lib/types';
 
@@ -17,6 +18,8 @@
   let container: HTMLDivElement | undefined = $state();
   /** Chemin de l'asset ouvert en aperçu, pour l'agent actif. */
   let viewing = $state<string | null>(null);
+  /** Onglet du panneau de droite. */
+  let side = $state<'session' | 'diff'>('session');
 
   const active = $derived(app.agents.find((a) => a.id === app.activeAgentId) ?? app.visibleAgents[0]);
   const session = $derived(active ? app.sessionOf(active) : undefined);
@@ -199,7 +202,17 @@
         </div>
 
         <aside class="stats">
-          <h2 class="section-title">Session en cours</h2>
+          <div class="side-tabs" role="tablist">
+            <button role="tab" aria-selected={side === 'session'} class:on={side === 'session'} onclick={() => (side = 'session')}>
+              Session
+            </button>
+            <button role="tab" aria-selected={side === 'diff'} class:on={side === 'diff'} onclick={() => (side = 'diff')}>
+              Diff
+            </button>
+          </div>
+          {#if side === 'diff'}
+            <ChangesPanel agentId={active.id} activity={active.lastActivityAt + active.filesModified} />
+          {:else}
           <dl>
             <dt>Durée</dt><dd class="num">{duration(app.now - active.startedAt)}</dd>
             <dt>T'a attendu</dt><dd class="num">{duration(active.waitedMs)}</dd>
@@ -248,6 +261,7 @@
               {/each}
             </ul>
           {/if}
+          {/if}
         </aside>
       {:else}
         <div class="empty pick">
@@ -264,7 +278,7 @@
 
 <style>
   .page { display: flex; flex-direction: column; min-height: 0; flex: 1; }
-  .split { display: grid; grid-template-columns: 250px 1fr 220px; min-height: 0; flex: 1; }
+  .split { display: grid; grid-template-columns: 250px 1fr 260px; min-height: 0; flex: 1; }
   .list { list-style: none; margin: 0; padding: 8px; overflow-y: auto; border-right: 1px solid var(--line); }
   .agent {
     display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 8px 10px;
@@ -304,7 +318,13 @@
   .branch { display: inline-flex; align-items: center; gap: 4px; color: var(--ink-2); }
   .term { flex: 1; min-height: 0; padding: 10px 0 4px 12px; background: #24273a; /* TERMINAL_THEME.background */ }
   .term :global(.term-host) { height: 100%; }
-  .stats { border-left: 1px solid var(--line); padding: 16px; overflow-y: auto; }
+  .stats { border-left: 1px solid var(--line); padding: 12px 16px 16px; overflow-y: auto; }
+  .side-tabs { display: flex; gap: 2px; margin: 0 -6px 12px; }
+  .side-tabs button {
+    flex: 1; height: 26px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--ink-3); font-size: 12px;
+  }
+  .side-tabs button:hover { color: var(--ink); background: var(--bg-hover); }
+  .side-tabs button.on { color: var(--ink); background: var(--bg-active); font-weight: 550; }
   dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; margin: 0; }
   dt { color: var(--ink-3); }
   dd { margin: 0; text-align: right; min-width: 0; }

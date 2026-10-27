@@ -37,6 +37,14 @@ export interface Agent extends Workspace {
   name: string | null;
 }
 
+/** Fichier modifié depuis le dernier commit ; `added`/`removed` à `null` pour un binaire. */
+export interface FileChange {
+  path: string;
+  kind: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked';
+  added: number | null;
+  removed: number | null;
+}
+
 export type AssetKind = 'image' | 'html' | 'markdown' | 'text';
 export interface Asset { path: string; name: string; kind: AssetKind; writtenAt: number }
 /** Contenu d'un asset : `dataUrl` pour une image, `text` pour le reste. */

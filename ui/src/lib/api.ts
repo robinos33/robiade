@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { Agent, AssetContent, Entry, Environment, Overview, SearchHit, Session, Task, TaskStatus } from './types';
+import type { Agent, AssetContent, Entry, FileChange, Environment, Overview, SearchHit, Session, Task, TaskStatus } from './types';
 
 export const api = {
   environment: () => invoke<Environment>('environment'),
@@ -26,6 +26,8 @@ export const api = {
   markAgentSeen: (id: string) => invoke<void>('mark_agent_seen', { id }),
   renameAgent: (id: string, name: string) => invoke<void>('rename_agent', { id, name }),
   forgetAgent: (id: string) => invoke<void>('forget_agent', { id }),
+  workingChanges: (id: string) => invoke<FileChange[]>('working_changes', { id }),
+  workingDiff: (id: string, path: string) => invoke<string>('working_diff', { id, path }),
   readAsset: (id: string, path: string) => invoke<AssetContent>('read_asset', { id, path }),
   quit: () => invoke<void>('quit'),
 };
