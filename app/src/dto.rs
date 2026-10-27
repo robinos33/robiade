@@ -4,7 +4,8 @@ use robiade_core::agents::{Agent, AgentStatus, Gauges, Level};
 use robiade_core::assets::{Asset, AssetKind};
 use robiade_core::project::{self, Workspace};
 use robiade_core::history::{EntryKind, SearchHit, SessionSummary, TokenUsage, TranscriptEntry, HIT_END, HIT_START};
-use robiade_core::stats::Overview;
+use robiade_core::pricing::{Estimate, PRICES_AS_OF};
+use robiade_core::stats::{self, Overview};
 use robiade_core::tasks::{Task, TaskStatus};
 use serde::{Deserialize, Serialize};
 
@@ -213,6 +214,20 @@ impl From<&TokenUsage> for TokensDto {
     }
 }
 
+/// Coût estimé en dollars ; `unpricedTokens` compte les tokens des modèles absents de la grille.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CostDto {
+    pub dollars: f64,
+    pub unpriced_tokens: u64,
+}
+
+impl From<Estimate> for CostDto {
+    fn from(e: Estimate) -> Self {
+        Self { dollars: e.dollars, unpriced_tokens: e.unpriced_tokens }
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionDto {
@@ -227,6 +242,7 @@ pub struct SessionDto {
     pub user_messages: u32,
     pub assistant_messages: u32,
     pub tokens: TokensDto,
+    pub cost: CostDto,
     pub tool_calls: u32,
     pub models: Vec<String>,
     pub merge_request_url: Option<String>,
@@ -245,6 +261,7 @@ impl SessionDto {
             user_messages: s.user_messages,
             assistant_messages: s.assistant_messages,
             tokens: (&s.tokens).into(),
+            cost: stats::session_cost(s).into(),
             tool_calls: s.tools.iter().map(|(_, c)| c).sum(),
             models: s.models.clone(),
             merge_request_url: s.merge_request_url.clone(),
@@ -315,7 +332,16 @@ pub struct ProjectStatDto {
     pub project_name: String,
     pub sessions: u32,
     pub tokens: TokensDto,
+    pub cost: CostDto,
     pub last_activity_at: i64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelStatDto {
+    pub model: String,
+    pub tokens: TokensDto,
+    pub cost: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -323,11 +349,15 @@ pub struct ProjectStatDto {
 pub struct OverviewDto {
     pub sessions: u32,
     pub tokens: TokensDto,
+    pub cost: CostDto,
+    /// Date du relevé de la grille tarifaire.
+    pub prices_as_of: &'static str,
     pub tool_calls: u64,
     pub merge_requests: u32,
     pub median_duration_ms: Option<i64>,
     pub days: Vec<DayDto>,
     pub projects: Vec<ProjectStatDto>,
+    pub models: Vec<ModelStatDto>,
     pub tools: Vec<(String, u64)>,
 }
 
@@ -336,6 +366,8 @@ impl From<Overview> for OverviewDto {
         Self {
             sessions: o.sessions,
             tokens: (&o.tokens).into(),
+            cost: o.cost.into(),
+            prices_as_of: PRICES_AS_OF,
             tool_calls: o.tool_calls,
             median_duration_ms: o.median_duration_ms,
             merge_requests: o.merge_requests,
@@ -345,11 +377,17 @@ impl From<Overview> for OverviewDto {
                 .into_iter()
                 .map(|p| ProjectStatDto {
                     tokens: (&p.tokens).into(),
+                    cost: p.cost.into(),
                     project_name: project::display_name(&p.project_path).to_owned(),
                     project_path: p.project_path,
                     sessions: p.sessions,
                     last_activity_at: p.last_activity_at,
                 })
+                .collect(),
+            models: o
+                .models
+                .into_iter()
+                .map(|m| ModelStatDto { model: m.model, tokens: (&m.tokens).into(), cost: m.cost })
                 .collect(),
             tools: o.tools.into_iter().take(12).collect(),
         }
