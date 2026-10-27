@@ -72,7 +72,7 @@
       {#each app.projects as p (p.root)}
         {@const live = liveIn(p.root)}
         <li>
-          <button class="item" class:active={app.project === p.root} onclick={() => (app.project = p.root)} title={p.root}>
+          <button class="item" class:active={app.project === p.root} onclick={() => app.selectProject(p.root)} title={p.root}>
             <Icon name="folder" />
             <span class="label">{p.name}</span>
             {#if live.some((a) => a.needsAttention)}

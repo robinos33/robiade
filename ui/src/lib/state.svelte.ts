@@ -101,6 +101,14 @@ class AppState {
     }
   }
 
+  /** Filtre sur le projet ; s'il a des agents, ouvre le premier de la liste (vivant de préférence). */
+  selectProject(root: string) {
+    this.project = root;
+    const agents = this.agents.filter((a) => a.projectRoot === root);
+    const first = agents.find((a) => a.status !== 'ended') ?? agents[0];
+    if (first) this.openAgent(first.id);
+  }
+
   openAgent(id: string) {
     this.activeAgentId = id;
     this.view = 'agents';
