@@ -32,6 +32,9 @@ impl AgentId {
 #[error("identifiant d'agent invalide")]
 pub struct InvalidAgentId;
 
+/// Nom qu'on donne à un onglet d'agent pour s'y retrouver ; remplace le titre tiré du premier prompt.
+pub const NAME_MAX_CHARS: usize = 60;
+
 /// Mode de permission de Claude Code (`default`, `acceptEdits`, `plan`, `auto`, `bypassPermissions`…),
 /// tel que rapporté par les hooks. Les modes inconnus sont gardés tels quels : le CLI en ajoute.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -162,6 +165,7 @@ pub struct Agent {
     gauges: Gauges,
     assets: Assets,
     resumed_from: Option<String>,
+    name: Option<String>,
 }
 
 impl Agent {
@@ -180,7 +184,35 @@ impl Agent {
             gauges: Gauges::default(),
             assets: Assets::default(),
             resumed_from,
+            name: None,
         }
+    }
+
+    /// Onglet d'une exécution précédente de Robiade : son process n'existe plus, il se reprend.
+    pub fn restore(
+        id: AgentId,
+        project_path: String,
+        resumed_from: Option<String>,
+        name: Option<String>,
+        started_at: Millis,
+        last_activity_at: Millis,
+    ) -> Self {
+        let mut agent = Self::start(id, project_path, resumed_from, started_at);
+        agent.status = AgentStatus::Ended;
+        agent.last_activity_at = last_activity_at;
+        agent.name = name;
+        agent
+    }
+
+    /// Un nom vide efface le nom ; au-delà de la limite, il est tronqué.
+    pub fn rename(&mut self, raw: &str) {
+        let name: String = raw.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(NAME_MAX_CHARS).collect();
+        self.name = (!name.is_empty()).then_some(name);
+    }
+
+    /// Session Claude Code de l'agent : celle qu'il reprend, sinon la sienne.
+    pub fn session_id(&self) -> &str {
+        self.resumed_from.as_deref().unwrap_or(self.id.as_str())
     }
 
     pub fn apply(&mut self, event: AgentEvent, now: Millis) {
@@ -266,6 +298,21 @@ impl Agent {
     pub fn resumed_from(&self) -> Option<&str> {
         self.resumed_from.as_deref()
     }
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+}
+
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[error("journal des agents indisponible : {0}")]
+pub struct JournalError(pub String);
+
+/// Onglets d'agents gardés d'une exécution de Robiade à l'autre : on les retrouve après un redémarrage.
+pub trait AgentJournal: Send + Sync {
+    /// Onglets actifs depuis `since`, le plus récent en tête, restaurés comme terminés.
+    fn recent(&self, since: Millis) -> Result<Vec<Agent>, JournalError>;
+    fn save(&self, agent: &Agent) -> Result<(), JournalError>;
+    fn forget(&self, id: &AgentId) -> Result<(), JournalError>;
 }
 
 #[cfg(test)]
@@ -325,6 +372,25 @@ mod tests {
         a.mark_seen(2);
         a.apply(AgentEvent::WaitingForInput, 3);
         assert_eq!(a.status(), AgentStatus::Idle);
+    }
+
+    #[test]
+    fn a_name_is_trimmed_bounded_and_erasable() {
+        let mut a = agent();
+        a.rename("  refonte   du login ");
+        assert_eq!(a.name(), Some("refonte du login"));
+        a.rename(&"x".repeat(100));
+        assert_eq!(a.name().map(str::len), Some(NAME_MAX_CHARS));
+        a.rename("   ");
+        assert_eq!(a.name(), None);
+    }
+
+    #[test]
+    fn a_restored_tab_is_ended_and_points_to_its_session() {
+        let id = AgentId::parse("0b6f1c2e-6b1d-4a5e-9c33-2f1e8d7a4b10").unwrap();
+        let a = Agent::restore(id, "/p".into(), Some("s-1".into()), Some("login".into()), 1, 9);
+        assert_eq!(a.status(), AgentStatus::Ended);
+        assert_eq!((a.session_id(), a.name(), a.last_activity_at()), ("s-1", Some("login"), 9));
     }
 
     #[test]
