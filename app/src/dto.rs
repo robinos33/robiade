@@ -7,6 +7,7 @@ use robiade_core::history::{EntryKind, SearchHit, SessionSummary, TokenUsage, Tr
 use robiade_core::pricing::{Estimate, PRICES_AS_OF};
 use robiade_core::stats::{self, AgentsOverview, Overview};
 use robiade_core::tasks::{Task, TaskStatus};
+use robiade_core::vcs::{ChangeKind, FileChange};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Clone)]
@@ -409,6 +410,28 @@ impl OverviewDto {
             tools: o.tools.into_iter().take(12).collect(),
             agents: agents.into(),
         }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileChangeDto {
+    pub path: String,
+    pub kind: &'static str,
+    pub added: Option<u32>,
+    pub removed: Option<u32>,
+}
+
+impl From<FileChange> for FileChangeDto {
+    fn from(c: FileChange) -> Self {
+        let kind = match c.kind {
+            ChangeKind::Modified => "modified",
+            ChangeKind::Added => "added",
+            ChangeKind::Deleted => "deleted",
+            ChangeKind::Renamed => "renamed",
+            ChangeKind::Untracked => "untracked",
+        };
+        Self { path: c.path, kind, added: c.added, removed: c.removed }
     }
 }
 

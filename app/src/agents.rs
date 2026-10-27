@@ -238,6 +238,12 @@ impl AgentRegistry {
         self.publish();
     }
 
+    /// Dossier de travail d'un agent, tel qu'il a été lancé : jamais un chemin venu du front.
+    pub fn project_path(&self, id: &AgentId) -> Result<String, String> {
+        let live = self.live.lock().map_err(|e| e.to_string())?;
+        live.get(id).map(|l| l.agent.project_path().to_owned()).ok_or_else(|| "agent inconnu".to_owned())
+    }
+
     pub fn process(&self, id: &AgentId) -> Result<Arc<AgentProcess>, String> {
         let live = self.live.lock().map_err(|e| e.to_string())?;
         live.get(id).and_then(|l| l.process.clone()).ok_or_else(|| "agent inconnu ou terminé".to_owned())

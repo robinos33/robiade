@@ -9,11 +9,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use robiade_adapters::claude_code::TranscriptStore;
+use robiade_adapters::git::GitCli;
 use robiade_adapters::sqlite_agents::SqliteAgentJournal;
 use robiade_adapters::sqlite_search::SearchIndex;
 use robiade_adapters::workspace::WorkspaceResolver;
 use robiade_adapters::sqlite_tasks::SqliteTaskRepository;
 use robiade_adapters::{backup, hooks, shell_env};
+use robiade_core::vcs::WorkingTree;
 use tauri::{Emitter, Manager};
 
 pub struct AppState {
@@ -22,6 +24,7 @@ pub struct AppState {
     pub workspaces: Arc<WorkspaceResolver>,
     pub tasks: SqliteTaskRepository,
     pub agents: Arc<agents::AgentRegistry>,
+    pub vcs: Arc<dyn WorkingTree>,
     /// Fermeture confirmée dans l'interface malgré des agents au travail.
     pub quit_confirmed: AtomicBool,
 }
@@ -116,6 +119,7 @@ fn main() {
                 workspaces,
                 tasks: SqliteTaskRepository::open(&data_dir.join("robiade.db"))?,
                 agents: registry,
+                vcs: Arc::new(GitCli::default()),
                 quit_confirmed: AtomicBool::new(false),
             });
             Ok(())
@@ -146,6 +150,8 @@ fn main() {
             commands::rename_agent,
             commands::forget_agent,
             commands::read_asset,
+            commands::working_changes,
+            commands::working_diff,
             commands::quit,
         ])
         .build(tauri::generate_context!())

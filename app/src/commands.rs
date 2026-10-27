@@ -8,7 +8,7 @@ use robiade_core::stats;
 use robiade_core::tasks::{Task, TaskId, TaskRepository};
 use tauri::{Manager, State};
 
-use crate::dto::{AgentDto, AssetContentDto, EntryDto, EnvironmentDto, OverviewDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto};
+use crate::dto::{AgentDto, AssetContentDto, EntryDto, FileChangeDto, EnvironmentDto, OverviewDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto};
 use crate::{now, AppState};
 
 type CmdResult<T> = Result<T, String>;
@@ -216,6 +216,29 @@ pub async fn read_asset(state: State<'_, AppState>, id: String, path: String) ->
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Modifications en cours dans le dossier de l'agent.
+#[tauri::command]
+pub async fn working_changes(state: State<'_, AppState>, id: String) -> CmdResult<Vec<FileChangeDto>> {
+    let dir = state.agents.project_path(&agent_id(&id)?)?;
+    let vcs = state.vcs.clone();
+    let changes = tauri::async_runtime::spawn_blocking(move || vcs.changes(&dir))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+    Ok(changes.into_iter().map(FileChangeDto::from).collect())
+}
+
+/// Diff d'un fichier modifié ; un chemin hors des modifications en cours est refusé par l'adapter.
+#[tauri::command]
+pub async fn working_diff(state: State<'_, AppState>, id: String, path: String) -> CmdResult<String> {
+    let dir = state.agents.project_path(&agent_id(&id)?)?;
+    let vcs = state.vcs.clone();
+    tauri::async_runtime::spawn_blocking(move || vcs.diff(&dir, &path))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
 }
 
 /// Fermeture confirmée : les agents sont arrêtés, leurs sessions restent reprenables.
