@@ -2,6 +2,7 @@
 
 pub mod backup;
 pub mod claude_code;
+pub mod git;
 pub mod hooks;
 pub mod pty;
 pub mod shell_env;
