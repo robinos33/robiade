@@ -13,9 +13,13 @@ const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 const MAX_DIFF_BYTES: usize = 2 * 1024 * 1024;
 
 /// Réglages imposés à chaque appel : la config d'un dépôt peut déclarer des commandes que `status`
-/// ou `diff` exécuteraient (`core.fsmonitor`, filtres `textconv`, diff externe). Robiade lance git
-/// sans que je le demande, sur des dépôts où un agent écrit : aucune de ces commandes ne doit tourner.
+/// ou `diff` exécuteraient (`core.fsmonitor`, filtres `clean`/`textconv`, diff externe, sous-modules).
+/// Robiade lance git sans que je le demande, sur des dépôts où un agent écrit : aucune ne doit tourner.
+/// Les filtres, nommés librement, sont neutralisés un par un (voir `filter_overrides`).
 const HARDENING: &[&str] = &["-c", "core.fsmonitor=false", "-c", "core.quotepath=off", "-c", "diff.external="];
+
+/// Options de `git diff` qui n'exécutent rien de déclaré par le dépôt.
+const SAFE_DIFF: &[&str] = &["--no-color", "--no-ext-diff", "--no-textconv", "--ignore-submodules=all", "-M"];
 
 pub struct GitCli {
     git: String,
@@ -28,15 +32,35 @@ impl Default for GitCli {
 }
 
 impl GitCli {
+    fn command(&self, dir: &str) -> Command {
+        let mut cmd = Command::new(&self.git);
+        cmd.arg("-C").arg(dir).args(HARDENING).arg("--no-pager").env("GIT_OPTIONAL_LOCKS", "0").env("LC_ALL", "C");
+        cmd
+    }
+
+    /// Vide chaque filtre déclaré dans la config (dépôt, global, système) : un filtre `clean`, comme
+    /// celui de git-lfs, tourne à chaque `status` ou `diff`. Lire la config n'exécute rien.
+    fn filter_overrides(&self, dir: &str) -> Vec<String> {
+        let Ok(out) = self.command(dir).args(["config", "--get-regexp", r"^filter\."]).output() else { return vec![] };
+        let mut names: Vec<String> = String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter_map(|line| line.split_whitespace().next()?.strip_prefix("filter.")?.rsplit_once('.'))
+            .map(|(name, _)| name.to_owned())
+            .collect();
+        names.sort();
+        names.dedup();
+        names
+            .iter()
+            .flat_map(|n| ["clean=", "smudge=", "process=", "required=false"].map(|k| format!("filter.{n}.{k}")))
+            .flat_map(|setting| ["-c".to_owned(), setting])
+            .collect()
+    }
+
     fn run(&self, dir: &str, args: &[&str]) -> Result<Vec<u8>, VcsError> {
-        let out = Command::new(&self.git)
-            .arg("-C")
-            .arg(dir)
-            .args(HARDENING)
-            .arg("--no-pager")
+        let out = self
+            .command(dir)
+            .args(self.filter_overrides(dir))
             .args(args)
-            .env("GIT_OPTIONAL_LOCKS", "0")
-            .env("LC_ALL", "C")
             .output()
             .map_err(|e| VcsError::Git(e.to_string()))?;
         if out.status.success() {
@@ -118,9 +142,10 @@ fn truncate(mut diff: Vec<u8>) -> String {
 impl WorkingTree for GitCli {
     fn changes(&self, dir: &str) -> Result<Vec<FileChange>, VcsError> {
         let root = self.root(dir)?;
-        let status = self.run(&root, &["status", "--porcelain=v1", "-z", "--untracked-files=all"])?;
+        let status =
+            self.run(&root, &["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=all"])?;
         let base = self.base(&root);
-        let numstat = ["diff", "--numstat", "-z", "-M", "--no-ext-diff", "--no-textconv", base];
+        let numstat = [&["diff", "--numstat", "-z"], SAFE_DIFF, &[base]].concat();
         let stats = parse_numstat(&self.run(&root, &numstat)?);
         let mut changes: Vec<FileChange> = parse_status(&status)
             .into_iter()
@@ -146,19 +171,16 @@ impl WorkingTree for GitCli {
         let root = self.root(dir)?;
         if change.kind == ChangeKind::Untracked {
             // `--no-index` sort en code 1 quand il y a une différence : c'est le cas normal ici.
-            let out = Command::new(&self.git)
-                .arg("-C")
-                .arg(&root)
-                .args(HARDENING)
-                .args(["--no-pager", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--no-index", "--"])
-                .args(["/dev/null", path])
-                .env("GIT_OPTIONAL_LOCKS", "0")
+            let out = self
+                .command(&root)
+                .args(self.filter_overrides(&root))
+                .args(["diff", "--no-color", "--no-ext-diff", "--no-textconv", "--no-index", "--", "/dev/null", path])
                 .output()
                 .map_err(|e| VcsError::Git(e.to_string()))?;
             return Ok(truncate(out.stdout));
         }
         let base = self.base(&root);
-        let diff = self.run(&root, &["diff", "--no-color", "--no-ext-diff", "--no-textconv", "-M", base, "--", path])?;
+        let diff = self.run(&root, &[&["diff"], SAFE_DIFF, &[base, "--", path]].concat())?;
         Ok(truncate(diff))
     }
 }
@@ -208,16 +230,22 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         git(&dir, &["init", "-q"]);
+        std::fs::write(dir.join(".gitattributes"), "*.txt diff=piege filter=lfs.like\n").unwrap();
+        std::fs::write(dir.join("a.txt"), "un\n").unwrap();
+        git(&dir, &["add", "a.txt", ".gitattributes"]);
+        git(&dir, &["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init"]);
+        // Pièges posés après le commit : seuls les appels de Robiade peuvent les déclencher.
         let witness = dir.join("piege-declenche");
-        let trap = format!("touch {}", witness.display());
+        let trap = format!("sh -c 'touch {}'", witness.display());
         git(&dir, &["config", "core.fsmonitor", &trap]);
         git(&dir, &["config", "diff.piege.textconv", &trap]);
-        std::fs::write(dir.join(".gitattributes"), "*.txt diff=piege\n").unwrap();
-        std::fs::write(dir.join("a.txt"), "un\n").unwrap();
+        git(&dir, &["config", "filter.lfs.like.clean", &format!("sh -c 'touch {}; cat'", witness.display())]);
+        git(&dir, &["config", "filter.lfs.like.required", "true"]);
+        std::fs::write(dir.join("a.txt"), "deux\n").unwrap();
         let repo = GitCli::default();
         let d = dir.to_str().unwrap();
-        repo.changes(d).unwrap();
-        repo.diff(d, "a.txt").unwrap();
+        assert_eq!(repo.changes(d).unwrap()[0].path, "a.txt");
+        assert!(repo.diff(d, "a.txt").unwrap().contains("+deux"));
         assert!(!witness.exists(), "une commande du dépôt a été exécutée");
         std::fs::remove_dir_all(&dir).unwrap();
     }
