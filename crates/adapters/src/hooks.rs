@@ -20,7 +20,7 @@ pub const ENV_AGENT_ID: &str = "ROBIADE_AGENT_ID";
 const MAX_MESSAGE_BYTES: u64 = 64 * 1024;
 
 /// Ce qui transite sur le socket : jamais le prompt ni l'entrée des outils,
-/// hormis le chemin d'un fichier écrit par `Write` (pas son contenu).
+/// hormis le chemin d'un fichier écrit ou modifié par l'agent (pas son contenu).
 #[derive(Debug, Serialize, Deserialize)]
 struct Relayed {
     agent_id: String,
@@ -139,7 +139,8 @@ fn relayed_from(hook_input: &str, agent_id: String) -> Option<Relayed> {
     let field = |k: &str| v.get(k).and_then(Value::as_str).map(str::to_owned);
     let event = field("hook_event_name")?;
     let tool = field("tool_name");
-    let written_file = (event == "PostToolUse" && tool.as_deref() == Some("Write"))
+    let writes = matches!(tool.as_deref(), Some("Write" | "Edit" | "MultiEdit"));
+    let written_file = (event == "PostToolUse" && writes)
         .then(|| v.pointer("/tool_input/file_path").and_then(Value::as_str))
         .flatten()
         .filter(|p| p.len() <= 4096)
@@ -299,8 +300,12 @@ mod tests {
         let Some(Observation::Event { written_file, .. }) = observe(relayed) else { panic!() };
         assert_eq!(written_file.as_deref(), Some("/tmp/projet/capture.png"));
 
+        let edit = input.replace("\"Write\"", "\"Edit\"");
+        assert!(relayed_from(&edit, "id".into()).unwrap().written_file.is_some());
         let pre = input.replace("PostToolUse", "PreToolUse");
         assert_eq!(relayed_from(&pre, "id".into()).unwrap().written_file, None);
+        let read = input.replace("\"Write\"", "\"Read\"");
+        assert_eq!(relayed_from(&read, "id".into()).unwrap().written_file, None);
     }
 
     #[test]

@@ -1,4 +1,4 @@
-//! Assets : fichiers qu'un agent écrit et que je veux regarder sans quitter Robiade
+//! Assets : fichiers qu'un agent écrit ou modifie et que je veux regarder sans quitter Robiade
 //! (captures, schémas, pages HTML, notes Markdown). Le code source n'en fait pas partie.
 
 use crate::Millis;
