@@ -10,6 +10,7 @@ pub mod pricing;
 pub mod project;
 pub mod stats;
 pub mod tasks;
+pub mod vcs;
 
 /// Instant en millisecondes depuis l'epoch Unix. Fourni par l'appelant : le domaine n'a pas d'horloge.
 pub type Millis = i64;
