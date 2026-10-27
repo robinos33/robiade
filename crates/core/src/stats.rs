@@ -116,6 +116,7 @@ mod tests {
             user_messages: 1,
             assistant_messages: 1,
             tokens: TokenUsage { output, ..Default::default() },
+            tokens_by_model: vec![],
             tools: tools.iter().map(|(n, c)| ((*n).into(), *c)).collect(),
             models: vec![],
             merge_request_url: None,

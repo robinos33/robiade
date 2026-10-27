@@ -59,6 +59,10 @@ fn usage(v: &Value) -> TokenUsage {
         output: n("output_tokens"),
         cache_read: n("cache_read_input_tokens"),
         cache_creation: n("cache_creation_input_tokens"),
+        cache_creation_1h: v
+            .pointer("/cache_creation/ephemeral_1h_input_tokens")
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
     }
 }
 
@@ -99,6 +103,7 @@ fn summarize(path: &Path) -> Option<SessionSummary> {
         user_messages: 0,
         assistant_messages: 0,
         tokens: TokenUsage::default(),
+        tokens_by_model: vec![],
         tools: vec![],
         models: vec![],
         merge_request_url: None,
@@ -107,6 +112,7 @@ fn summarize(path: &Path) -> Option<SessionSummary> {
     let mut first_prompt = None;
     let mut seen_messages = HashSet::new();
     let mut tools: HashMap<String, u32> = HashMap::new();
+    let mut by_model: HashMap<String, TokenUsage> = HashMap::new();
 
     for line in reader.lines().map_while(Result::ok) {
         let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
@@ -143,8 +149,10 @@ fn summarize(path: &Path) -> Option<SessionSummary> {
                 let id = message.get("id").and_then(Value::as_str).unwrap_or_default();
                 if id.is_empty() || seen_messages.insert(id.to_owned()) {
                     s.assistant_messages += 1;
-                    if let Some(u) = message.get("usage") {
-                        s.tokens.add(&usage(u));
+                    if let Some(u) = message.get("usage").map(usage) {
+                        s.tokens.add(&u);
+                        let model = message.get("model").and_then(Value::as_str).unwrap_or_default();
+                        by_model.entry(model.to_owned()).or_default().add(&u);
                     }
                 }
                 if let Some(model) = message.get("model").and_then(Value::as_str) {
@@ -171,6 +179,8 @@ fn summarize(path: &Path) -> Option<SessionSummary> {
         custom_title.or(first_prompt).as_deref().unwrap_or("(session sans message)"),
         TITLE_MAX_CHARS,
     );
+    s.tokens_by_model = by_model.into_iter().filter(|(_, u)| u.total() > 0).collect();
+    s.tokens_by_model.sort_by(|a, b| b.1.total().cmp(&a.1.total()));
     s.tools = tools.into_iter().collect();
     s.tools.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     Some(s)
@@ -275,7 +285,7 @@ mod tests {
         let lines = [
             r#"{"type":"user","cwd":"/tmp/p","gitBranch":"main","timestamp":"2026-10-27T10:00:00Z","message":{"role":"user","content":"Corrige le bug du login\nAvec détails"}}"#,
             "pas du json",
-            r#"{"type":"assistant","timestamp":"2026-10-27T10:00:05Z","message":{"id":"m1","model":"claude-opus-5-5","usage":{"input_tokens":10,"output_tokens":5},"content":[{"type":"tool_use","name":"Bash","input":{"command":"ls"}}]}}"#,
+            r#"{"type":"assistant","timestamp":"2026-10-27T10:00:05Z","message":{"id":"m1","model":"claude-opus-5-5","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":30,"cache_creation":{"ephemeral_5m_input_tokens":10,"ephemeral_1h_input_tokens":20}},"content":[{"type":"tool_use","name":"Bash","input":{"command":"ls"}}]}}"#,
             r#"{"type":"assistant","timestamp":"2026-10-27T10:00:06Z","message":{"id":"m1","usage":{"input_tokens":10,"output_tokens":5},"content":[{"type":"text","text":"Fait."}]}}"#,
             r#"{"type":"user","timestamp":"2026-10-27T10:00:07Z","message":{"content":[{"type":"tool_result","content":"x"}]}}"#,
             r#"{"type":"pr-link","prUrl":"https://gitlab.example.com/a/b/-/merge_requests/1","timestamp":"2026-10-27T10:01:00Z"}"#,
@@ -291,6 +301,9 @@ mod tests {
         assert_eq!(s.project_path, "/tmp/p");
         assert_eq!(s.user_messages, 1);
         assert_eq!(s.assistant_messages, 1);
+        let (model, usage) = &s.tokens_by_model[0];
+        assert_eq!(model, "claude-opus-5-5");
+        assert_eq!((usage.output, usage.cache_creation, usage.cache_creation_1h), (5, 30, 20));
         assert_eq!(s.tokens.output, 5);
         assert_eq!(s.tools, vec![("Bash".to_owned(), 1)]);
         assert!(s.merge_request_url.is_some());

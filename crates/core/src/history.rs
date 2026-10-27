@@ -10,6 +10,8 @@ pub struct TokenUsage {
     pub output: u64,
     pub cache_read: u64,
     pub cache_creation: u64,
+    /// Part de `cache_creation` écrite pour une heure (le reste pour cinq minutes) : facturée plus cher.
+    pub cache_creation_1h: u64,
 }
 
 impl TokenUsage {
@@ -18,6 +20,7 @@ impl TokenUsage {
         self.output += other.output;
         self.cache_read += other.cache_read;
         self.cache_creation += other.cache_creation;
+        self.cache_creation_1h += other.cache_creation_1h;
     }
 
     pub fn total(&self) -> u64 {
@@ -36,6 +39,8 @@ pub struct SessionSummary {
     pub user_messages: u32,
     pub assistant_messages: u32,
     pub tokens: TokenUsage,
+    /// Usage par modèle, sous-agents compris : le prix dépend du modèle.
+    pub tokens_by_model: Vec<(String, TokenUsage)>,
     /// Appels d'outils par nom, triés par nombre décroissant.
     pub tools: Vec<(String, u32)>,
     pub models: Vec<String>,
