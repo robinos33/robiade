@@ -81,6 +81,26 @@
       </div>
 
       <div class="panel">
+        <h2 class="section-title">Agents lancés dans Robiade</h2>
+        {#if data.agents.agents === 0}
+          <p class="muted">Aucun agent Robiade sur la période : ces mesures viennent des hooks, pas des transcripts.</p>
+        {:else}
+          <div class="tiles">
+            <div class="tile"><span class="k">Agents</span><span class="v num">{count(data.agents.agents)}</span></div>
+            <div class="tile" title="Agents ayant eu au moins un tour terminé en erreur (StopFailure)">
+              <span class="k">Taux d'échec</span>
+              <span class="v num">{Math.round((data.agents.failed / data.agents.agents) * 100)} %</span>
+              <span class="s num">{data.agents.failed} agent{data.agents.failed > 1 ? 's' : ''}</span>
+            </div>
+            <div class="tile" title="Temps où un agent attendait une permission ou la lecture de son tour : le goulot, c'est moi">
+              <span class="k">T'ont attendu</span><span class="v num">{duration(data.agents.waitedMs)}</span>
+              <span class="s num">dont {duration(data.agents.permissionMs)} de permission</span>
+            </div>
+          </div>
+        {/if}
+      </div>
+
+      <div class="panel">
         <h2 class="section-title">Sessions par jour</h2>
         {#if chart}
           <div class="chart">

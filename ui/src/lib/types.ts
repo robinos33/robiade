@@ -105,6 +105,8 @@ export interface Overview {
   days: { day: number; sessions: number; tokens: number }[];
   projects: { projectPath: string; projectName: string; sessions: number; tokens: Tokens; cost: Cost; lastActivityAt: number }[];
   models: { model: string; tokens: Tokens; cost: number | null }[];
+  /** Tiré des hooks : seulement les agents lancés dans Robiade. */
+  agents: { agents: number; failed: number; waitedMs: number; permissionMs: number };
   tools: [string, number][];
 }
 
