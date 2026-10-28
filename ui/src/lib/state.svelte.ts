@@ -1,7 +1,7 @@
 import { listen } from '@tauri-apps/api/event';
 import { api } from './api';
 import { writeOutput } from './terminals';
-import type { Agent, Environment, Forge, MergeRequest, MrState, Project, Session, Task, Workspace, Worktree } from './types';
+import type { Agent, Environment, Forge, GitWorktree, MergeRequest, MrState, Project, Session, Task, Workspace, Worktree } from './types';
 
 export type View = 'inbox' | 'agents' | 'history' | 'mr' | 'tasks' | 'stats' | 'env';
 
@@ -34,6 +34,8 @@ class AppState {
   forgeLoading = $state(false);
   /** État GitLab des MR liées aux sessions, par URL ; absente = pas encore lue ou illisible. */
   mrStates = $state<Record<string, MrState>>({});
+  /** Worktrees lus par git, par dépôt ; un dépôt absent n'a pas encore été relu. */
+  gitWorktrees = $state<Record<string, GitWorktree[]>>({});
 
   /** Dépôts principaux seulement : ni worktree, ni sous-dossier, ni dossier disparu. */
   projects: Project[] = $derived.by(() => {
@@ -63,7 +65,10 @@ class AppState {
   inGitlabScope = (mr: MergeRequest) =>
     this.project === null || mr.project.toLowerCase() === this.selectedGitlabProject?.toLowerCase();
 
-  /** Worktrees encore présents, du projet sélectionné (ou de tous), les plus récents d'abord. */
+  /**
+   * Worktrees encore présents, du projet sélectionné (ou de tous), les plus récents d'abord : ceux
+   * où une session a tourné, et ceux que git connaît sans session, en dernier.
+   */
   worktrees: Worktree[] = $derived.by(() => {
     const byPath = new Map<string, Worktree>();
     for (const w of [...this.history, ...this.agents]) {
@@ -78,7 +83,17 @@ class AppState {
           root: w.projectRoot,
           projectName: w.projectName,
           lastActivityAt: at,
+          git: null,
         });
+    }
+    for (const [root, list] of Object.entries(this.gitWorktrees)) {
+      if (!this.inProject(root)) continue;
+      const projectName = this.projects.find((p) => p.root === root)?.name ?? root;
+      for (const g of list.filter((g) => !g.prunable)) {
+        const known = byPath.get(g.path);
+        if (known) known.git = g;
+        else byPath.set(g.path, { path: g.path, name: g.name, root, projectName, lastActivityAt: 0, git: g });
+      }
     }
     return [...byPath.values()].sort((a, b) => b.lastActivityAt - a.lastActivityAt);
   });
@@ -151,6 +166,7 @@ class AppState {
     this.agents = await api.listAgents();
     this.tasks = await api.listTasks();
     await this.refreshHistory();
+    void this.refreshWorktrees();
     this.every(15_000, () => (this.now = Date.now()));
     // Les transcripts des agents vivants grossissent : on relit (le cache ne reparse que les fichiers modifiés).
     this.every(20_000, () => this.liveAgents.length > 0 && void this.refreshHistory());
@@ -205,6 +221,15 @@ class AppState {
     }
   }
 
+  /** Relit les worktrees du projet sélectionné, ou de tous ; un dépôt illisible garde sa dernière lecture. */
+  async refreshWorktrees() {
+    const roots = this.project === null ? this.projects.map((p) => p.root) : [this.project];
+    const read = await Promise.all(
+      roots.map((root) => api.worktrees(root).then((list) => [root, list] as const, () => null)),
+    );
+    this.gitWorktrees = { ...this.gitWorktrees, ...Object.fromEntries(read.filter((r) => r !== null)) };
+  }
+
   async refreshTasks() {
     this.tasks = await api.listTasks();
   }
@@ -231,6 +256,7 @@ class AppState {
   selectProject(root: string | null) {
     this.project = root;
     this.worktree = null;
+    void this.refreshWorktrees();
     if (root !== null) this.openFirstAgent((a) => a.projectRoot === root);
   }
 

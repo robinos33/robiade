@@ -25,7 +25,7 @@
     try {
       await api.removeWorktree(worktree.path);
       if (app.worktree === worktree.path) app.selectProject(worktree.root);
-      await app.refreshHistory();
+      await Promise.all([app.refreshHistory(), app.refreshWorktrees()]);
       app.notify(`Worktree ${worktree.name} supprimé${removal?.branch ? `, branche ${removal.branch} conservée` : ''}.`);
       onclose();
     } catch (e) {
