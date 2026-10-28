@@ -20,7 +20,7 @@ use robiade_adapters::sqlite_tasks::SqliteTaskRepository;
 use robiade_adapters::{backup, hooks, shell_env};
 use robiade_core::forge::Forge;
 use robiade_core::merge_actions::AuditLog;
-use robiade_core::vcs::WorkingTree;
+use robiade_core::vcs::{WorkingTree, Worktrees};
 use tauri::{Emitter, Manager};
 
 pub struct AppState {
@@ -30,6 +30,7 @@ pub struct AppState {
     pub tasks: SqliteTaskRepository,
     pub agents: Arc<agents::AgentRegistry>,
     pub vcs: Arc<dyn WorkingTree>,
+    pub worktrees: Arc<dyn Worktrees>,
     pub forge: Arc<dyn Forge>,
     pub mr_states: Arc<forge::MrStates>,
     pub audit: Arc<dyn AuditLog>,
@@ -96,11 +97,13 @@ fn main() {
             let home = app.path().home_dir()?;
 
             let workspaces = Arc::new(WorkspaceResolver::default());
+            let login = shell_env::resolve();
+            let git = Arc::new(GitCli::with_path(login.path.clone()));
             let registry = Arc::new(agents::AgentRegistry::new(
                 app.handle().clone(),
                 workspaces.clone(),
                 Arc::new(SqliteAgentJournal::open(&data_dir.join("robiade.db"))?),
-                shell_env::resolve(),
+                login,
                 data_dir.join("hooks.sock"),
             ));
             let on_event = registry.clone();
@@ -128,7 +131,8 @@ fn main() {
                 workspaces,
                 tasks: SqliteTaskRepository::open(&data_dir.join("robiade.db"))?,
                 agents: registry,
-                vcs: Arc::new(GitCli::default()),
+                vcs: git.clone(),
+                worktrees: git,
                 forge: gitlab.clone(),
                 mr_states: Arc::new(forge::MrStates::new(gitlab)),
                 audit: Arc::new(SqliteAuditLog::open(&data_dir.join("robiade.db"))?),
@@ -168,6 +172,8 @@ fn main() {
             commands::issues,
             commands::preview_mr_action,
             commands::run_mr_action,
+            commands::prepare_issue_start,
+            commands::start_issue_agent,
             commands::audit_log,
             commands::merge_request_outcomes,
             commands::merge_request_states,

@@ -2,7 +2,7 @@
 
 use robiade_core::agents::{Agent, AgentStatus, Gauges, Level};
 use robiade_core::assets::{Asset, AssetKind};
-use robiade_core::forge::{Issue, MergeRequest, MrOutcomes, MrRef, MrState, PipelineStatus, GITLAB_HOST};
+use robiade_core::forge::{Issue, IssueRef, MergeRequest, MrOutcomes, MrRef, MrState, PipelineStatus, GITLAB_HOST};
 use robiade_core::project::{self, Workspace};
 use robiade_core::merge_actions::{AuditEntry, MrAction};
 use robiade_core::history::{EntryKind, SearchHit, SessionSummary, TokenUsage, TranscriptEntry, HIT_END, HIT_START};
@@ -494,6 +494,40 @@ impl From<&Task> for TaskDto {
             done_at: t.done_at(),
         }
     }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueRefDto {
+    pub project: String,
+    pub iid: u64,
+}
+
+impl IssueRefDto {
+    /// Revalidée comme une URL d'issue de l'instance.
+    pub fn validate(&self) -> Option<IssueRef> {
+        IssueRef::from_url(&format!("https://{GITLAB_HOST}/{}/-/issues/{}", self.project, self.iid))
+            .filter(|r| r.project == self.project)
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueStartDto {
+    pub repository: String,
+    pub branch: String,
+    pub bases: Vec<String>,
+    pub worktree_dir: String,
+    pub prompt: String,
+    pub tab_name: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueStartedDto {
+    pub agent_id: String,
+    /// La base a été mise à jour depuis origin ; sinon, la base locale a servi.
+    pub fetched: bool,
 }
 
 #[derive(Serialize, Deserialize)]

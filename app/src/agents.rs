@@ -69,7 +69,15 @@ impl AgentRegistry {
         self.login.claude.as_deref()
     }
 
-    pub fn spawn(self: &Arc<Self>, cwd: &Path, resume: Option<AgentId>, cols: u16, rows: u16) -> Result<AgentDto, String> {
+    /// `prompt` : premier message, déjà relu ; Claude Code le traite dès son démarrage.
+    pub fn spawn(
+        self: &Arc<Self>,
+        cwd: &Path,
+        resume: Option<AgentId>,
+        prompt: Option<String>,
+        cols: u16,
+        rows: u16,
+    ) -> Result<AgentDto, String> {
         let claude = self.login.claude.as_deref().ok_or("binaire `claude` introuvable dans le PATH du shell de login")?;
         let id = AgentId::parse(&uuid::Uuid::new_v4().to_string()).map_err(|e| e.to_string())?;
         let exe = std::env::current_exe().map_err(|e| e.to_string())?;
@@ -80,6 +88,13 @@ impl AgentRegistry {
             None => vec!["--session-id".to_owned(), id.as_str().to_owned()],
         };
         args.extend(["--settings".to_owned(), hooks::settings_json(&relay)]);
+        if let Some(prompt) = prompt {
+            // Un argument qui commence par `-` serait lu comme une option de `claude`.
+            if prompt.trim_start().starts_with('-') {
+                return Err("le prompt ne peut pas commencer par « - »".into());
+            }
+            args.push(prompt);
+        }
 
         let output_target = self.clone();
         let output_id = id.clone();

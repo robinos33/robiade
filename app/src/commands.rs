@@ -1,9 +1,10 @@
 //! Commandes IPC. Chaque entrée venant du front est validée ici avant d'atteindre le domaine.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use robiade_core::agents::AgentId;
-use robiade_core::forge::MrRef;
+use robiade_core::forge::{IssueRef, MrRef};
+use robiade_core::issue_start;
 use robiade_core::history::{SessionSearch, TranscriptReader};
 use robiade_core::stats;
 use robiade_core::tasks::{Task, TaskId, TaskRepository};
@@ -11,8 +12,8 @@ use tauri::{Manager, State};
 
 use crate::dto::{
     ActionPreviewDto, AgentDto, AssetContentDto, AuditEntryDto, EntryDto, EnvironmentDto, FileChangeDto, ForgeDto,
-    IssueDto, MergeRequestDto, MrActionDto, MrOutcomesDto, MrRefDto, OverviewDto, SearchHitDto, SessionDto, TaskDto,
-    TaskStatusDto,
+    IssueDto, IssueRefDto, IssueStartDto, IssueStartedDto, MergeRequestDto, MrActionDto, MrOutcomesDto, MrRefDto,
+    OverviewDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto,
 };
 use crate::{now, AppState};
 
@@ -169,7 +170,7 @@ pub fn spawn_agent(
 ) -> CmdResult<AgentDto> {
     let cwd = project_dir(&project_path)?;
     let resume = resume_session_id.as_deref().map(agent_id).transpose()?;
-    state.agents.spawn(&cwd, resume, cols.clamp(20, 500), rows.clamp(5, 200))
+    state.agents.spawn(&cwd, resume, None, cols.clamp(20, 500), rows.clamp(5, 200))
 }
 
 #[tauri::command]
@@ -334,6 +335,83 @@ pub async fn run_mr_action(app: tauri::AppHandle, target: MrRefDto, action: MrAc
 #[tauri::command]
 pub fn audit_log(state: State<AppState>) -> CmdResult<Vec<AuditEntryDto>> {
     Ok(state.audit.recent(50).map_err(|e| e.to_string())?.into_iter().map(AuditEntryDto::from).collect())
+}
+
+/// Dépôt principal désigné par l'interface, rattaché au projet GitLab de l'issue : rien d'autre.
+fn issue_repository(state: &AppState, project_root: &str, issue: &IssueRef) -> CmdResult<String> {
+    let dir = project_dir(project_root)?.to_string_lossy().into_owned();
+    let workspace = state.workspaces.resolve(&dir);
+    let same_project = workspace.gitlab_project.as_deref().is_some_and(|p| p.eq_ignore_ascii_case(&issue.project));
+    if workspace.project_root != dir || workspace.worktree.is_some() || !same_project {
+        return Err("ce dossier n'est pas le dépôt du projet de l'issue".into());
+    }
+    Ok(dir)
+}
+
+/// Ce que « démarrer un agent sur cette issue » proposera : branche, bases, prompt à relire.
+#[tauri::command]
+pub async fn prepare_issue_start(
+    app: tauri::AppHandle,
+    project_root: String,
+    issue: IssueRefDto,
+) -> CmdResult<IssueStartDto> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let issue_ref = issue.validate().ok_or("issue invalide")?;
+        let repository = issue_repository(&state, &project_root, &issue_ref)?;
+        let found = state.forge.issue(&issue_ref).map_err(|e| e.to_string())?;
+        let bases = state.worktrees.bases(&repository).map_err(|e| e.to_string())?;
+        if bases.is_empty() {
+            return Err("aucune base origin/staging, origin/main ni origin/master dans ce dépôt".into());
+        }
+        let branch = issue_start::branch_name(&found);
+        Ok(IssueStartDto {
+            repository: repository.clone(),
+            worktree_dir: issue_start::worktree_dir(&repository, &branch),
+            prompt: issue_start::initial_prompt(&found, &branch),
+            tab_name: issue_start::tab_name(&found),
+            branch,
+            bases,
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Crée la branche et le worktree, puis lance l'agent avec le prompt relu.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn start_issue_agent(
+    app: tauri::AppHandle,
+    project_root: String,
+    issue: IssueRefDto,
+    branch: String,
+    base: String,
+    prompt: String,
+    cols: u16,
+    rows: u16,
+) -> CmdResult<IssueStartedDto> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let issue_ref = issue.validate().ok_or("issue invalide")?;
+        let repository = issue_repository(&state, &project_root, &issue_ref)?;
+        if !issue_start::is_valid_branch(&branch) {
+            return Err("nom de branche refusé".into());
+        }
+        let prompt = prompt.trim().to_owned();
+        if prompt.is_empty() || prompt.chars().count() > issue_start::PROMPT_MAX_CHARS {
+            return Err("prompt vide ou trop long".into());
+        }
+        let found = state.forge.issue(&issue_ref).map_err(|e| e.to_string())?;
+        let dir = issue_start::worktree_dir(&repository, &branch);
+        let fetched = state.worktrees.create(&repository, &branch, &base, &dir).map_err(|e| e.to_string())?;
+        let agent =
+            state.agents.spawn(Path::new(&dir), None, Some(prompt), cols.clamp(20, 500), rows.clamp(5, 200))?;
+        state.agents.rename(&agent_id(&agent.id)?, &issue_start::tab_name(&found))?;
+        Ok(IssueStartedDto { agent_id: agent.id, fetched })
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Au-delà, la page de stats ne relit pas les MR une à une.
