@@ -1,5 +1,5 @@
-//! MR et issues lues sur l'API REST de GitLab, instance configurée uniquement, avec le token du trousseau.
-//! Lecture seule : aucune requête autre que `GET` ne part d'ici.
+//! MR et issues sur l'API REST de GitLab, instance configurée uniquement, avec le token du trousseau.
+//! Les écritures passent toutes par `execute`, avec une action déjà validée par le domaine.
 
 use std::sync::Mutex;
 use std::time::Duration;
@@ -9,8 +9,10 @@ use robiade_core::forge::{
     is_project_path, Approvals, Forge, ForgeError, Issue, IssueRef, MergeRequest, MrRef, MrState, PipelineStatus,
     GITLAB_HOST,
 };
+use robiade_core::merge_actions::Planned;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
+use serde_json::json;
 
 use crate::keychain;
 
@@ -74,6 +76,31 @@ impl GitLab {
         response.body_mut().read_json().map_err(|e| ForgeError::Api(e.to_string()))
     }
 
+    /// `POST` ou `PUT` d'un corps JSON. Le message d'erreur de GitLab est remonté, tronqué.
+    fn send(&self, put: bool, path: &str, body: serde_json::Value) -> Result<(), ForgeError> {
+        let token = self.token()?;
+        let url = format!("{}{path}", self.api);
+        let request = if put { self.http.put(url) } else { self.http.post(url) };
+        let mut response = request
+            .config()
+            .http_status_as_error(false)
+            .build()
+            .header("PRIVATE-TOKEN", token.expose_secret())
+            .send_json(&body)
+            .map_err(|e| ForgeError::Network(e.to_string()))?;
+        match response.status().as_u16() {
+            200..=299 => Ok(()),
+            401 => {
+                *self.token.lock().unwrap_or_else(|e| e.into_inner()) = None;
+                Err(ForgeError::Unauthorized)
+            }
+            code => {
+                let raw = response.body_mut().with_config().limit(64 * 1024).read_to_string().unwrap_or_default();
+                Err(ForgeError::Api(format!("statut HTTP {code} : {}", gitlab_message(&raw))))
+            }
+        }
+    }
+
     fn username(&self) -> Result<String, ForgeError> {
         if let Some(name) = self.username.lock().unwrap_or_else(|e| e.into_inner()).clone() {
             return Ok(name);
@@ -106,6 +133,30 @@ impl GitLab {
 }
 
 impl Forge for GitLab {
+    fn me(&self) -> Result<String, ForgeError> {
+        self.username()
+    }
+
+    fn execute(&self, mr: &MrRef, planned: &Planned) -> Result<(), ForgeError> {
+        if !is_project_path(&mr.project) {
+            return Err(ForgeError::NotFound);
+        }
+        let project = format!("/projects/{}", mr.project.replace('/', "%2F"));
+        let this = format!("{project}/merge_requests/{}", mr.iid);
+        match planned {
+            Planned::Comment(body) => self.send(false, &format!("{this}/notes"), json!({ "body": body })),
+            Planned::Approve => self.send(false, &format!("{this}/approve"), json!({})),
+            Planned::Rebase => self.send(true, &format!("{this}/rebase"), json!({})),
+            Planned::RetryPipeline { pipeline_id } => {
+                self.send(false, &format!("{project}/pipelines/{pipeline_id}/retry"), json!({}))
+            }
+            Planned::Retitle(title) => self.send(true, &this, json!({ "title": title })),
+            Planned::Merge { sha, squash } => {
+                self.send(true, &format!("{this}/merge"), json!({ "sha": sha, "squash": squash }))
+            }
+        }
+    }
+
     fn my_merge_requests(&self) -> Result<Vec<MergeRequest>, ForgeError> {
         let listed = self.list("scope=created_by_me")?;
         // La liste ne donne ni le pipeline ni les approbations : chaque MR est relue, en parallèle.
@@ -184,6 +235,20 @@ fn issue_to_domain(i: ApiIssue) -> Option<Issue> {
     })
 }
 
+/// `message` d'une réponse d'erreur GitLab (texte, liste ou objet), ramené à une ligne courte.
+fn gitlab_message(raw: &str) -> String {
+    let message = match serde_json::from_str::<serde_json::Value>(raw) {
+        Ok(serde_json::Value::Object(o)) => match o.get("message").or_else(|| o.get("error")) {
+            Some(serde_json::Value::String(s)) => s.clone(),
+            Some(other) => other.to_string(),
+            None => raw.to_owned(),
+        },
+        _ => raw.to_owned(),
+    };
+    let line = message.split_whitespace().collect::<Vec<_>>().join(" ");
+    line.chars().take(300).collect()
+}
+
 fn valid_username(name: &str) -> bool {
     !name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
 }
@@ -210,6 +275,7 @@ struct ApiApprover {
 
 #[derive(Deserialize)]
 struct ApiPipeline {
+    id: u64,
     status: String,
 }
 
@@ -223,6 +289,8 @@ struct ApiMergeRequest {
     target_branch: String,
     web_url: String,
     updated_at: String,
+    #[serde(default)]
+    sha: Option<String>,
     #[serde(default)]
     has_conflicts: bool,
     #[serde(default = "resolved")]
@@ -259,7 +327,9 @@ fn to_domain(m: ApiMergeRequest) -> Option<MergeRequest> {
         has_conflicts: m.has_conflicts,
         unresolved_discussions: !m.blocking_discussions_resolved,
         merge_status: m.detailed_merge_status.unwrap_or_default(),
-        pipeline: m.head_pipeline.and_then(|p| PipelineStatus::parse(&p.status)),
+        pipeline: m.head_pipeline.as_ref().and_then(|p| PipelineStatus::parse(&p.status)),
+        pipeline_id: m.head_pipeline.map(|p| p.id),
+        sha: m.sha.unwrap_or_default(),
         approvals: None,
     })
 }
@@ -301,6 +371,14 @@ mod tests {
         let issue = issue_to_domain(issue).unwrap();
         assert_eq!(issue.issue, IssueRef { project: "shop/boutique".into(), iid: 5021 });
         assert_eq!((issue.assignees, issue.due_date.as_deref()), (vec!["robinos33".to_owned()], Some("2026-11-02")));
+    }
+
+    #[test]
+    fn keeps_a_short_gitlab_error_message() {
+        let stale = gitlab_message(r#"{"message":"SHA does not match HEAD of source branch"}"#);
+        assert_eq!(stale, "SHA does not match HEAD of source branch");
+        assert_eq!(gitlab_message(r#"{"message":{"title":["is too long"]}}"#), r#"{"title":["is too long"]}"#);
+        assert_eq!(gitlab_message(&"x".repeat(1000)).len(), 300);
     }
 
     #[test]

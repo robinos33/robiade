@@ -1,6 +1,7 @@
 //! Forge : MR et issues GitLab, lues sur l'instance configurée. Couche anti-corruption : le domaine ne
 //! garde que ce qu'il affiche ou ce sur quoi il raisonne, GitLab reste la source.
 
+use crate::merge_actions::Planned;
 use crate::Millis;
 
 /// Seule instance GitLab connue de Robiade : tout autre hôte est ignoré.
@@ -127,6 +128,8 @@ pub struct MergeRequest {
     pub target_branch: String,
     pub web_url: String,
     pub updated_at: Millis,
+    /// Commit de tête : un merge ne part que sur le commit que j'ai vu.
+    pub sha: String,
     pub has_conflicts: bool,
     /// Des discussions bloquantes ne sont pas résolues.
     pub unresolved_discussions: bool,
@@ -134,6 +137,8 @@ pub struct MergeRequest {
     pub merge_status: String,
     /// `None` sans pipeline, ou quand il n'a pas été lu (MR des autres).
     pub pipeline: Option<PipelineStatus>,
+    /// Identifiant du dernier pipeline, pour le relancer.
+    pub pipeline_id: Option<u64>,
     /// `None` quand elles n'ont pas été lues (MR des autres).
     pub approvals: Option<Approvals>,
 }
@@ -161,8 +166,10 @@ pub enum ForgeError {
     Api(String),
 }
 
-/// Lecture des MR sur GitLab.
+/// MR et issues sur GitLab : lecture, et exécution des actions déjà validées par `merge_actions::plan`.
 pub trait Forge: Send + Sync {
+    /// Mon nom d'utilisateur GitLab.
+    fn me(&self) -> Result<String, ForgeError>;
     /// Mes MR ouvertes, avec leur dernier pipeline et leurs approbations.
     fn my_merge_requests(&self) -> Result<Vec<MergeRequest>, ForgeError>;
     /// MR ouvertes des autres où je suis relecteur, brouillons et MR déjà approuvées par moi exclus.
@@ -173,6 +180,8 @@ pub trait Forge: Send + Sync {
     fn my_issues(&self) -> Result<Vec<Issue>, ForgeError>;
     /// Issues ouvertes d'un projet (chemin complet, validé par `is_project_path`).
     fn project_issues(&self, project: &str) -> Result<Vec<Issue>, ForgeError>;
+    /// Envoie une action planifiée ; seul appel qui écrit sur GitLab.
+    fn execute(&self, mr: &MrRef, planned: &Planned) -> Result<(), ForgeError>;
 }
 
 /// MR produites par des sessions : combien, et combien ont été mergées.
@@ -240,10 +249,12 @@ mod tests {
             target_branch: "ticket-1".into(),
             web_url: String::new(),
             updated_at: 0,
+            sha: String::new(),
             has_conflicts: false,
             unresolved_discussions: false,
             merge_status: String::new(),
             pipeline: None,
+            pipeline_id: None,
             approvals: None,
         };
         assert!(mr.is_intermediate_wagon());
