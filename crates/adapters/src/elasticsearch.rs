@@ -121,6 +121,20 @@ fn failure(status: u16, text: &str) -> DbError {
     DbError::Unreachable(format!("HTTP {status} : {reason}"))
 }
 
+/// Une recherche répond 200 même quand ses shards ont échoué (annulation, script en erreur) ou
+/// qu'elle a dépassé son délai : des résultats vides ou partiels passeraient pour complets.
+fn complete(found: &Value) -> Result<(), DbError> {
+    let failed = found.pointer("/_shards/failed").and_then(Value::as_u64).unwrap_or(0);
+    if failed > 0 {
+        let reason = found.pointer("/_shards/failures/0/reason/reason").and_then(Value::as_str).unwrap_or("sans raison");
+        return Err(DbError::Unreachable(format!("{failed} shard(s) en échec, résultat incomplet : {reason}")));
+    }
+    if found.get("timed_out").and_then(Value::as_bool) == Some(true) {
+        return Err(DbError::Unreachable("délai dépassé côté serveur, résultat incomplet".into()));
+    }
+    Ok(())
+}
+
 /// `Preferred` (dev seulement) : HTTPS d'abord, HTTP si le serveur ne le parle pas ou que son
 /// certificat ne se vérifie pas. Le premier `GET /` dit aussi si les identifiants passent.
 fn connect(engine: Engine, target: &Target, tls: Tls, timeout: Duration) -> Result<(Client, Value), DbError> {
@@ -327,6 +341,7 @@ impl DbSession for EsSession {
         let body: Value = serde_json::from_str(&request.body).map_err(|e| DbError::Unreachable(e.to_string()))?;
         let fields: Vec<&str> = body.get("_source").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).collect();
         let found = self.client.json(request.method, &request.path, &request.body)?;
+        complete(&found)?;
         let hits = found.pointer("/hits/hits").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
         Ok(hits
             .iter()
@@ -348,7 +363,10 @@ impl DbSession for EsSession {
             return Ok(Executed { columns: vec![column("statut")], rows: vec![vec![Some(status.to_string())]], affected: None });
         }
         Ok(match serde_json::from_str::<Value>(&text) {
-            Ok(value) => executed(value, max_rows),
+            Ok(value) => {
+                complete(&value)?;
+                executed(value, max_rows)
+            }
             Err(_) => plain(&text, max_rows),
         })
     }
@@ -537,5 +555,25 @@ mod tests {
         // Rien ne tourne : l'annulation n'a rien à faire, mais sait lister les tâches.
         session.canceller()().unwrap();
         assert!(session.begin_write("POST /logs/_doc\n{}").is_err());
+    }
+
+    #[test]
+    #[ignore = "demande un Elasticsearch local jetable"]
+    fn cancels_a_running_search_from_another_thread() {
+        let mut session = Elasticsearch.open(Engine::Elasticsearch, &admin(), Tls::Disabled, true).unwrap();
+        // Une soixantaine de scripts par document : plusieurs secondes sur l'index de test.
+        let source = "long x = params.k; for (int i = 0; i < 900000; i++) { x += i; } return x > 0;";
+        let should: Vec<Value> = (0..60).map(|k| serde_json::json!({"script": {"script": {"source": source, "params": {"k": k}}}})).collect();
+        let slow = format!("POST /logs/_search?request_cache=false\n{}", serde_json::json!({"size": 0, "query": {"bool": {"should": should}}}));
+        let cancel = session.canceller();
+        let waiter = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(500));
+            cancel().unwrap();
+        });
+        let outcome = session.execute(&slow, StatementKind::Query, 10);
+        waiter.join().unwrap();
+        // Elasticsearch ne vérifie l'annulation qu'entre deux étapes de la recherche : ce script,
+        // tout en calcul sur 450 documents, va au bout. C'est l'issue qui compte ici, pas le délai.
+        assert!(matches!(outcome, Err(DbError::Unreachable(ref m)) if m.contains("cancel")), "{outcome:?}");
     }
 }
