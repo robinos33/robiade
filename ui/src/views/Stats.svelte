@@ -2,17 +2,27 @@
   import { app } from '../lib/state.svelte';
   import { api } from '../lib/api';
   import { count, dayLabel, dollars, duration, tokens } from '../lib/format';
-  import type { Overview } from '../lib/types';
+  import type { MrOutcomes, Overview } from '../lib/types';
 
   const WINDOWS = [7, 30, 90, 365];
   let windowDays = $state(30);
   let data = $state<Overview | null>(null);
   let hover = $state<number | null>(null);
+  /** État sur GitLab des MR de la période : lu à part, la page n'attend pas le réseau. */
+  let outcomes = $state<MrOutcomes | string | null>(null);
 
   $effect(() => {
     const [w, p] = [windowDays, app.project];
     void app.history.length; // recalcul quand l'historique est relu
     api.stats(w, p).then((o) => (data = o), (e) => app.notify(String(e)));
+  });
+
+  $effect(() => {
+    const refs = data?.mergeRequestRefs;
+    if (!refs) return;
+    outcomes = null;
+    if (refs.length === 0) return;
+    api.mergeRequestOutcomes(refs).then((o) => (outcomes = o), (e) => (outcomes = String(e)));
   });
 
   // Graphe : une seule série → une teinte, pas de légende, survol par barre.
@@ -77,7 +87,23 @@
           <span class="v num">{data.medianDurationMs === null ? '—' : duration(data.medianDurationMs)}</span>
         </div>
         <div class="tile"><span class="k">Appels d'outils</span><span class="v num">{count(data.toolCalls)}</span></div>
-        <div class="tile"><span class="k">Sessions avec MR</span><span class="v num">{count(data.mergeRequests)}</span></div>
+        <div class="tile" title="MR liées aux sessions (pr-link), état lu sur GitLab">
+          <span class="k">MR mergées</span>
+          {#if data.mergeRequestRefs.length === 0}
+            <span class="v num">—</span><span class="s">aucune MR liée à une session</span>
+          {:else if outcomes === null}
+            <span class="v num">…</span><span class="s num">{data.mergeRequestRefs.length} MR à lire sur GitLab</span>
+          {:else if typeof outcomes === 'string'}
+            <span class="v num">?</span><span class="s" title={outcomes}>GitLab illisible</span>
+          {:else}
+            <span class="v num">{Math.round((outcomes.merged / outcomes.total) * 100)} %</span>
+            <span class="s num">
+              {outcomes.merged}/{outcomes.total} · {outcomes.opened} ouverte{outcomes.opened > 1 ? 's' : ''}{outcomes.closed
+                ? ` · ${outcomes.closed} fermée${outcomes.closed > 1 ? 's' : ''}`
+                : ''}{outcomes.unknown ? ` · ${outcomes.unknown} illisible${outcomes.unknown > 1 ? 's' : ''}` : ''}
+            </span>
+          {/if}
+        </div>
       </div>
 
       <div class="panel">
