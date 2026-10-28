@@ -13,11 +13,13 @@ use robiade_adapters::claude_code::TranscriptStore;
 use robiade_adapters::git::GitCli;
 use robiade_adapters::gitlab::GitLab;
 use robiade_adapters::sqlite_agents::SqliteAgentJournal;
+use robiade_adapters::sqlite_audit::SqliteAuditLog;
 use robiade_adapters::sqlite_search::SearchIndex;
 use robiade_adapters::workspace::WorkspaceResolver;
 use robiade_adapters::sqlite_tasks::SqliteTaskRepository;
 use robiade_adapters::{backup, hooks, shell_env};
 use robiade_core::forge::Forge;
+use robiade_core::merge_actions::AuditLog;
 use robiade_core::vcs::WorkingTree;
 use tauri::{Emitter, Manager};
 
@@ -30,6 +32,7 @@ pub struct AppState {
     pub vcs: Arc<dyn WorkingTree>,
     pub forge: Arc<dyn Forge>,
     pub mr_states: Arc<forge::MrStates>,
+    pub audit: Arc<dyn AuditLog>,
     /// Fermeture confirmée dans l'interface malgré des agents au travail.
     pub quit_confirmed: AtomicBool,
 }
@@ -128,6 +131,7 @@ fn main() {
                 vcs: Arc::new(GitCli::default()),
                 forge: gitlab.clone(),
                 mr_states: Arc::new(forge::MrStates::new(gitlab)),
+                audit: Arc::new(SqliteAuditLog::open(&data_dir.join("robiade.db"))?),
                 quit_confirmed: AtomicBool::new(false),
             });
             Ok(())
@@ -162,6 +166,9 @@ fn main() {
             commands::working_diff,
             commands::merge_requests,
             commands::issues,
+            commands::preview_mr_action,
+            commands::run_mr_action,
+            commands::audit_log,
             commands::merge_request_outcomes,
             commands::merge_request_states,
             commands::quit,

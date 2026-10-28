@@ -4,6 +4,7 @@ use robiade_core::agents::{Agent, AgentStatus, Gauges, Level};
 use robiade_core::assets::{Asset, AssetKind};
 use robiade_core::forge::{Issue, MergeRequest, MrOutcomes, MrRef, MrState, PipelineStatus, GITLAB_HOST};
 use robiade_core::project::{self, Workspace};
+use robiade_core::merge_actions::{AuditEntry, MrAction};
 use robiade_core::history::{EntryKind, SearchHit, SessionSummary, TokenUsage, TranscriptEntry, HIT_END, HIT_START};
 use robiade_core::pricing::{Estimate, PRICES_AS_OF};
 use robiade_core::stats::{self, AgentsOverview, Overview};
@@ -609,6 +610,64 @@ impl From<Issue> for IssueDto {
             due_date: i.due_date,
             merge_requests: i.merge_requests,
         }
+    }
+}
+
+/// Action demandée par l'interface ; les règles s'appliquent ensuite côté domaine.
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum MrActionDto {
+    Comment { body: String },
+    Approve,
+    Rebase,
+    RetryPipeline,
+    MarkReady,
+    MarkDraft,
+    Merge {
+        #[serde(rename = "expectedSha")]
+        expected_sha: String,
+    },
+}
+
+impl From<MrActionDto> for MrAction {
+    fn from(a: MrActionDto) -> Self {
+        match a {
+            MrActionDto::Comment { body } => MrAction::Comment(body),
+            MrActionDto::Approve => MrAction::Approve,
+            MrActionDto::Rebase => MrAction::Rebase,
+            MrActionDto::RetryPipeline => MrAction::RetryPipeline,
+            MrActionDto::MarkReady => MrAction::MarkReady,
+            MrActionDto::MarkDraft => MrAction::MarkDraft,
+            MrActionDto::Merge { expected_sha } => MrAction::Merge { expected_sha },
+        }
+    }
+}
+
+/// Ce que la confirmation montre : la cible exacte, relue sur GitLab, et ce qui partira.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionPreviewDto {
+    pub project: String,
+    pub iid: u64,
+    pub title: String,
+    pub source_branch: String,
+    pub target_branch: String,
+    pub author: String,
+    pub action: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuditEntryDto {
+    pub at: i64,
+    pub target: String,
+    pub action: String,
+    pub outcome: String,
+}
+
+impl From<AuditEntry> for AuditEntryDto {
+    fn from(e: AuditEntry) -> Self {
+        Self { at: e.at, target: e.target, action: e.action, outcome: e.outcome }
     }
 }
 

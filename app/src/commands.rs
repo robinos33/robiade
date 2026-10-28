@@ -10,8 +10,9 @@ use robiade_core::tasks::{Task, TaskId, TaskRepository};
 use tauri::{Manager, State};
 
 use crate::dto::{
-    AgentDto, AssetContentDto, EntryDto, EnvironmentDto, FileChangeDto, ForgeDto, IssueDto, MergeRequestDto,
-    MrOutcomesDto, MrRefDto, OverviewDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto,
+    ActionPreviewDto, AgentDto, AssetContentDto, AuditEntryDto, EntryDto, EnvironmentDto, FileChangeDto, ForgeDto,
+    IssueDto, MergeRequestDto, MrActionDto, MrOutcomesDto, MrRefDto, OverviewDto, SearchHitDto, SessionDto, TaskDto,
+    TaskStatusDto,
 };
 use crate::{now, AppState};
 
@@ -274,6 +275,65 @@ pub async fn issues(state: State<'_, AppState>, project: Option<String>) -> CmdR
     .map_err(|e| e.to_string())?
     .map_err(|e| e.to_string())?;
     Ok(issues.into_iter().map(IssueDto::from).collect())
+}
+
+/// Relit la MR sur GitLab et applique les règles du domaine : rien ne part sur un état périmé.
+fn planned(
+    state: &AppState,
+    target: &MrRefDto,
+    action: MrActionDto,
+) -> CmdResult<(robiade_core::forge::MergeRequest, robiade_core::merge_actions::Planned)> {
+    let mr = target.validate().ok_or("MR invalide")?;
+    let current = state.forge.merge_request(&mr).map_err(|e| e.to_string())?;
+    let me = state.forge.me().map_err(|e| e.to_string())?;
+    let planned = robiade_core::merge_actions::plan(&current, &action.into(), &me).map_err(|e| e.to_string())?;
+    Ok((current, planned))
+}
+
+/// Ce qu'une action ferait, pour la confirmation. N'écrit rien.
+#[tauri::command]
+pub async fn preview_mr_action(
+    app: tauri::AppHandle,
+    target: MrRefDto,
+    action: MrActionDto,
+) -> CmdResult<ActionPreviewDto> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let (mr, planned) = planned(&state, &target, action)?;
+        Ok(ActionPreviewDto {
+            project: mr.mr.project,
+            iid: mr.mr.iid,
+            title: mr.title,
+            source_branch: mr.source_branch,
+            target_branch: mr.target_branch,
+            author: mr.author,
+            action: planned.describe(),
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Action confirmée : replanifiée sur l'état courant, envoyée, puis inscrite au journal d'audit.
+#[tauri::command]
+pub async fn run_mr_action(app: tauri::AppHandle, target: MrRefDto, action: MrActionDto) -> CmdResult<String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let (mr, planned) = planned(&state, &target, action)?;
+        let outcome = state.forge.execute(&mr.mr, &planned).map_err(|e| e.to_string());
+        let entry = robiade_core::merge_actions::AuditEntry::new(now(), &mr.mr, &planned, outcome.clone());
+        if let Err(e) = state.audit.record(&entry) {
+            eprintln!("{e}");
+        }
+        outcome.map(|()| planned.describe())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub fn audit_log(state: State<AppState>) -> CmdResult<Vec<AuditEntryDto>> {
+    Ok(state.audit.recent(50).map_err(|e| e.to_string())?.into_iter().map(AuditEntryDto::from).collect())
 }
 
 /// Au-delà, la page de stats ne relit pas les MR une à une.
