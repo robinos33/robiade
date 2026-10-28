@@ -187,6 +187,15 @@ export interface IssueActionPreview {
   action: string;
 }
 
+/** Issue à créer, telle que saisie ; le domaine la valide. */
+export interface NewIssue {
+  project: string;
+  title: string;
+  description: string;
+  labels: string[];
+  assignees: string[];
+}
+
 export type MrAction =
   | { kind: 'comment'; body: string }
   | { kind: 'approve' }

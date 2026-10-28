@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
-  Agent, AssetContent, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, MrAction, MrOutcomes, MrRef, MrState, Overview, SearchHit, Session, Task, TaskStatus, WorktreeRemoval,
+  Agent, AssetContent, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, SearchHit, Session, Task, TaskStatus, WorktreeRemoval,
 } from './types';
 
 export const api = {
@@ -37,6 +37,8 @@ export const api = {
   previewIssueAction: (target: MrRef, action: IssueAction) =>
     invoke<IssueActionPreview>('preview_issue_action', { target, action }),
   runIssueAction: (target: MrRef, action: IssueAction) => invoke<string>('run_issue_action', { target, action }),
+  previewIssueCreation: (issue: NewIssue) => invoke<string>('preview_issue_creation', { issue }),
+  createIssue: (issue: NewIssue) => invoke<MrRef>('create_issue', { issue }),
   auditLog: () => invoke<AuditEntry[]>('audit_log'),
   prepareIssueStart: (projectRoot: string, issue: MrRef) =>
     invoke<IssueStart>('prepare_issue_start', { projectRoot, issue }),

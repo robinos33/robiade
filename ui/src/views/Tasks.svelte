@@ -6,12 +6,17 @@
   import type { Issue, IssueAction, Task, TaskStatus } from '../lib/types';
   import Icon from '../components/Icon.svelte';
   import IssueActionConfirm from '../components/IssueActionConfirm.svelte';
+  import IssueCreateDialog from '../components/IssueCreateDialog.svelte';
   import IssueStartDialog from '../components/IssueStartDialog.svelte';
 
   /** Issue sur laquelle démarrer un agent, avec le dépôt local de son projet. */
   let starting = $state<{ issue: Issue; root: string } | null>(null);
   /** Action sur une issue, en attente de confirmation. */
   let acting = $state<{ issue: Issue; action: IssueAction } | null>(null);
+  /** Projet GitLab où créer une issue, le temps de la saisie. */
+  let creating = $state<string | null>(null);
+  /** Incrémenté pour relire les issues, après une création. */
+  let reload = $state(0);
   /** Une issue fermée ici reste affichée jusqu'à la prochaine lecture, pour pouvoir la rouvrir. */
   function replaced(updated: Issue) {
     issues = issues?.map((i) => (i.webUrl === updated.webUrl ? updated : i)) ?? null;
@@ -36,6 +41,7 @@
 
   $effect(() => {
     const scope = issuesScope;
+    void reload;
     issues = null;
     issuesError = null;
     if (scope === null) return;
@@ -113,6 +119,12 @@
       <h2 class="section-title">
         Tâches d'équipe · GitLab · {issuesScope === 'assigned' ? 'assignées à moi' : (issuesScope ?? '—')}
         {#if issues}<span class="num">{issues.length}</span>{/if}
+        {#if issuesScope !== null && issuesScope !== 'assigned'}
+          {@const project = issuesScope}
+          <button class="btn ghost new" title="Créer une issue sur GitLab, relue avant envoi" onclick={() => (creating = project)}>
+            Nouvelle issue
+          </button>
+        {/if}
       </h2>
       {#if issuesScope === null}
         <p class="muted">Ce projet n'a pas de remote origin sur gitlab.example.com.</p>
@@ -173,6 +185,10 @@
   <IssueActionConfirm issue={acting.issue} action={acting.action} ondone={replaced} onclose={() => (acting = null)} />
 {/if}
 
+{#if creating}
+  <IssueCreateDialog project={creating} oncreated={() => reload++} onclose={() => (creating = null)} />
+{/if}
+
 {#if starting}
   <IssueStartDialog issue={starting.issue} projectRoot={starting.root} onclose={() => (starting = null)} />
 {/if}
@@ -209,6 +225,8 @@
   .team { border-top: 1px solid var(--line); padding-top: 18px; }
   .team p { margin: 0; }
   .team h2 span { color: var(--ink-3); margin-left: 4px; }
+  .team h2 { display: flex; align-items: center; }
+  .new { margin-left: auto; height: 24px; padding: 0 8px; font-size: 12px; text-transform: none; letter-spacing: 0; }
   .issues { gap: 0; }
   .issue { display: flex; align-items: flex-start; gap: 10px; padding: 8px 6px; border-bottom: 1px solid var(--line); }
   .ref { color: var(--ink-3); font-size: 12px; width: 52px; flex: none; padding-top: 1px; }
