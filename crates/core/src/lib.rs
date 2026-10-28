@@ -5,6 +5,7 @@
 
 pub mod agents;
 pub mod assets;
+pub mod forge;
 pub mod history;
 pub mod pricing;
 pub mod project;
