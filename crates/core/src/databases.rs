@@ -373,7 +373,9 @@ impl Target {
     /// Chiffrement exigé pour joindre cette cible. Hors dev, toujours : un `sslmode` qui laisserait
     /// un attaquant réseau rabattre la session en clair (`prefer`, `allow`) est refusé, pas
     /// silencieusement durci, pour que la configuration fautive se voie. En dev, le clair n'est
-    /// accepté explicitement (`disable`) que vers la machine locale.
+    /// accepté que vers la machine locale : explicitement (`disable`), ou en repli si le serveur ne
+    /// parle pas TLS. Vers un autre hôte, un repli en clair se provoque depuis le réseau (il suffit
+    /// de faire échouer la poignée de main) et livrerait le mot de passe : TLS est exigé.
     pub fn tls(&self, stage: Stage) -> Result<Tls, DbError> {
         let mode = self.ssl_mode.as_deref();
         if stage != Stage::Dev {
@@ -384,7 +386,8 @@ impl Target {
             };
         }
         match mode {
-            None | Some("prefer" | "allow") => Ok(Tls::Preferred),
+            None | Some("prefer" | "allow") if is_local_host(&self.host) => Ok(Tls::Preferred),
+            None | Some("prefer" | "allow") => Ok(Tls::Required),
             Some("require" | "verify-ca" | "verify-full") => Ok(Tls::Required),
             Some("disable") if is_local_host(&self.host) => Ok(Tls::Disabled),
             Some("disable") => Err(DbError::ClearTextOffLocalhost),
@@ -398,7 +401,7 @@ impl Target {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tls {
     Required,
-    /// TLS si le serveur le propose : dev seulement, où un repli en clair est acceptable.
+    /// TLS si le serveur le propose : dev vers la machine locale seulement.
     Preferred,
     /// Dev vers la machine locale seulement.
     Disabled,
@@ -679,7 +682,11 @@ mod tests {
                 assert_eq!(target("localhost", Some(weak)).tls(stage), Err(DbError::TlsRequired), "{weak}");
             }
         }
-        assert_eq!(target("db", None).tls(Stage::Dev), Ok(Tls::Preferred));
+        assert_eq!(target("localhost", None).tls(Stage::Dev), Ok(Tls::Preferred));
+        assert_eq!(target("::1", Some("prefer")).tls(Stage::Dev), Ok(Tls::Preferred));
+        // Ailleurs, le repli se provoquerait depuis le réseau.
+        assert_eq!(target("db", None).tls(Stage::Dev), Ok(Tls::Required));
+        assert_eq!(target("db", Some("allow")).tls(Stage::Dev), Ok(Tls::Required));
         assert_eq!(target("db", Some("require")).tls(Stage::Dev), Ok(Tls::Required));
         assert_eq!(target("127.0.0.1", Some("disable")).tls(Stage::Dev), Ok(Tls::Disabled));
         assert_eq!(target("db.dev.local", Some("disable")).tls(Stage::Dev), Err(DbError::ClearTextOffLocalhost));
