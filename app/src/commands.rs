@@ -10,8 +10,8 @@ use robiade_core::tasks::{Task, TaskId, TaskRepository};
 use tauri::{Manager, State};
 
 use crate::dto::{
-    AgentDto, AssetContentDto, EntryDto, EnvironmentDto, FileChangeDto, ForgeDto, MergeRequestDto, MrOutcomesDto, MrRefDto,
-    OverviewDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto,
+    AgentDto, AssetContentDto, EntryDto, EnvironmentDto, FileChangeDto, ForgeDto, MergeRequestDto, MrOutcomesDto,
+    MrRefDto, OverviewDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto,
 };
 use crate::{now, AppState};
 

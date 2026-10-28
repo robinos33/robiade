@@ -91,7 +91,8 @@ mod tests {
     #[test]
     fn finds_the_gitlab_project_of_a_remote_without_its_credentials() {
         let project = |url| gitlab_project_of_remote(url);
-        assert_eq!(project("git@gitlab.example.com:shop/boutique.git").as_deref(), Some("shop/boutique"));
+        let boutique = project("git@gitlab.example.com:shop/boutique.git");
+        assert_eq!(boutique.as_deref(), Some("shop/boutique"));
         assert_eq!(project("https://gitlab.example.com/groupe/poc/zork.git").as_deref(), Some("groupe/poc/zork"));
         assert_eq!(project("ssh://git@gitlab.example.com:2222/a/b").as_deref(), Some("a/b"));
         assert_eq!(project("https://moi:glpat-x@gitlab.example.com/a/b.git").as_deref(), Some("a/b"));

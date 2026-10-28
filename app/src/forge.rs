@@ -48,7 +48,8 @@ impl MrStates {
         for chunk in missing.chunks(PARALLEL_READS) {
             let read: Vec<_> = std::thread::scope(|s| {
                 let handles: Vec<_> = chunk.iter().map(|mr| s.spawn(|| self.forge.merge_request(mr))).collect();
-                handles.into_iter().map(|h| h.join().unwrap_or_else(|_| Err(ForgeError::Api("panique".into())))).collect()
+                let panicked = || Err(ForgeError::Api("lecture interrompue".into()));
+                handles.into_iter().map(|h| h.join().unwrap_or_else(|_| panicked())).collect()
             });
             let mut known = self.known.lock().unwrap_or_else(|e| e.into_inner());
             for (mr, result) in chunk.iter().zip(read) {
