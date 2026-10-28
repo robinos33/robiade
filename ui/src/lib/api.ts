@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
-  Agent, AssetContent, Entry, FileChange, Environment, Forge, Issue, MrOutcomes, MrRef, MrState, Overview, SearchHit, Session, Task, TaskStatus,
+  Agent, AssetContent, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, MrAction, MrOutcomes, MrRef, MrState, Overview, SearchHit, Session, Task, TaskStatus,
 } from './types';
 
 export const api = {
@@ -31,6 +31,9 @@ export const api = {
   workingChanges: (id: string) => invoke<FileChange[]>('working_changes', { id }),
   workingDiff: (id: string, path: string) => invoke<string>('working_diff', { id, path }),
   mergeRequests: () => invoke<Forge>('merge_requests'),
+  previewMrAction: (target: MrRef, action: MrAction) => invoke<ActionPreview>('preview_mr_action', { target, action }),
+  runMrAction: (target: MrRef, action: MrAction) => invoke<string>('run_mr_action', { target, action }),
+  auditLog: () => invoke<AuditEntry[]>('audit_log'),
   issues: (project: string | null) => invoke<Issue[]>('issues', { project }),
   mergeRequestStates: (urls: string[]) => invoke<Record<string, MrState>>('merge_request_states', { urls }),
   mergeRequestOutcomes: (refs: MrRef[]) => invoke<MrOutcomes>('merge_request_outcomes', { refs }),

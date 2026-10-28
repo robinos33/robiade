@@ -136,6 +136,8 @@ export interface MergeRequest extends MrRef {
   targetBranch: string;
   webUrl: string;
   updatedAt: number;
+  /** Commit de tête vu à l'affichage. */
+  sha: string;
   hasConflicts: boolean;
   unresolvedDiscussions: boolean;
   /** `detailed_merge_status` de GitLab, tel quel. */
@@ -161,6 +163,28 @@ export interface Issue {
   dueDate: string | null;
   mergeRequests: number;
 }
+
+export type MrAction =
+  | { kind: 'comment'; body: string }
+  | { kind: 'approve' }
+  | { kind: 'rebase' }
+  | { kind: 'retryPipeline' }
+  | { kind: 'markReady' }
+  | { kind: 'markDraft' }
+  | { kind: 'merge'; expectedSha: string };
+
+/** Cible relue sur GitLab et description de ce qui partira, produite par le domaine. */
+export interface ActionPreview {
+  project: string;
+  iid: number;
+  title: string;
+  sourceBranch: string;
+  targetBranch: string;
+  author: string;
+  action: string;
+}
+
+export interface AuditEntry { at: number; target: string; action: string; outcome: string }
 
 export interface Forge { mine: MergeRequest[]; reviews: MergeRequest[] }
 
