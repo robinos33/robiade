@@ -1021,7 +1021,7 @@ pub async fn db_page(
         let shared = state.db_sessions.get(&id)?;
         shared.run(|session| {
             let shape = session.describe(&TableRef { schema, name }).map_err(|e| e.to_string())?;
-            let query = page_query(&shape, &PageRequest::from(request)).map_err(|e| e.to_string())?;
+            let query = page_query(shared.dialect, &shape, &PageRequest::from(request)).map_err(|e| e.to_string())?;
             let rows = session.fetch(&query).map_err(|e| e.to_string())?;
             Ok(page(&shape, &query, rows).into())
         })?

@@ -302,6 +302,7 @@ mod tests {
     #[test]
     #[ignore = "demande un Postgres local jetable"]
     fn browses_a_real_server_read_only() {
+        use robiade_core::databases::Dialect;
         use robiade_core::db_browse::{page, page_query, Cursor, Filter, FilterOp, PageRequest};
 
         let target = Target {
@@ -326,7 +327,7 @@ mod tests {
         let mut seen = 0;
         loop {
             let request = PageRequest { sort: None, filters: vec![], cursor };
-            let query = page_query(&shape, &request).unwrap();
+            let query = page_query(Dialect::Postgres, &shape, &request).unwrap();
             let p = page(&shape, &query, session.fetch(&query).unwrap());
             seen += p.rows.len();
             match p.next {
@@ -338,7 +339,7 @@ mod tests {
 
         let filter = |column: &str, op| PageRequest { sort: None, filters: vec![Filter { column: column.into(), op }], cursor: Cursor::Start };
         let fetch = |session: &mut Box<dyn DbSession>, request: &PageRequest| {
-            let query = page_query(&shape, request).unwrap();
+            let query = page_query(Dialect::Postgres, &shape, request).unwrap();
             page(&shape, &query, session.fetch(&query).unwrap())
         };
         assert_eq!(fetch(&mut session, &filter("email", FilterOp::Contains("50%_".into()))).rows.len(), 1);
@@ -349,11 +350,11 @@ mod tests {
 
         // Clé composite (jour, rang) et valeurs longues tronquées.
         let event = session.describe(&TableRef { schema: "app".into(), name: "event".into() }).unwrap();
-        let query = page_query(&event, &PageRequest { sort: None, filters: vec![], cursor: Cursor::Start }).unwrap();
+        let query = page_query(Dialect::Postgres, &event, &PageRequest { sort: None, filters: vec![], cursor: Cursor::Start }).unwrap();
         let first = page(&event, &query, session.fetch(&query).unwrap());
         assert!(first.rows[0][2].as_ref().unwrap().truncated);
         let Some(Cursor::After(key)) = first.next else { panic!("keyset attendu") };
-        let query = page_query(&event, &PageRequest { sort: None, filters: vec![], cursor: Cursor::After(key) }).unwrap();
+        let query = page_query(Dialect::Postgres, &event, &PageRequest { sort: None, filters: vec![], cursor: Cursor::After(key) }).unwrap();
         assert_eq!(page(&event, &query, session.fetch(&query).unwrap()).rows.len(), 51);
 
         // Lecture seule tenue par le serveur, pour la même session que celle du parcours.
