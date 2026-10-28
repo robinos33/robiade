@@ -2,15 +2,30 @@
   import { untrack } from 'svelte';
   import { app } from '../lib/state.svelte';
   import { api } from '../lib/api';
-  import type { Container, ContainerAction } from '../lib/types';
+  import type { Container, ContainerAction, Worktree } from '../lib/types';
   import ContainerActionConfirm from '../components/ContainerActionConfirm.svelte';
   import ContainerLogs from '../components/ContainerLogs.svelte';
+  import WorktreeCreateDialog from '../components/WorktreeCreateDialog.svelte';
+  import WorktreeRemoveDialog from '../components/WorktreeRemoveDialog.svelte';
 
   let containers = $state<Container[] | null>(null);
   let error = $state<string | null>(null);
   let loading = $state(false);
   let selectedId = $state<string | null>(null);
   let pending = $state<{ container: Container; action: ContainerAction } | null>(null);
+  let creating = $state(false);
+  let removing = $state<Worktree | null>(null);
+
+  // Les worktrees, eux, ne sont relus qu'à l'ouverture et sur demande : un `git status` par worktree.
+  $effect(() => void untrack(() => app.refreshWorktrees()));
+
+  const liveIn = (path: string) => app.liveAgents.filter((a) => a.worktreePath === path);
+
+  function changesLabel(w: Worktree): string {
+    const n = w.git?.changes;
+    if (n === null || n === undefined) return '';
+    return n === 0 ? 'propre' : `${n} fichier${n > 1 ? 's' : ''} modifié${n > 1 ? 's' : ''}`;
+  }
 
   async function refresh() {
     if (loading) return;
@@ -87,11 +102,39 @@
     <h1>Environnements</h1>
     <span class="muted">{scopeLabel}</span>
     <span class="spacer"></span>
-    <button class="btn" onclick={() => void refresh()} disabled={loading}>{loading ? 'Lecture…' : 'Relire'}</button>
+    {#if app.project !== null}<button class="btn" onclick={() => (creating = true)}>Nouveau worktree</button>{/if}
+    <button class="btn" onclick={() => void Promise.all([refresh(), app.refreshWorktrees()])} disabled={loading}>
+      {loading ? 'Lecture…' : 'Relire'}
+    </button>
   </header>
 
   <div class="body" class:split={selected !== null}>
     <div class="scroll">
+      {#if app.worktrees.length > 0}
+        <div class="block">
+          <h2 class="section-title">Worktrees</h2>
+          <ul class="list">
+            {#each app.worktrees as w (w.path)}
+              {@const live = liveIn(w.path)}
+              <li class="row" class:active={w.path === app.worktree}>
+                <div class="main" title={w.path}>
+                  <span class="dot" class:running={live.length > 0} title="{live.length} agent(s) actif(s)"></span>
+                  <span class="name ellipsis">{w.name}</span>
+                  {#if app.project === null}<span class="tag">{w.projectName}</span>{/if}
+                  <span class="mono muted ellipsis branch">{w.git ? (w.git.branch ?? 'tête détachée') : ''}</span>
+                  {#if w.git?.locked}<span class="tag">verrouillé</span>{/if}
+                  <span class="muted status ellipsis" class:dirty={!!w.git?.changes}>{changesLabel(w)}</span>
+                </div>
+                <div class="actions">
+                  <button class="btn small" onclick={() => void app.spawn(w.path)}>Agent</button>
+                  <button class="btn small" onclick={() => (removing = w)}>Supprimer…</button>
+                </div>
+              </li>
+            {/each}
+          </ul>
+        </div>
+      {/if}
+
       {#if error}
         <div class="error"><strong>Docker illisible.</strong> <span>{error}</span></div>
       {/if}
@@ -156,6 +199,11 @@
   />
 {/if}
 
+{#if creating && app.project !== null}
+  <WorktreeCreateDialog repository={app.project} onclose={() => (creating = false)} />
+{/if}
+{#if removing}<WorktreeRemoveDialog worktree={removing} onclose={() => (removing = null)} />{/if}
+
 <style>
   .page { display: flex; flex-direction: column; min-height: 0; flex: 1; }
   .body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr; }
@@ -171,7 +219,8 @@
     border: 0; background: none; text-align: left;
   }
   .name { font-weight: 550; flex: none; max-width: 40%; }
-  .ports { flex: none; max-width: 30%; }
+  .ports, .branch { flex: none; max-width: 30%; }
+  .dirty { color: var(--attention); }
   .status { flex: 1; min-width: 0; text-align: right; font-size: 12px; }
   .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tag { flex: none; font-size: 11px; padding: 0 6px; border-radius: 8px; border: 1px solid var(--line-strong); color: var(--ink-2); }
