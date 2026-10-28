@@ -4,6 +4,7 @@ use robiade_core::agents::{Agent, AgentStatus, Gauges, Level};
 use robiade_core::assets::{Asset, AssetKind};
 use robiade_core::containers::{Container, ContainerState};
 use robiade_core::databases::{Connection, Engine, Part, Probe, Source, Stage, Target, VaultRef};
+use robiade_core::db_browse::{Cell, Column, Cursor, Filter, FilterOp, Page, PageRequest, Relation, RelationKind, Sort};
 use robiade_core::forge::{
     Issue, IssueRef, IssueState, MergeRequest, MrOutcomes, MrRef, MrState, PipelineStatus, GITLAB_HOST,
 };
@@ -1154,9 +1155,195 @@ impl DbProbeDto {
     }
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RelationKindDto {
+    Table,
+    View,
+    MaterializedView,
+    Foreign,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelationDto {
+    pub schema: String,
+    pub name: String,
+    pub kind: RelationKindDto,
+    pub estimated_rows: Option<i64>,
+}
+
+impl From<Relation> for RelationDto {
+    fn from(r: Relation) -> Self {
+        let kind = match r.kind {
+            RelationKind::Table => RelationKindDto::Table,
+            RelationKind::View => RelationKindDto::View,
+            RelationKind::MaterializedView => RelationKindDto::MaterializedView,
+            RelationKind::Foreign => RelationKindDto::Foreign,
+        };
+        Self { schema: r.table.schema, name: r.table.name, kind, estimated_rows: r.estimated_rows }
+    }
+}
+
+/// Une session ouverte : la base où elle est, les autres bases du serveur, et ce qu'on peut y lire.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbOverviewDto {
+    pub database: String,
+    pub databases: Vec<String>,
+    pub relations: Vec<RelationDto>,
+    /// Lu sur le serveur.
+    pub read_only: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ColumnDto {
+    pub name: String,
+    pub data_type: String,
+    pub primary_key: Option<u16>,
+}
+
+impl From<Column> for ColumnDto {
+    fn from(c: Column) -> Self {
+        Self { name: c.name, data_type: c.data_type, primary_key: c.primary_key }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CellDto {
+    pub text: String,
+    pub truncated: bool,
+}
+
+/// Opaque pour l'interface : elle renvoie tel quel celui que la page précédente lui a donné.
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum CursorDto {
+    Start,
+    After { values: Vec<String> },
+    Offset { offset: u64 },
+}
+
+impl From<Cursor> for CursorDto {
+    fn from(c: Cursor) -> Self {
+        match c {
+            Cursor::Start => Self::Start,
+            Cursor::After(values) => Self::After { values },
+            Cursor::Offset(offset) => Self::Offset { offset },
+        }
+    }
+}
+
+impl From<CursorDto> for Cursor {
+    fn from(c: CursorDto) -> Self {
+        match c {
+            CursorDto::Start => Self::Start,
+            CursorDto::After { values } => Self::After(values),
+            CursorDto::Offset { offset } => Self::Offset(offset),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "op", rename_all = "camelCase")]
+pub enum FilterOpDto {
+    Equals { value: String },
+    Contains { value: String },
+    IsNull,
+    IsNotNull,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FilterDto {
+    pub column: String,
+    #[serde(flatten)]
+    pub op: FilterOpDto,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SortDto {
+    pub column: String,
+    pub descending: bool,
+}
+
+/// Une page demandée par la grille : des noms et des valeurs, jamais de SQL.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageRequestDto {
+    pub sort: Option<SortDto>,
+    pub filters: Vec<FilterDto>,
+    pub cursor: CursorDto,
+}
+
+impl From<PageRequestDto> for PageRequest {
+    fn from(r: PageRequestDto) -> Self {
+        let filters = r
+            .filters
+            .into_iter()
+            .map(|f| Filter {
+                column: f.column,
+                op: match f.op {
+                    FilterOpDto::Equals { value } => FilterOp::Equals(value),
+                    FilterOpDto::Contains { value } => FilterOp::Contains(value),
+                    FilterOpDto::IsNull => FilterOp::IsNull,
+                    FilterOpDto::IsNotNull => FilterOp::IsNotNull,
+                },
+            })
+            .collect();
+        Self {
+            sort: r.sort.map(|s| Sort { column: s.column, descending: s.descending }),
+            filters,
+            cursor: r.cursor.into(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageDto {
+    pub columns: Vec<ColumnDto>,
+    pub rows: Vec<Vec<Option<CellDto>>>,
+    pub next: Option<CursorDto>,
+}
+
+impl From<Page> for PageDto {
+    fn from(p: Page) -> Self {
+        let cell = |c: Option<Cell>| c.map(|c| CellDto { text: c.text, truncated: c.truncated });
+        Self {
+            columns: p.columns.into_iter().map(ColumnDto::from).collect(),
+            rows: p.rows.into_iter().map(|row| row.into_iter().map(cell).collect()).collect(),
+            next: p.next.map(CursorDto::from),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_a_page_request_from_the_grid() {
+        let json = r#"{
+            "sort": { "column": "email", "descending": true },
+            "filters": [
+                { "column": "id", "op": "equals", "value": "7" },
+                { "column": "email", "op": "contains", "value": "@ex" },
+                { "column": "avatar", "op": "isNull" }
+            ],
+            "cursor": { "kind": "after", "values": ["42"] }
+        }"#;
+        let request = PageRequest::from(serde_json::from_str::<PageRequestDto>(json).unwrap());
+        assert_eq!(request.sort, Some(Sort { column: "email".into(), descending: true }));
+        assert_eq!(request.filters[0], Filter { column: "id".into(), op: FilterOp::Equals("7".into()) });
+        assert_eq!(request.filters[2].op, FilterOp::IsNull);
+        assert_eq!(request.cursor, Cursor::After(vec!["42".into()]));
+        let next = serde_json::to_value(CursorDto::from(Cursor::Offset(400))).unwrap();
+        assert_eq!(next, serde_json::json!({ "kind": "offset", "offset": 400 }));
+    }
 
     #[test]
     fn splits_a_snippet_into_highlighted_segments() {

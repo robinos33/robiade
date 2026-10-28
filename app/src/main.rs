@@ -4,6 +4,7 @@
 mod agents;
 mod commands;
 mod containers;
+mod db_sessions;
 mod dto;
 mod forge;
 
@@ -25,6 +26,7 @@ use robiade_adapters::sqlite_tasks::SqliteTaskRepository;
 use robiade_adapters::{backup, hooks, shell_env};
 use robiade_core::containers::Containers;
 use robiade_core::databases::{DatabaseProbe, Vault};
+use robiade_core::db_browse::DatabaseBrowser;
 use robiade_core::forge::Forge;
 use robiade_core::merge_actions::AuditLog;
 use robiade_core::vcs::{WorkingTree, Worktrees};
@@ -46,6 +48,8 @@ pub struct AppState {
     pub connections: SqliteConnectionRepository,
     pub vault: Arc<dyn Vault>,
     pub databases: Arc<dyn DatabaseProbe>,
+    pub browser: Arc<dyn DatabaseBrowser>,
+    pub db_sessions: db_sessions::DbSessions,
     /// Fermeture confirmée dans l'interface malgré des agents au travail.
     pub quit_confirmed: AtomicBool,
 }
@@ -160,6 +164,8 @@ fn main() {
                 connections: SqliteConnectionRepository::open(&data_dir.join("robiade.db"))?,
                 vault: Arc::new(VaultKv::new(home.clone())),
                 databases: Arc::new(Postgres),
+                browser: Arc::new(Postgres),
+                db_sessions: db_sessions::DbSessions::default(),
                 quit_confirmed: AtomicBool::new(false),
             });
             Ok(())
@@ -222,6 +228,9 @@ fn main() {
             commands::vault_keys,
             commands::resolve_db_target,
             commands::test_db_connection,
+            commands::open_db,
+            commands::close_db,
+            commands::db_page,
             commands::merge_request_outcomes,
             commands::merge_request_states,
             commands::quit,

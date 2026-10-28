@@ -6,6 +6,7 @@ use robiade_core::agents::AgentId;
 use robiade_adapters::keychain;
 use robiade_core::containers::{Container, ContainerAction, ContainerId};
 use robiade_core::databases::{Connection, ConnectionId, ConnectionRepository, Part, Source, Target};
+use robiade_core::db_browse::{page, page_query, PageRequest, TableRef};
 use robiade_core::merge_actions::AuditEntry;
 use robiade_core::forge::{IssueRef, MrRef};
 use robiade_core::issue_start;
@@ -17,11 +18,12 @@ use secrecy::ExposeSecret;
 use tauri::{Manager, State};
 
 use crate::dto::{
-    ActionPreviewDto, AgentDto, AssetContentDto, AuditEntryDto, ContainerActionPreviewDto, ContainerDto, DbConnectionDto,
-    DbConnectionInputDto, DbProbeDto, DbTargetDto, EntryDto,
-    EnvironmentDto, FileChangeDto, ForgeDto, IssueActionDto, IssueActionPreviewDto, IssueDto, IssueRefDto,
-    IssueStartDto, IssueStartedDto, MergeRequestDto, MrActionDto, MrOutcomesDto, MrRefDto, NewIssueDto, OverviewDto,
-    SearchHitDto, SessionDto, TaskDto, TaskStatusDto, WorktreeCreationDto, WorktreeDto, WorktreeRemovalDto,
+    ActionPreviewDto, AgentDto, AssetContentDto, AuditEntryDto, ContainerActionPreviewDto, ContainerDto,
+    DbConnectionDto, DbConnectionInputDto, DbOverviewDto, DbProbeDto, DbTargetDto, EntryDto, EnvironmentDto,
+    FileChangeDto, ForgeDto, IssueActionDto, IssueActionPreviewDto, IssueDto, IssueRefDto, IssueStartDto,
+    IssueStartedDto, MergeRequestDto, MrActionDto, MrOutcomesDto, MrRefDto, NewIssueDto, OverviewDto, PageDto,
+    PageRequestDto, RelationDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto, WorktreeCreationDto, WorktreeDto,
+    WorktreeRemovalDto,
 };
 use crate::{now, AppState};
 
@@ -936,6 +938,71 @@ pub async fn test_db_connection(app: tauri::AppHandle, id: String) -> CmdResult<
             return Err("le serveur n'a pas appliqué la lecture seule demandée".into());
         }
         Ok(DbProbeDto::new(&target, probe))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Ouvre une session de parcours, dans `database` ou à défaut la base de la connexion, et la garde
+/// jusqu'à `close_db`. Une connexion en lecture seule que le serveur n'applique pas reste fermée.
+#[tauri::command]
+pub async fn open_db(app: tauri::AppHandle, id: String, database: Option<String>) -> CmdResult<DbOverviewDto> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let connection = state.connections.get(&ConnectionId(id.clone())).map_err(|e| e.to_string())?;
+        let mut target = resolve_target(&state, &connection)?;
+        if let Some(database) = database {
+            // Un nom de base n'est qu'un paramètre de connexion, jamais du SQL.
+            if database.is_empty() || database.chars().any(char::is_control) {
+                return Err("nom de base invalide".into());
+            }
+            target.database = Some(database);
+        }
+        let tls = target.tls(connection.stage()).map_err(|e| e.to_string())?;
+        let mut session = state
+            .browser
+            .open(connection.engine(), &target, tls, connection.read_only())
+            .map_err(|e| e.to_string())?;
+        let read_only = session.read_only().map_err(|e| e.to_string())?;
+        if connection.read_only() && !read_only {
+            return Err("le serveur n'a pas appliqué la lecture seule demandée".into());
+        }
+        let overview = DbOverviewDto {
+            database: session.current_database().map_err(|e| e.to_string())?,
+            databases: session.databases().map_err(|e| e.to_string())?,
+            relations: session.relations().map_err(|e| e.to_string())?.into_iter().map(RelationDto::from).collect(),
+            read_only,
+        };
+        state.db_sessions.insert(&id, session);
+        Ok(overview)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub fn close_db(state: State<AppState>, id: String) {
+    state.db_sessions.close(&id);
+}
+
+/// Une page d'une table. La table est relue au catalogue à chaque page : ses colonnes sont la
+/// seule liste de noms que la requête accepte.
+#[tauri::command]
+pub async fn db_page(
+    app: tauri::AppHandle,
+    id: String,
+    schema: String,
+    name: String,
+    request: PageRequestDto,
+) -> CmdResult<PageDto> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let shared = state.db_sessions.get(&id)?;
+        let mut session = shared.lock().unwrap_or_else(|e| e.into_inner());
+        let shape = session.describe(&TableRef { schema, name }).map_err(|e| e.to_string())?;
+        let query = page_query(&shape, &PageRequest::from(request)).map_err(|e| e.to_string())?;
+        let rows = session.fetch(&query).map_err(|e| e.to_string())?;
+        Ok(page(&shape, &query, rows).into())
     })
     .await
     .map_err(|e| e.to_string())?
