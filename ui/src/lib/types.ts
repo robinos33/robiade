@@ -186,6 +186,16 @@ export interface ActionPreview {
 
 export interface AuditEntry { at: number; target: string; action: string; outcome: string }
 
+/** Proposition pour démarrer un agent sur une issue ; tout est relu avant l'envoi. */
+export interface IssueStart {
+  repository: string;
+  branch: string;
+  bases: string[];
+  worktreeDir: string;
+  prompt: string;
+  tabName: string;
+}
+
 export interface Forge { mine: MergeRequest[]; reviews: MergeRequest[] }
 
 export interface MrOutcomes { total: number; merged: number; opened: number; closed: number; unknown: number }

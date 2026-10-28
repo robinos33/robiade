@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
-  Agent, AssetContent, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, MrAction, MrOutcomes, MrRef, MrState, Overview, SearchHit, Session, Task, TaskStatus,
+  Agent, AssetContent, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueStart, MrAction, MrOutcomes, MrRef, MrState, Overview, SearchHit, Session, Task, TaskStatus,
 } from './types';
 
 export const api = {
@@ -34,6 +34,12 @@ export const api = {
   previewMrAction: (target: MrRef, action: MrAction) => invoke<ActionPreview>('preview_mr_action', { target, action }),
   runMrAction: (target: MrRef, action: MrAction) => invoke<string>('run_mr_action', { target, action }),
   auditLog: () => invoke<AuditEntry[]>('audit_log'),
+  prepareIssueStart: (projectRoot: string, issue: MrRef) =>
+    invoke<IssueStart>('prepare_issue_start', { projectRoot, issue }),
+  startIssueAgent: (projectRoot: string, issue: MrRef, branch: string, base: string, prompt: string) =>
+    invoke<{ agentId: string; fetched: boolean }>('start_issue_agent', {
+      projectRoot, issue, branch, base, prompt, cols: 120, rows: 36,
+    }),
   issues: (project: string | null) => invoke<Issue[]>('issues', { project }),
   mergeRequestStates: (urls: string[]) => invoke<Record<string, MrState>>('merge_request_states', { urls }),
   mergeRequestOutcomes: (refs: MrRef[]) => invoke<MrOutcomes>('merge_request_outcomes', { refs }),
