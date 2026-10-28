@@ -253,7 +253,15 @@ export interface GitWorktree {
 export interface WorktreeCreation { repository: string; dir: string; bases: string[]; blocker: string | null }
 
 /** Ce que « supprimer le worktree » ferait ; `blocker` dit pourquoi c'est refusé. */
-export interface WorktreeRemoval { path: string; repository: string; branch: string | null; blocker: string | null }
+/** `changes` : les premiers fichiers qui bloquent la suppression ; `changeCount` les compte tous. */
+export interface WorktreeRemoval {
+  path: string;
+  repository: string;
+  branch: string | null;
+  blocker: string | null;
+  changes: FileChange[];
+  changeCount: number;
+}
 
 export type ContainerState = 'created' | 'running' | 'paused' | 'restarting' | 'exited' | 'dead' | 'other';
 export type ContainerAction = 'start' | 'stop' | 'restart';

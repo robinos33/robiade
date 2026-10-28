@@ -53,6 +53,8 @@ export const api = {
     invoke<boolean>('create_worktree', { repository, branch, base }),
   prepareWorktreeRemoval: (path: string) => invoke<WorktreeRemoval>('prepare_worktree_removal', { path }),
   removeWorktree: (path: string) => invoke<void>('remove_worktree', { path }),
+  /** `path` relatif au worktree ; vide pour montrer le worktree lui-même. */
+  revealInFinder: (worktree: string, path: string) => invoke<void>('reveal_in_finder', { worktree, path }),
   issues: (project: string | null) => invoke<Issue[]>('issues', { project }),
   mergeRequestStates: (urls: string[]) => invoke<Record<string, MrState>>('merge_request_states', { urls }),
   mergeRequestOutcomes: (refs: MrRef[]) => invoke<MrOutcomes>('merge_request_outcomes', { refs }),
