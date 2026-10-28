@@ -20,14 +20,19 @@ impl MrRef {
         let rest = url.strip_prefix("https://")?.strip_prefix(GITLAB_HOST)?.strip_prefix('/')?;
         let (project, tail) = rest.split_once("/-/merge_requests/")?;
         let iid = tail.split(['/', '?', '#']).next()?;
-        let valid_project = !project.is_empty()
-            && project.split('/').all(|s| !s.is_empty() && s != "." && s != "..")
-            && project.bytes().all(|b| b.is_ascii_alphanumeric() || b"/-_.".contains(&b));
-        if !valid_project || iid.is_empty() || !iid.bytes().all(|b| b.is_ascii_digit()) {
+        if !is_project_path(project) || iid.is_empty() || !iid.bytes().all(|b| b.is_ascii_digit()) {
             return None;
         }
         Some(Self { project: project.to_owned(), iid: iid.parse().ok()? })
     }
+}
+
+/// Chemin complet d'un projet GitLab (`groupe/sous-groupe/projet`) : segments non vides, sans
+/// `.` ni `..`, et aucun caractère qu'il faudrait encoder dans une URL.
+pub fn is_project_path(path: &str) -> bool {
+    !path.is_empty()
+        && path.split('/').all(|s| !s.is_empty() && s != "." && s != "..")
+        && path.bytes().all(|b| b.is_ascii_alphanumeric() || b"/-_.".contains(&b))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
