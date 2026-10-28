@@ -293,6 +293,7 @@
               <dd class="num">{dollars(session.cost.dollars)}</dd>
               <dt>Messages</dt><dd class="num">{session.userMessages} / {session.assistantMessages}</dd>
               <dt>Modèle</dt><dd class="mono ellipsis">{active.gauges.model ?? session.models.at(-1) ?? '—'}</dd>
+              <dt>Effort</dt><dd class="mono">{active.effort ?? '—'}</dd>
             {/if}
             <dt>Contexte</dt><dd class="num">{active.gauges.context ? `${active.gauges.context.percent} %` : '—'}</dd>
           </dl>

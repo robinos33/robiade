@@ -30,6 +30,8 @@ export interface Agent extends Workspace {
   filesModified: number;
   lastTool: string | null;
   permissionMode: string | null;
+  /** Effort de raisonnement rapporté par les hooks ; absent avant le premier outil. */
+  effort: string | null;
   permissive: boolean;
   gauges: Gauges;
   /** Fichiers affichables écrits par l'agent, le plus récent en tête. */

@@ -56,6 +56,7 @@ function agent(id: string, project: number, worktree: string | null, status: Age
     filesModified: 6,
     lastTool: 'Bash',
     permissionMode: 'acceptEdits',
+    effort: 'high',
     permissive: false,
     gauges: {
       model: 'Opus 5.5',
