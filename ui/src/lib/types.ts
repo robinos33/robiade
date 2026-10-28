@@ -9,6 +9,8 @@ export interface Workspace {
   inRepository: boolean;
   worktreePath: string | null;
   worktreeName: string | null;
+  /** Projet GitLab du remote `origin`, s'il est sur l'instance configurée. */
+  gitlabProject: string | null;
 }
 
 export interface Agent extends Workspace {
@@ -150,5 +152,5 @@ export interface MrOutcomes { total: number; merged: number; opened: number; clo
 
 export interface Environment { claudePath: string | null; home: string }
 
-export interface Project { root: string; name: string; lastActivityAt: number; sessions: number }
+export interface Project { root: string; name: string; lastActivityAt: number; sessions: number; gitlabProject: string | null }
 export interface Worktree { path: string; name: string; root: string; projectName: string; lastActivityAt: number }

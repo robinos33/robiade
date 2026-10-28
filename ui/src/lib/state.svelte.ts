@@ -1,7 +1,7 @@
 import { listen } from '@tauri-apps/api/event';
 import { api } from './api';
 import { writeOutput } from './terminals';
-import type { Agent, Environment, Forge, MergeRequest, Project, Session, Task, Workspace, Worktree } from './types';
+import type { Agent, Environment, Forge, MergeRequest, MrState, Project, Session, Task, Workspace, Worktree } from './types';
 
 export type View = 'inbox' | 'agents' | 'history' | 'mr' | 'tasks' | 'stats';
 
@@ -30,23 +30,36 @@ class AppState {
   forge = $state<Forge | null>(null);
   forgeError = $state<string | null>(null);
   forgeLoading = $state(false);
+  /** État GitLab des MR liées aux sessions, par URL ; absente = pas encore lue ou illisible. */
+  mrStates = $state<Record<string, MrState>>({});
 
   /** Dépôts principaux seulement : ni worktree, ni sous-dossier, ni dossier disparu. */
   projects: Project[] = $derived.by(() => {
     const byRoot = new Map<string, Project>();
     for (const s of this.history.filter((s) => s.inRepository)) {
-      const p = byRoot.get(s.projectRoot) ?? { root: s.projectRoot, name: s.projectName, lastActivityAt: 0, sessions: 0 };
+      const p = byRoot.get(s.projectRoot) ?? this.newProject(s);
       p.sessions += 1;
       p.lastActivityAt = Math.max(p.lastActivityAt, s.lastActivityAt);
       byRoot.set(s.projectRoot, p);
     }
     for (const a of this.agents.filter((a) => a.inRepository)) {
-      const p = byRoot.get(a.projectRoot) ?? { root: a.projectRoot, name: a.projectName, lastActivityAt: 0, sessions: 0 };
+      const p = byRoot.get(a.projectRoot) ?? this.newProject(a);
       p.lastActivityAt = Math.max(p.lastActivityAt, a.lastActivityAt);
       byRoot.set(a.projectRoot, p);
     }
     return [...byRoot.values()].sort((a, b) => b.lastActivityAt - a.lastActivityAt);
   });
+
+  private newProject(w: Workspace): Project {
+    return { root: w.projectRoot, name: w.projectName, lastActivityAt: 0, sessions: 0, gitlabProject: w.gitlabProject };
+  }
+
+  /** Projet GitLab du projet sélectionné ; `null` en vue globale ou pour un dépôt hors de l'instance. */
+  selectedGitlabProject = $derived(this.projects.find((p) => p.root === this.project)?.gitlabProject ?? null);
+
+  /** Vrai si la MR appartient au projet sélectionné (GitLab ignore la casse des chemins). */
+  inGitlabScope = (mr: MergeRequest) =>
+    this.project === null || mr.project.toLowerCase() === this.selectedGitlabProject?.toLowerCase();
 
   /** Worktrees encore présents, du projet sélectionné (ou de tous), les plus récents d'abord. */
   worktrees: Worktree[] = $derived.by(() => {
@@ -85,8 +98,12 @@ class AppState {
 
   /** Mes MR qui demandent une action : pipeline rouge, conflits, discussions ouvertes. */
   mrAttention: MergeRequest[] = $derived(
-    (this.forge?.mine ?? []).filter((m) => m.pipeline === 'failed' || m.hasConflicts || m.unresolvedDiscussions),
+    (this.forge?.mine ?? [])
+      .filter((m) => m.pipeline === 'failed' || m.hasConflicts || m.unresolvedDiscussions)
+      .filter((m) => this.inGitlabScope(m)),
   );
+  /** Reviews qui m'attendent, dans le projet sélectionné. */
+  pendingReviews: MergeRequest[] = $derived((this.forge?.reviews ?? []).filter((m) => this.inGitlabScope(m)));
 
   /** Sessions liées à une MR par leur `pr-link`. */
   sessionsOf(mr: MergeRequest): Session[] {
@@ -117,11 +134,24 @@ class AppState {
     setInterval(() => void this.refreshForge(), 120_000);
   }
 
+  /** Lit l'état des MR des sessions récentes ; le cache côté Rust évite de relire les MR closes. */
+  async refreshMrStates() {
+    const urls = [...new Set(this.history.slice(0, 200).flatMap((s) => (s.mergeRequestUrl ? [s.mergeRequestUrl] : [])))];
+    if (urls.length === 0) return;
+    try {
+      this.mrStates = { ...this.mrStates, ...(await api.mergeRequestStates(urls)) };
+    } catch {
+      // Token absent ou refusé : la vue Merge requests le dit déjà, les badges restent neutres.
+    }
+  }
+
   async refreshForge() {
     if (this.forgeLoading) return;
     this.forgeLoading = true;
     try {
       this.forge = await api.mergeRequests();
+      const fresh = Object.fromEntries([...this.forge.mine, ...this.forge.reviews].map((m) => [m.webUrl, m.state]));
+      this.mrStates = { ...this.mrStates, ...fresh };
       this.forgeError = null;
     } catch (e) {
       this.forgeError = String(e);
@@ -133,6 +163,7 @@ class AppState {
   async refreshHistory() {
     try {
       this.history = await api.listHistory();
+      void this.refreshMrStates();
     } catch (e) {
       this.notify(`Historique illisible : ${e}`);
     } finally {
