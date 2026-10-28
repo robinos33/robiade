@@ -26,7 +26,7 @@
     if (view) app.view = view;
     else if (e.key === 'k') app.paletteOpen = !app.paletteOpen;
     else if (e.key === 'N') app.newAgentOpen = true; // Shift met la touche en capitale
-    else if (e.key === 'n') app.newAgent();
+    else if (e.key === 'n' || e.key === 't') app.newAgent(); // ⌘T, comme un onglet de terminal
     else if (e.key === 'o') app.resumeOpen = !app.resumeOpen;
     else return;
     e.preventDefault();

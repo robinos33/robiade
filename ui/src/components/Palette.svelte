@@ -14,7 +14,7 @@
 
   const commands = $derived.by<Command[]>(() => {
     const all: Command[] = [
-      { label: 'Nouvel agent', hint: '⌘N', run: () => app.newAgent() },
+      { label: 'Nouvel agent', hint: '⌘N · ⌘T', run: () => app.newAgent() },
       { label: 'Nouvel agent dans…', hint: '⇧⌘N', run: () => (app.newAgentOpen = true) },
       { label: 'Reprendre une session…', hint: '⌘O', run: () => (app.resumeOpen = true) },
       ...VIEWS.map(([v, label]) => ({ label: `Aller à ${label}`, hint: 'vue', run: () => (app.view = v) })),
