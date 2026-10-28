@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use rayon::prelude::*;
 use robiade_core::forge::{
-    is_project_path, Approvals, Forge, ForgeError, Issue, IssueRef, IssueState, MergeRequest, MrRef, MrState, PipelineStatus,
+    is_project_path, is_username, Approvals, Forge, ForgeError, Issue, IssueRef, IssueState, MergeRequest, MrRef, MrState, PipelineStatus,
     GITLAB_HOST,
 };
 use robiade_core::issue_actions::IssuePlanned;
@@ -108,7 +108,7 @@ impl GitLab {
             return Ok(name);
         }
         let user: ApiUser = self.get("/user")?;
-        if !valid_username(&user.username) {
+        if !is_username(&user.username) {
             return Err(ForgeError::Api("nom d'utilisateur inattendu".into()));
         }
         *self.username.lock().unwrap_or_else(|e| e.into_inner()) = Some(user.username.clone());
@@ -281,10 +281,6 @@ fn gitlab_message(raw: &str) -> String {
     };
     let line = message.split_whitespace().collect::<Vec<_>>().join(" ");
     line.chars().take(300).collect()
-}
-
-fn valid_username(name: &str) -> bool {
-    !name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
 }
 
 #[derive(Deserialize)]

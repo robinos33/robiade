@@ -84,6 +84,11 @@ pub fn is_project_path(path: &str) -> bool {
         && path.bytes().all(|b| b.is_ascii_alphanumeric() || b"/-_.".contains(&b))
 }
 
+/// Nom d'utilisateur GitLab : de quoi le placer dans une URL ou une requête sans l'encoder.
+pub fn is_username(name: &str) -> bool {
+    !name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MrState {
     Draft,
