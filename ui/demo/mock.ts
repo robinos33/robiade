@@ -2,7 +2,7 @@
  * Faux backend Tauri pour les captures du README : l'interface réelle, des données inventées.
  * Rien de ce fichier n'entre dans le build (seul `index.html` est une entrée Vite).
  */
-import type { Agent, Container, Forge, Issue, MergeRequest, Overview, Session, Task, Tokens } from '../src/lib/types';
+import type { Agent, Container, Forge, GitWorktree, Issue, MergeRequest, Overview, Session, Task, Tokens } from '../src/lib/types';
 
 const NOW = Date.now();
 const MIN = 60_000;
@@ -236,6 +236,23 @@ const containers: Container[] = [
   container('mailpit', null, '', 'axllent/mailpit', 'exited', 'Exited (0) 3 weeks ago', [[8025, 8025]]),
 ];
 
+/** Worktrees lus par git : ceux des agents, et un sans session, pour voir la propreté et le verrou. */
+const worktree = (project: number, name: string, branch: string, changes: number, locked = false): GitWorktree => ({
+  path: `${HOME}/code/wt-${name}`,
+  name: `wt-${name}`,
+  repository: `${HOME}/code/${PROJECTS[project]!.name}`,
+  branch,
+  changes,
+  locked,
+  prunable: false,
+});
+
+const worktrees: GitWorktree[] = [
+  worktree(0, 'panier-promo', 'ticket-412-codes-promo-au-panier', 3),
+  worktree(0, 'livraison', 'ticket-398-frais-de-livraison', 0, true),
+  worktree(2, 'pagination', 'ticket-77-pagination-par-curseur', 0),
+];
+
 const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
   environment: () => ({ claudePath: '/usr/local/bin/claude', home: HOME }),
   list_history: () => sessions,
@@ -256,6 +273,13 @@ const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
   ],
   working_diff: () => '',
   containers: () => containers,
+  worktrees: (args) => worktrees.filter((w) => w.repository === args.repository),
+  prepare_worktree_creation: (args) => ({
+    repository: args.repository,
+    dir: `${args.repository}/.claude/worktrees/${String(args.branch).replaceAll('/', '-')}`,
+    bases: ['origin/staging', 'origin/main'],
+    blocker: null,
+  }),
   prepare_container_action: (args) => {
     const found = containers.find((c) => c.id === args.id)!;
     return { container: found, action: args.action, blocker: null };
