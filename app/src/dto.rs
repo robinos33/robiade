@@ -2,7 +2,10 @@
 
 use robiade_core::agents::{Agent, AgentStatus, Gauges, Level};
 use robiade_core::assets::{Asset, AssetKind};
-use robiade_core::forge::{Issue, IssueRef, MergeRequest, MrOutcomes, MrRef, MrState, PipelineStatus, GITLAB_HOST};
+use robiade_core::forge::{
+    Issue, IssueRef, IssueState, MergeRequest, MrOutcomes, MrRef, MrState, PipelineStatus, GITLAB_HOST,
+};
+use robiade_core::issue_actions::IssueAction;
 use robiade_core::project::{self, Workspace};
 use robiade_core::merge_actions::{AuditEntry, MrAction};
 use robiade_core::history::{EntryKind, SearchHit, SessionSummary, TokenUsage, TranscriptEntry, HIT_END, HIT_START};
@@ -640,6 +643,7 @@ pub struct IssueDto {
     pub project: String,
     pub iid: u64,
     pub title: String,
+    pub state: &'static str,
     pub labels: Vec<String>,
     pub assignees: Vec<String>,
     pub web_url: String,
@@ -654,6 +658,7 @@ impl From<Issue> for IssueDto {
             project: i.issue.project,
             iid: i.issue.iid,
             title: i.title,
+            state: issue_state(i.state),
             labels: i.labels,
             assignees: i.assignees,
             web_url: i.web_url,
@@ -661,6 +666,13 @@ impl From<Issue> for IssueDto {
             due_date: i.due_date,
             merge_requests: i.merge_requests,
         }
+    }
+}
+
+pub fn issue_state(state: IssueState) -> &'static str {
+    match state {
+        IssueState::Opened => "opened",
+        IssueState::Closed => "closed",
     }
 }
 
@@ -692,6 +704,36 @@ impl From<MrActionDto> for MrAction {
             MrActionDto::Merge { expected_sha } => MrAction::Merge { expected_sha },
         }
     }
+}
+
+/// Action demandée sur une issue ; les règles s'appliquent ensuite côté domaine.
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum IssueActionDto {
+    Close,
+    Reopen,
+}
+
+impl From<IssueActionDto> for IssueAction {
+    fn from(a: IssueActionDto) -> Self {
+        match a {
+            IssueActionDto::Close => IssueAction::Close,
+            IssueActionDto::Reopen => IssueAction::Reopen,
+        }
+    }
+}
+
+/// Confirmation d'une action sur une issue : l'issue relue sur GitLab, et ce qui partira.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueActionPreviewDto {
+    pub project: String,
+    pub iid: u64,
+    pub title: String,
+    pub state: &'static str,
+    pub assignees: Vec<String>,
+    pub labels: Vec<String>,
+    pub action: String,
 }
 
 /// Ce que la confirmation montre : la cible exacte, relue sur GitLab, et ce qui partira.

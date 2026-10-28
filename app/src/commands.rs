@@ -12,8 +12,9 @@ use tauri::{Manager, State};
 
 use crate::dto::{
     ActionPreviewDto, AgentDto, AssetContentDto, AuditEntryDto, EntryDto, EnvironmentDto, FileChangeDto, ForgeDto,
-    IssueDto, IssueRefDto, IssueStartDto, IssueStartedDto, MergeRequestDto, MrActionDto, MrOutcomesDto, MrRefDto,
-    OverviewDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto, WorktreeRemovalDto,
+    IssueActionDto, IssueActionPreviewDto, IssueDto, IssueRefDto, IssueStartDto, IssueStartedDto, MergeRequestDto,
+    MrActionDto, MrOutcomesDto, MrRefDto, OverviewDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto,
+    WorktreeRemovalDto,
 };
 use crate::{now, AppState};
 
@@ -346,6 +347,59 @@ pub async fn run_mr_action(app: tauri::AppHandle, target: MrRefDto, action: MrAc
 #[tauri::command]
 pub fn audit_log(state: State<AppState>) -> CmdResult<Vec<AuditEntryDto>> {
     Ok(state.audit.recent(50).map_err(|e| e.to_string())?.into_iter().map(AuditEntryDto::from).collect())
+}
+
+/// Relit l'issue sur GitLab et applique les règles du domaine, comme pour une MR.
+fn planned_on_issue(
+    state: &AppState,
+    target: &IssueRefDto,
+    action: IssueActionDto,
+) -> CmdResult<(robiade_core::forge::Issue, robiade_core::issue_actions::IssuePlanned)> {
+    let issue = target.validate().ok_or("issue invalide")?;
+    let current = state.forge.issue(&issue).map_err(|e| e.to_string())?;
+    let planned = robiade_core::issue_actions::plan(&current, &action.into()).map_err(|e| e.to_string())?;
+    Ok((current, planned))
+}
+
+/// Ce qu'une action sur une issue ferait, pour la confirmation. N'écrit rien.
+#[tauri::command]
+pub async fn preview_issue_action(
+    app: tauri::AppHandle,
+    target: IssueRefDto,
+    action: IssueActionDto,
+) -> CmdResult<IssueActionPreviewDto> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let (issue, planned) = planned_on_issue(&state, &target, action)?;
+        Ok(IssueActionPreviewDto {
+            project: issue.issue.project,
+            iid: issue.issue.iid,
+            title: issue.title,
+            state: crate::dto::issue_state(issue.state),
+            assignees: issue.assignees,
+            labels: issue.labels,
+            action: planned.describe(),
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Action confirmée sur une issue : replanifiée sur l'état courant, envoyée, puis inscrite au journal.
+#[tauri::command]
+pub async fn run_issue_action(app: tauri::AppHandle, target: IssueRefDto, action: IssueActionDto) -> CmdResult<String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let (issue, planned) = planned_on_issue(&state, &target, action)?;
+        let outcome = state.forge.execute_on_issue(&issue.issue, &planned).map_err(|e| e.to_string());
+        let entry = robiade_core::merge_actions::AuditEntry::on_issue(now(), &issue.issue, &planned, outcome.clone());
+        if let Err(e) = state.audit.record(&entry) {
+            eprintln!("{e}");
+        }
+        outcome.map(|()| planned.describe())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Dépôt principal désigné par l'interface, rattaché au projet GitLab de l'issue : rien d'autre.
