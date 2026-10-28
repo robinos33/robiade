@@ -293,13 +293,15 @@ impl Worktrees for GitCli {
         }
     }
 
-    fn remove(&self, repository: &str, dir: &str) -> Result<(), VcsError> {
+    fn remove(&self, repository: &str, dir: &str, force: bool) -> Result<(), VcsError> {
         if !dir.starts_with('/') {
             return Err(VcsError::Git("dossier refusé".into()));
         }
+        // Un seul `--force` : git en veut deux pour passer outre un verrou.
+        let force: &[&str] = if force { &["--force"] } else { &[] };
         let out = self
             .write_command(repository)
-            .args(["worktree", "remove", "--", dir])
+            .args([&["worktree", "remove"], force, &["--", dir]].concat())
             .output()
             .map_err(|e| VcsError::Git(e.to_string()))?;
         if !out.status.success() {
@@ -456,11 +458,26 @@ worktree /tmp/y\0HEAD c\0detached\0prunable gitdir file points to non-existent l
         assert_eq!(listed[0].branch.as_deref(), Some("ticket-1-x"));
         assert!(listed[0].path.ends_with("/.claude/worktrees/ticket-1-x"));
         std::fs::write(dir.join("c.txt"), "trois\n").unwrap();
-        assert!(git_cli.remove(r, d).is_err(), "un arbre modifié n'est pas supprimé");
+        assert!(git_cli.remove(r, d, false).is_err(), "un arbre modifié n'est pas supprimé sans force");
         std::fs::remove_file(dir.join("c.txt")).unwrap();
-        assert_eq!(git_cli.remove(r, d), Ok(()));
+        assert_eq!(git_cli.remove(r, d, false), Ok(()));
         assert!(!dir.exists());
         git(&repo, &["rev-parse", "--verify", "--quiet", "refs/heads/ticket-1-x"]); // branche conservée
+
+        let forced = repo.join(".claude/worktrees/ticket-2-y");
+        let f = forced.to_str().unwrap();
+        assert_eq!(git_cli.create(r, "ticket-2-y", "origin/staging", f), Ok(true));
+        std::fs::write(forced.join("a.txt"), "modifié\n").unwrap();
+        std::fs::write(forced.join("d.txt"), "non suivi\n").unwrap();
+        // Lien vers un dossier du dépôt, comme un `node_modules` partagé : seul le lien part.
+        std::os::unix::fs::symlink(&origin, forced.join("partagé")).unwrap();
+        git(&repo, &["worktree", "lock", f]);
+        assert!(git_cli.remove(r, f, true).is_err(), "un worktree verrouillé n'est pas supprimé, même de force");
+        git(&repo, &["worktree", "unlock", f]);
+        assert_eq!(git_cli.remove(r, f, true), Ok(()));
+        assert!(!forced.exists());
+        assert!(origin.join("a.txt").exists(), "la cible d'un lien n'est pas touchée");
+        git(&repo, &["rev-parse", "--verify", "--quiet", "refs/heads/ticket-2-y"]);
         std::fs::remove_dir_all(base).unwrap();
     }
 }

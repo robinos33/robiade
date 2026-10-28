@@ -63,7 +63,8 @@ pub trait Worktrees: Send + Sync {
     fn create(&self, repository: &str, branch: &str, base: &str, dir: &str) -> Result<bool, VcsError>;
     /// Branche extraite dans `dir` ; `None` si la tête est détachée.
     fn branch(&self, dir: &str) -> Result<Option<String>, VcsError>;
-    /// Supprime le worktree `dir` de `repository`, jamais de force : git refuse un arbre modifié
-    /// ou verrouillé. La branche est conservée.
-    fn remove(&self, repository: &str, dir: &str) -> Result<(), VcsError>;
+    /// Supprime le worktree `dir` de `repository`. Sans `force`, git refuse un arbre modifié ;
+    /// avec, les modifications non commitées sont perdues. Un worktree verrouillé est refusé dans
+    /// les deux cas. La branche est conservée.
+    fn remove(&self, repository: &str, dir: &str, force: bool) -> Result<(), VcsError>;
 }

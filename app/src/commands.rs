@@ -645,7 +645,7 @@ pub async fn remove_worktree(app: tauri::AppHandle, path: String) -> CmdResult<(
         if let (Some(blocker), _) = removal_blocker(&state, &dir)? {
             return Err(blocker);
         }
-        state.worktrees.remove(&repository, &dir).map_err(|e| e.to_string())?;
+        state.worktrees.remove(&repository, &dir, false).map_err(|e| e.to_string())?;
         state.workspaces.forget(&dir);
         state.agents.reattach(&dir);
         Ok(())
