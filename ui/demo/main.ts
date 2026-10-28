@@ -12,6 +12,25 @@ if (params.get('project')) app.selectProject(`/Users/demo/code/${params.get('pro
 if (params.get('dialog') === 'resume') app.resumeOpen = true;
 if (params.get('view') === 'agents') app.openAgent(AGENT_IDS[0]!);
 
+/** `?view=db&explore=Boutique prod&table=order&cell=5` : ouvre l'explorateur comme le ferait un clic. */
+async function find(selector: string, text: string): Promise<HTMLElement | undefined> {
+  for (let i = 0; i < 20; i++) {
+    const found = [...document.querySelectorAll<HTMLElement>(selector)].find((e) => e.textContent?.includes(text));
+    if (found) return found;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+async function click(selector: string, text: string) {
+  (await find(selector, text))?.click();
+}
+if (params.get('explore')) {
+  const row = await find('li.row', params.get('explore')!);
+  row?.querySelector<HTMLElement>('.actions button')?.click();
+  await click('.dialog button.danger', 'Ouvrir');
+  if (params.get('table')) await click('.relation', params.get('table')!);
+  if (params.get('cell')) await click('.rows .cell', `"promo"`);
+}
+
 const ESC = '\x1b[';
 const c = (code: string, text: string) => `${ESC}${code}m${text}${ESC}0m`;
 const lines = [

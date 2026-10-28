@@ -3,7 +3,7 @@
  * Rien de ce fichier n'entre dans le build (seul `index.html` est une entrée Vite).
  */
 import type {
-  Agent, Container, DbConnection, FileChange, Forge, GitWorktree, Issue, MergeRequest, Overview, Session, Task, Tokens, WorktreeRemoval,
+  Agent, Container, DbCell, DbColumn, DbConnection, DbPageRequest, FileChange, Forge, GitWorktree, Issue, MergeRequest, Overview, Session, Task, Tokens, WorktreeRemoval,
 } from '../src/lib/types';
 
 const NOW = Date.now();
@@ -303,6 +303,50 @@ const dbTarget = (id: unknown) => ({
   sslMode: id === 'db-local' ? null : 'require',
 });
 
+const dbRelations = [
+  { schema: 'public', name: 'customer', kind: 'table', estimatedRows: 12_480 },
+  { schema: 'public', name: 'order', kind: 'table', estimatedRows: 1_204_311 },
+  { schema: 'public', name: 'order_line', kind: 'table', estimatedRows: 3_918_002 },
+  { schema: 'public', name: 'order_summary', kind: 'view', estimatedRows: null },
+  { schema: 'public', name: 'promo_code', kind: 'table', estimatedRows: 342 },
+  { schema: 'audit', name: 'event', kind: 'table', estimatedRows: 88_120 },
+];
+
+const orderColumns: DbColumn[] = [
+  { name: 'id', dataType: 'integer', primaryKey: 1 },
+  { name: 'reference', dataType: 'character varying(32)', primaryKey: null },
+  { name: 'customer_id', dataType: 'integer', primaryKey: null },
+  { name: 'status', dataType: 'text', primaryKey: null },
+  { name: 'total', dataType: 'numeric(10,2)', primaryKey: null },
+  { name: 'payload', dataType: 'jsonb', primaryKey: null },
+  { name: 'note', dataType: 'text', primaryKey: null },
+  { name: 'created_at', dataType: 'timestamp with time zone', primaryKey: null },
+];
+
+const STATUSES = ['paid', 'shipped', 'pending', 'refunded'];
+
+function orderRow(id: number): (DbCell | null)[] {
+  const cell = (text: string): DbCell => ({ text, truncated: false });
+  const at = new Date(Date.UTC(2026, 9, 28, 9) - id * 37 * MIN).toISOString().replace('T', ' ').replace('.000Z', '+00');
+  return [
+    cell(String(id)),
+    cell(`CMD-2026-${String(id).padStart(6, '0')}`),
+    cell(String(1000 + ((id * 7) % 900))),
+    cell(STATUSES[id % 4]!),
+    cell(((id * 1373) % 50_000 / 100 + 9.9).toFixed(2)),
+    cell(JSON.stringify({ promo: id % 5 === 0 ? 'BIENVENUE10' : null, items: (id % 4) + 1, channel: id % 2 ? 'web' : 'app' })),
+    id % 3 === 0 ? null : cell(id % 3 === 1 ? '' : 'Livrer en point relais'),
+    cell(at),
+  ];
+}
+
+/** Pages de `public.order` par id décroissant… ou croissant : assez pour voir la grille vivre. */
+function dbPage(request: DbPageRequest) {
+  const after = request.cursor.kind === 'after' ? Number(request.cursor.values[0]) : 0;
+  const ids = Array.from({ length: 200 }, (_, i) => after + i + 1);
+  return { columns: orderColumns, rows: ids.map(orderRow), next: { kind: 'after', values: [String(after + 200)] } };
+}
+
 const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
   environment: () => ({ claudePath: '/usr/local/bin/claude', home: HOME }),
   list_history: () => sessions,
@@ -344,6 +388,8 @@ const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
   vault_keys: (args) => (String(args.path).endsWith('DATABASE') ? ['URL'] : ['DSN', 'URL']),
   resolve_db_target: (args) => dbTarget(args.id),
   test_db_connection: (args) => ({ target: dbTarget(args.id), serverVersion: '17.2', user: 'app', database: 'boutique', readOnly: true }),
+  open_db: (args) => ({ database: args.database ?? 'boutique', databases: ['boutique', 'boutique_archive', 'postgres'], relations: dbRelations, readOnly: true }),
+  db_page: (args) => dbPage(args.request as DbPageRequest),
 };
 
 const callbacks = new Map<number, (payload: unknown) => void>();
