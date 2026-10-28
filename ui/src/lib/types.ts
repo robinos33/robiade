@@ -144,6 +144,8 @@ export interface MergeRequest extends MrRef {
   pipeline: PipelineStatus | null;
   /** Wagon intermédiaire d'un train : ne cible ni staging ni master. */
   wagon: boolean;
+  /** Lues pour mes MR seulement. */
+  approvals: { required: number; left: number; by: string[] } | null;
 }
 
 export interface Forge { mine: MergeRequest[]; reviews: MergeRequest[] }

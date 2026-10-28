@@ -64,7 +64,17 @@
     <div class="signals">
       {#if mr.hasConflicts}<span class="sig bad">conflits</span>{/if}
       {#if mr.unresolvedDiscussions}<span class="sig warn">discussions</span>{/if}
-      {#if mr.mergeStatus && !mr.hasConflicts}
+      {#if mr.approvals && mr.approvals.required > 0}
+        {@const a = mr.approvals}
+        <span
+          class="sig"
+          class:good={a.left === 0}
+          title={a.by.length ? `Approuvée par ${a.by.join(', ')}` : 'Aucune approbation'}
+        >
+          {a.left === 0 ? '✓ approuvée' : `${a.required - a.left}/${a.required} approbation${a.required > 1 ? 's' : ''}`}
+        </span>
+      {/if}
+      {#if mr.mergeStatus && !mr.hasConflicts && !(mr.mergeStatus === 'not_approved' && mr.approvals)}
         <span class="sig" class:good={mr.mergeStatus === 'mergeable'}>{MERGE_STATUS[mr.mergeStatus] ?? mr.mergeStatus}</span>
       {/if}
       {#if sessions[0]}
