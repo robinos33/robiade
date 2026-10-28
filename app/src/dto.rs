@@ -1025,7 +1025,8 @@ impl From<PartDto> for Part {
     }
 }
 
-/// D'où vient la valeur d'un champ. Seul `literal` porte une valeur, jamais pour un champ secret.
+/// D'où vient la valeur d'un champ. Seul `literal` porte une valeur ; vers l'interface, celle d'un
+/// champ secret part vide (voir `FieldDto::masked`), et revient vide quand elle n'a pas changé.
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum SourceDto {
@@ -1059,6 +1060,17 @@ impl From<SourceDto> for Source {
 pub struct FieldDto {
     pub part: PartDto,
     pub source: SourceDto,
+}
+
+impl FieldDto {
+    /// Un mot de passe en clair ne repart jamais vers l'interface une fois enregistré.
+    fn masked(part: Part, source: &Source) -> Self {
+        let source = match source {
+            Source::Literal(_) if part.is_secret() => SourceDto::Literal { value: String::new() },
+            other => other.into(),
+        };
+        Self { part: part.into(), source }
+    }
 }
 
 /// Une connexion telle que le formulaire l'envoie ; `id` absent pour une création.
@@ -1095,7 +1107,7 @@ impl From<&Connection> for DbConnectionDto {
             stage: c.stage().into(),
             project_path: c.project_path().map(str::to_owned),
             read_only: c.read_only(),
-            fields: c.fields().iter().map(|(p, s)| FieldDto { part: (*p).into(), source: s.into() }).collect(),
+            fields: c.fields().iter().map(|(p, s)| FieldDto::masked(*p, s)).collect(),
         }
     }
 }

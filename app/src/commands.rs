@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use robiade_core::agents::AgentId;
 use robiade_adapters::keychain;
 use robiade_core::containers::{Container, ContainerAction, ContainerId};
-use robiade_core::databases::{Connection, ConnectionId, ConnectionRepository, Source, Target};
+use robiade_core::databases::{Connection, ConnectionId, ConnectionRepository, Part, Source, Target};
 use robiade_core::merge_actions::AuditEntry;
 use robiade_core::forge::{IssueRef, MrRef};
 use robiade_core::issue_start;
@@ -777,11 +777,27 @@ pub fn db_connections(state: State<AppState>) -> CmdResult<Vec<DbConnectionDto>>
 /// clair) sont celles du domaine : le formulaire ne fait que les afficher.
 #[tauri::command]
 pub fn save_db_connection(state: State<AppState>, connection: DbConnectionInputDto) -> CmdResult<DbConnectionDto> {
-    let id = match connection.id {
-        Some(id) => state.connections.get(&ConnectionId(id)).map_err(|e| e.to_string())?.id().clone(),
-        None => ConnectionId(uuid::Uuid::new_v4().to_string()),
+    let stored = match connection.id {
+        Some(id) => Some(state.connections.get(&ConnectionId(id)).map_err(|e| e.to_string())?),
+        None => None,
     };
-    let fields = connection.fields.into_iter().map(|f| (f.part.into(), f.source.into())).collect();
+    let id = stored.as_ref().map_or_else(|| ConnectionId(uuid::Uuid::new_v4().to_string()), |c| c.id().clone());
+    // Secret en clair laissé vide : l'interface ne l'a jamais reçu, on garde celui enregistré.
+    let kept = |part: Part| {
+        let fields = stored.as_ref().map_or(&[][..], |c| c.fields());
+        fields.iter().find(|(p, s)| *p == part && matches!(s, Source::Literal(_))).map(|(_, s)| s.clone())
+    };
+    let fields = connection
+        .fields
+        .into_iter()
+        .map(|f| {
+            let (part, source) = (Part::from(f.part), Source::from(f.source));
+            match source {
+                Source::Literal(v) if v.is_empty() && part.is_secret() => (part, kept(part).unwrap_or(Source::Literal(v))),
+                source => (part, source),
+            }
+        })
+        .collect();
     let saved = Connection::create(
         id,
         &connection.name,
