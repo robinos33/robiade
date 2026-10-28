@@ -863,11 +863,14 @@ pub fn save_db_connection(state: State<AppState>, connection: DbConnectionInputD
     )
     .map_err(|e| e.to_string())?;
     state.connections.save(&saved).map_err(|e| e.to_string())?;
+    // Une session ouverte garderait l'ancienne cible et l'ancienne règle de lecture seule.
+    state.db_sessions.close(&saved.id().0);
     Ok((&saved).into())
 }
 
 #[tauri::command]
 pub fn delete_db_connection(state: State<AppState>, id: String) -> CmdResult<()> {
+    state.db_sessions.close(&id);
     state.connections.delete(&ConnectionId(id)).map_err(|e| e.to_string())
 }
 
