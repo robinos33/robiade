@@ -1,10 +1,12 @@
 <script lang="ts">
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { mrNumber } from '../lib/format';
+  import { app } from '../lib/state.svelte';
+  import type { MrState } from '../lib/types';
 
-  /** `state` viendra de l'API GitLab (v2). En attendant : état inconnu, rendu neutre. */
-  let { url, state = 'unknown' }: { url: string; state?: 'unknown' | 'draft' | 'opened' | 'merged' | 'closed' } =
-    $props();
+  /** Sans `state`, l'état lu sur GitLab pour cette URL ; neutre tant qu'il n'est pas connu. */
+  let { url, state: given }: { url: string; state?: MrState } = $props();
+  const state = $derived(given ?? app.mrStates[url] ?? 'unknown');
 
   const LABELS = { unknown: 'MR liée', draft: 'Draft', opened: 'Ouverte', merged: 'Mergée', closed: 'Fermée' };
   const number = $derived(mrNumber(url));
