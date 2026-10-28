@@ -8,10 +8,11 @@
   import Inbox from './views/Inbox.svelte';
   import Agents from './views/Agents.svelte';
   import History from './views/History.svelte';
+  import MergeRequests from './views/MergeRequests.svelte';
   import Tasks from './views/Tasks.svelte';
   import Stats from './views/Stats.svelte';
 
-  const KEYS: Record<string, View> = { '1': 'inbox', '2': 'agents', '3': 'history', '4': 'tasks', '5': 'stats' };
+  const KEYS: Record<string, View> = { '1': 'inbox', '2': 'agents', '3': 'history', '4': 'tasks', '5': 'stats', '6': 'mr' };
 
   onMount(() => {
     app.init().catch((e) => app.notify(`Démarrage incomplet : ${e}`));
@@ -36,6 +37,7 @@
     {#if app.view === 'inbox'}<Inbox />
     {:else if app.view === 'agents'}<Agents />
     {:else if app.view === 'history'}<History />
+    {:else if app.view === 'mr'}<MergeRequests />
     {:else if app.view === 'tasks'}<Tasks />
     {:else}<Stats />{/if}
   </main>

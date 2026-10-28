@@ -6,11 +6,11 @@
     { view: 'inbox', label: 'Inbox', icon: 'inbox', key: '1' },
     { view: 'agents', label: 'Agents', icon: 'agents', key: '2' },
     { view: 'history', label: 'Historique', icon: 'history', key: '3' },
+    { view: 'mr', label: 'Merge requests', icon: 'mr', key: '6' },
     { view: 'tasks', label: 'Tâches', icon: 'tasks', key: '4' },
     { view: 'stats', label: 'Statistiques', icon: 'stats', key: '5' },
   ];
   const LATER = [
-    { label: 'Merge requests', icon: 'mr', milestone: 'v2' },
     { label: 'Environnements', icon: 'env', milestone: 'v3' },
     { label: 'Bases de données', icon: 'db', milestone: 'v4' },
   ];
@@ -18,6 +18,7 @@
   function badge(view: View): number | null {
     if (view === 'inbox') return app.attention.length || null;
     if (view === 'agents') return app.visibleAgents.filter((a) => a.status !== 'ended').length || null;
+    if (view === 'mr') return (app.forge?.reviews.length ?? 0) + app.mrAttention.length || null;
     if (view === 'tasks') return app.visibleTasks.filter((t) => t.status === 'doing').length || null;
     return null;
   }
