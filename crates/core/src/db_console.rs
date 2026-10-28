@@ -17,7 +17,7 @@
 //! garde-fous. Pour MariaDB, il suppose `sql_mode` sans `ANSI_QUOTES` ni `NO_BACKSLASH_ESCAPES`, ce
 //! que la session impose à l'ouverture.
 
-use crate::databases::{DbError, Dialect, Stage};
+use crate::databases::{DbError, Dialect, Language, Stage};
 use crate::db_browse::{cell, Cell, Column};
 use crate::merge_actions::AuditEntry;
 use crate::Millis;
@@ -298,7 +298,8 @@ pub fn byte_offset(text: &str, utf16: usize) -> usize {
 
 /// L'instruction sous le curseur (en octets) : celle qui le contient, `;` compris ; entre deux
 /// instructions, la précédente.
-pub fn statement_at(text: &str, dialect: Dialect, cursor: usize) -> Result<&str, DbError> {
+pub fn statement_at(text: &str, language: impl Into<Language>, cursor: usize) -> Result<&str, DbError> {
+    let Language::Sql(dialect) = language.into();
     let spans = spans(text, dialect);
     let found = spans
         .iter()
@@ -310,7 +311,8 @@ pub fn statement_at(text: &str, dialect: Dialect, cursor: usize) -> Result<&str,
 }
 
 /// Le texte entier doit tenir en une instruction : c'est le cas d'une sélection.
-pub fn single_statement(text: &str, dialect: Dialect) -> Result<&str, DbError> {
+pub fn single_statement(text: &str, language: impl Into<Language>) -> Result<&str, DbError> {
+    let Language::Sql(dialect) = language.into();
     match spans(text, dialect).as_slice() {
         [] => Err(DbError::NoStatement),
         [one] => Ok(&text[one.start..one.end]),
@@ -490,7 +492,8 @@ fn prod_function(tokens: &[Token], dialect: Dialect) -> Option<String> {
 /// Dit si une instruction peut partir, et comment : jamais de contrôle de transaction, rien qui
 /// lève le verrou d'une connexion en lecture seule, et en prod, seulement des lectures, des
 /// INSERT, et des UPDATE ou DELETE restreints par un WHERE.
-pub fn admit(statement: &str, dialect: Dialect, policy: Policy) -> Result<Admission, DbError> {
+pub fn admit(statement: &str, language: impl Into<Language>, policy: Policy) -> Result<Admission, DbError> {
+    let Language::Sql(dialect) = language.into();
     let span = spans(statement, dialect).into_iter().next().ok_or(DbError::NoStatement)?;
     let top = top_words(&span.tokens);
     if transaction_control(&top, dialect) {

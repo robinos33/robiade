@@ -32,11 +32,11 @@ impl Engine {
         }
     }
 
-    /// Langage de la console et des requêtes de page ; Mongo et Elastic n'ont pas de SQL.
-    pub fn dialect(self) -> Option<Dialect> {
+    /// Langage de la console et des requêtes de page ; absent pour un moteur pas encore pris en charge.
+    pub fn language(self) -> Option<Language> {
         match self {
-            Self::Postgres => Some(Dialect::Postgres),
-            Self::MariaDb => Some(Dialect::MariaDb),
+            Self::Postgres => Some(Language::Sql(Dialect::Postgres)),
+            Self::MariaDb => Some(Language::Sql(Dialect::MariaDb)),
             Self::Mongo | Self::Elasticsearch => None,
         }
     }
@@ -48,6 +48,18 @@ impl Engine {
             Self::MariaDb => &["mysql://", "mariadb://"],
             Self::Mongo | Self::Elasticsearch => &[],
         }
+    }
+}
+
+/// Ce que parle la console d'une connexion, et dans quoi s'écrit une requête de page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Language {
+    Sql(Dialect),
+}
+
+impl From<Dialect> for Language {
+    fn from(dialect: Dialect) -> Self {
+        Self::Sql(dialect)
     }
 }
 

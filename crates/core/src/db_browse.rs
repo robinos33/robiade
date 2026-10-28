@@ -4,7 +4,7 @@
 //! ce module vérifie chaque nom contre le catalogue lu sur le serveur, les cite, et passe toutes
 //! les valeurs en paramètres. Une page est bornée : on ne charge jamais une table entière.
 
-use crate::databases::{DbError, Dialect, Engine, Target, Tls};
+use crate::databases::{DbError, Dialect, Engine, Language, Target, Tls};
 use crate::db_console::{Executed, StatementKind};
 
 /// Lignes par page. Une de plus est demandée pour savoir s'il en reste.
@@ -258,7 +258,8 @@ fn keyset<'a>(dialect: Dialect, shape: &'a TableShape, sort: Option<&Sort>) -> O
 }
 
 /// Construit la requête d'une page. Toute colonne citée doit exister dans `shape`.
-pub fn page_query(dialect: Dialect, shape: &TableShape, request: &PageRequest) -> Result<PageQuery, DbError> {
+pub fn page_query(language: impl Into<Language>, shape: &TableShape, request: &PageRequest) -> Result<PageQuery, DbError> {
+    let Language::Sql(dialect) = language.into();
     let quote = |ident: &str| quote(dialect, ident);
     if shape.columns.is_empty() {
         return Err(DbError::UnknownColumn(shape.table.name.clone()));
