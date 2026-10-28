@@ -9,27 +9,47 @@ use robiade_core::db_browse::DbSession;
 type Shared = Arc<Mutex<Box<dyn DbSession>>>;
 
 #[derive(Default)]
-pub struct DbSessions(Mutex<HashMap<String, Shared>>);
+struct Inner {
+    sessions: HashMap<String, Shared>,
+    /// Incrémentée à chaque fermeture : une ouverture commencée avant ne peut plus s'installer.
+    generations: HashMap<String, u64>,
+}
+
+#[derive(Default)]
+pub struct DbSessions(Mutex<Inner>);
 
 impl DbSessions {
+    fn inner(&self) -> std::sync::MutexGuard<'_, Inner> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// À relever avant de résoudre la cible d'une connexion, puis à rendre à `insert`.
+    pub fn generation(&self, connection: &str) -> u64 {
+        self.inner().generations.get(connection).copied().unwrap_or(0)
+    }
+
+    /// Installe la session si la connexion n'a été ni modifiée ni supprimée depuis `generation` :
+    /// sinon la session viserait l'ancienne cible, avec l'ancienne règle de lecture seule.
     /// La session précédente de cette connexion, s'il y en a une, est fermée en étant lâchée.
-    pub fn insert(&self, connection: &str, session: Box<dyn DbSession>) {
-        self.0.lock().unwrap_or_else(|e| e.into_inner()).insert(connection.to_owned(), Arc::new(Mutex::new(session)));
+    pub fn insert(&self, connection: &str, generation: u64, session: Box<dyn DbSession>) -> Result<(), String> {
+        let mut inner = self.inner();
+        if inner.generations.get(connection).copied().unwrap_or(0) != generation {
+            return Err("la connexion a changé pendant l'ouverture : rouvre-la".into());
+        }
+        inner.sessions.insert(connection.to_owned(), Arc::new(Mutex::new(session)));
+        Ok(())
     }
 
     /// La session d'une connexion. Le verrou global n'est tenu que le temps de la trouver : une
     /// requête lente sur une base ne bloque pas les autres.
     pub fn get(&self, connection: &str) -> Result<Shared, String> {
-        self.0
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .get(connection)
-            .cloned()
-            .ok_or_else(|| "connexion fermée : rouvre-la".into())
+        self.inner().sessions.get(connection).cloned().ok_or_else(|| "connexion fermée : rouvre-la".into())
     }
 
     pub fn close(&self, connection: &str) {
-        self.0.lock().unwrap_or_else(|e| e.into_inner()).remove(connection);
+        let mut inner = self.inner();
+        inner.sessions.remove(connection);
+        *inner.generations.entry(connection.to_owned()).or_default() += 1;
     }
 }
 
@@ -65,11 +85,24 @@ mod tests {
     #[test]
     fn a_closed_connection_can_no_longer_be_queried() {
         let sessions = DbSessions::default();
-        sessions.insert("c", Box::new(Idle));
+        sessions.insert("c", sessions.generation("c"), Box::new(Idle)).unwrap();
         assert!(sessions.get("c").is_ok());
         sessions.close("c");
         assert!(sessions.get("c").is_err());
         // Fermer une connexion jamais ouverte ne fait rien.
         sessions.close("absente");
+    }
+
+    #[test]
+    fn an_opening_overtaken_by_an_edit_does_not_install_its_session() {
+        let sessions = DbSessions::default();
+        let seen = sessions.generation("c");
+        // La connexion est modifiée pendant que l'ouverture résout l'ancienne cible.
+        sessions.close("c");
+        assert!(sessions.insert("c", seen, Box::new(Idle)).is_err());
+        assert!(sessions.get("c").is_err());
+        // Une ouverture commencée après la modification passe.
+        sessions.insert("c", sessions.generation("c"), Box::new(Idle)).unwrap();
+        assert!(sessions.get("c").is_ok());
     }
 }

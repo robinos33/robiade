@@ -870,8 +870,10 @@ pub fn save_db_connection(state: State<AppState>, connection: DbConnectionInputD
 
 #[tauri::command]
 pub fn delete_db_connection(state: State<AppState>, id: String) -> CmdResult<()> {
+    let deleted = state.connections.delete(&ConnectionId(id.clone())).map_err(|e| e.to_string());
+    // Après la suppression : une ouverture qui relirait encore la connexion verrait sa génération périmée.
     state.db_sessions.close(&id);
-    state.connections.delete(&ConnectionId(id)).map_err(|e| e.to_string())
+    deleted
 }
 
 /// Chemins des secrets d'un montage KV, sous un préfixe. Des noms seulement.
@@ -952,6 +954,8 @@ pub async fn test_db_connection(app: tauri::AppHandle, id: String) -> CmdResult<
 pub async fn open_db(app: tauri::AppHandle, id: String, database: Option<String>) -> CmdResult<DbOverviewDto> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
+        // Relevée avant de lire la connexion : une modification pendant l'ouverture l'invalide.
+        let generation = state.db_sessions.generation(&id);
         let connection = state.connections.get(&ConnectionId(id.clone())).map_err(|e| e.to_string())?;
         let mut target = resolve_target(&state, &connection)?;
         if let Some(database) = database {
@@ -976,7 +980,7 @@ pub async fn open_db(app: tauri::AppHandle, id: String, database: Option<String>
             relations: session.relations().map_err(|e| e.to_string())?.into_iter().map(RelationDto::from).collect(),
             read_only,
         };
-        state.db_sessions.insert(&id, session);
+        state.db_sessions.insert(&id, generation, session)?;
         Ok(overview)
     })
     .await
