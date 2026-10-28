@@ -1,9 +1,9 @@
 import { listen } from '@tauri-apps/api/event';
 import { api } from './api';
 import { writeOutput } from './terminals';
-import type { Agent, Environment, Project, Session, Task, Workspace, Worktree } from './types';
+import type { Agent, Environment, Forge, MergeRequest, Project, Session, Task, Workspace, Worktree } from './types';
 
-export type View = 'inbox' | 'agents' | 'history' | 'tasks' | 'stats';
+export type View = 'inbox' | 'agents' | 'history' | 'mr' | 'tasks' | 'stats';
 
 const ATTENTION_ORDER: Record<string, number> = { awaitingPermission: 0, failed: 1, awaitingInput: 2 };
 
@@ -26,6 +26,10 @@ class AppState {
   quitRequest = $state<Agent[] | null>(null);
   toast = $state<string | null>(null);
   now = $state(Date.now());
+  /** MR lues sur GitLab ; `null` avant la première lecture. */
+  forge = $state<Forge | null>(null);
+  forgeError = $state<string | null>(null);
+  forgeLoading = $state(false);
 
   /** Dépôts principaux seulement : ni worktree, ni sous-dossier, ni dossier disparu. */
   projects: Project[] = $derived.by(() => {
@@ -79,6 +83,16 @@ class AppState {
     this.tasks.filter((t) => this.project === null || t.projectPath === this.project),
   );
 
+  /** Mes MR qui demandent une action : pipeline rouge, conflits, discussions ouvertes. */
+  mrAttention: MergeRequest[] = $derived(
+    (this.forge?.mine ?? []).filter((m) => m.pipeline === 'failed' || m.hasConflicts || m.unresolvedDiscussions),
+  );
+
+  /** Sessions liées à une MR par leur `pr-link`. */
+  sessionsOf(mr: MergeRequest): Session[] {
+    return this.history.filter((s) => s.mergeRequestUrl === mr.webUrl);
+  }
+
   /** Session de l'historique correspondant à un agent (même identifiant, ou session reprise). */
   sessionOf(agent: Agent): Session | undefined {
     const id = agent.resumedFrom ?? agent.id;
@@ -98,6 +112,22 @@ class AppState {
     setInterval(() => (this.now = Date.now()), 15_000);
     // Les transcripts des agents vivants grossissent : on relit (le cache ne reparse que les fichiers modifiés).
     setInterval(() => this.liveAgents.length > 0 && void this.refreshHistory(), 20_000);
+    void this.refreshForge();
+    // Pipelines et reviews bougent sans moi : relus toutes les 2 minutes.
+    setInterval(() => void this.refreshForge(), 120_000);
+  }
+
+  async refreshForge() {
+    if (this.forgeLoading) return;
+    this.forgeLoading = true;
+    try {
+      this.forge = await api.mergeRequests();
+      this.forgeError = null;
+    } catch (e) {
+      this.forgeError = String(e);
+    } finally {
+      this.forgeLoading = false;
+    }
   }
 
   async refreshHistory() {

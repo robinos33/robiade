@@ -1,5 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { Agent, AssetContent, Entry, FileChange, Environment, Overview, SearchHit, Session, Task, TaskStatus } from './types';
+import type {
+  Agent, AssetContent, Entry, FileChange, Environment, Forge, MrOutcomes, MrRef, Overview, SearchHit, Session, Task, TaskStatus,
+} from './types';
 
 export const api = {
   environment: () => invoke<Environment>('environment'),
@@ -28,6 +30,8 @@ export const api = {
   forgetAgent: (id: string) => invoke<void>('forget_agent', { id }),
   workingChanges: (id: string) => invoke<FileChange[]>('working_changes', { id }),
   workingDiff: (id: string, path: string) => invoke<string>('working_diff', { id, path }),
+  mergeRequests: () => invoke<Forge>('merge_requests'),
+  mergeRequestOutcomes: (refs: MrRef[]) => invoke<MrOutcomes>('merge_request_outcomes', { refs }),
   readAsset: (id: string, path: string) => invoke<AssetContent>('read_asset', { id, path }),
   quit: () => invoke<void>('quit'),
 };

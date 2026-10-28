@@ -108,6 +108,8 @@ export interface Overview {
   pricesAsOf: string;
   toolCalls: number;
   mergeRequests: number;
+  /** MR distinctes des sessions de la période, dont l'état se lit ensuite sur GitLab. */
+  mergeRequestRefs: MrRef[];
   /** Du premier au dernier message ; `null` sans session sur la période. */
   medianDurationMs: number | null;
   days: { day: number; sessions: number; tokens: number }[];
@@ -117,6 +119,34 @@ export interface Overview {
   agents: { agents: number; failed: number; waitedMs: number; permissionMs: number };
   tools: [string, number][];
 }
+
+export interface MrRef { project: string; iid: number }
+
+export type MrState = 'draft' | 'opened' | 'merged' | 'closed';
+export type PipelineStatus = 'running' | 'success' | 'failed' | 'manual' | 'canceled';
+
+/** Titre, auteur et branches viennent de GitLab : non fiables, rendus comme texte. */
+export interface MergeRequest extends MrRef {
+  title: string;
+  author: string;
+  state: MrState;
+  sourceBranch: string;
+  targetBranch: string;
+  webUrl: string;
+  updatedAt: number;
+  hasConflicts: boolean;
+  unresolvedDiscussions: boolean;
+  /** `detailed_merge_status` de GitLab, tel quel. */
+  mergeStatus: string;
+  /** `null` sans pipeline, ou non lu (MR des autres). */
+  pipeline: PipelineStatus | null;
+  /** Wagon intermédiaire d'un train : ne cible ni staging ni master. */
+  wagon: boolean;
+}
+
+export interface Forge { mine: MergeRequest[]; reviews: MergeRequest[] }
+
+export interface MrOutcomes { total: number; merged: number; opened: number; closed: number; unknown: number }
 
 export interface Environment { claudePath: string | null; home: string }
 
