@@ -1,4 +1,4 @@
-//! Implémentations des ports de `robiade-core` : fichiers Claude Code, SQLite, hooks, PTY, Git, GitLab, Docker, Vault.
+//! Implémentations des ports de `robiade-core` : fichiers Claude Code, SQLite, hooks, PTY, Git, GitLab, Docker, Vault, Postgres.
 
 pub mod backup;
 pub mod claude_code;
@@ -7,6 +7,7 @@ pub mod git;
 pub mod gitlab;
 pub mod hooks;
 pub mod keychain;
+pub mod postgres;
 pub mod pty;
 pub mod shell_env;
 pub mod sqlite_audit;
