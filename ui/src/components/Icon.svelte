@@ -41,6 +41,8 @@
     <path d="M4 1.8h5l3 3V14a.5.5 0 0 1-.5.5h-7.5A.5.5 0 0 1 3.5 14V2.3c0-.3.2-.5.5-.5zM9 1.8v3h3M5.8 8.5h4.4M5.8 11h4.4" />
   {:else if name === 'pencil'}
     <path d="m10.5 2.8 2.7 2.7-7.7 7.7H2.8v-2.7zM9 4.3l2.7 2.7" />
+  {:else if name === 'copy'}
+    <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" /><path d="M10.5 5.5V3.5a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2" />
   {:else if name === 'close'}
     <path d="m4 4 8 8M12 4l-8 8" />
   {:else if name === 'lock'}

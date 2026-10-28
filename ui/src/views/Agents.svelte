@@ -24,6 +24,7 @@
   const active = $derived(app.agents.find((a) => a.id === app.activeAgentId) ?? app.visibleAgents[0]);
   const session = $derived(active ? app.sessionOf(active) : undefined);
   const mr = $derived(active ? app.mergeRequestOf(active) : null);
+  const sessionId = $derived(active ? (active.resumedFrom ?? active.id) : '');
   const viewed = $derived(active?.assets.find((a) => a.path === viewing));
 
   const running = $derived(app.visibleAgents.filter((a) => a.status !== 'ended'));
@@ -104,6 +105,16 @@
       app.openAgent(fresh.id);
     } catch (e) {
       app.notify(String(e));
+    }
+  }
+
+  /** Identifiant de la session Claude Code, celui que `claude --resume` attend. */
+  async function copySessionId(id: string) {
+    try {
+      await navigator.clipboard.writeText(id);
+      app.notify('Id de session copié');
+    } catch (e) {
+      app.notify(`Copie impossible : ${e}`);
     }
   }
 
@@ -249,6 +260,12 @@
             <ChangesPanel agentId={active.id} activity={active.lastActivityAt + active.filesModified} />
           {:else}
           <dl>
+            <dt>Session</dt>
+            <dd>
+              <button class="session-id mono" onclick={() => copySessionId(sessionId)} title="{sessionId} — cliquer pour copier">
+                {sessionId.slice(0, 8)}<Icon name="copy" size={11} />
+              </button>
+            </dd>
             <dt>Durée</dt><dd class="num">{duration(app.now - active.startedAt)}</dd>
             <dt>T'a attendu</dt><dd class="num">{duration(active.waitedMs)}</dd>
             <dt>dont permission</dt><dd class="num">{duration(active.permissionMs)}</dd>
@@ -312,6 +329,11 @@
 {/if}
 
 <style>
+  .session-id {
+    display: inline-flex; align-items: center; gap: 4px; padding: 0 4px; margin-right: -4px;
+    border: 0; border-radius: 4px; background: none; color: var(--ink-2); font-size: 12px;
+  }
+  .session-id:hover { background: var(--bg-active); color: var(--ink); }
   .page { display: flex; flex-direction: column; min-height: 0; flex: 1; }
   .split { display: grid; grid-template-columns: 250px 1fr 260px; min-height: 0; flex: 1; }
   .list { list-style: none; margin: 0; padding: 8px; overflow-y: auto; border-right: 1px solid var(--line); }
