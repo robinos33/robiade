@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use robiade_core::agents::{AgentEvent, AgentId, Gauges, PermissionMode};
+use robiade_core::assets::AssetKind;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -33,6 +34,8 @@ struct Relayed {
     gauges: Option<RelayedGauges>,
     #[serde(default)]
     written_file: Option<String>,
+    #[serde(default)]
+    viewed_image: Option<String>,
 }
 
 /// Pseudo-événement porté par les relevés de la statusline.
@@ -52,7 +55,13 @@ struct RelayedGauges {
 /// Ce que Robiade observe d'un agent par le socket.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Observation {
-    Event { event: AgentEvent, permission_mode: Option<PermissionMode>, written_file: Option<String> },
+    Event {
+        event: AgentEvent,
+        permission_mode: Option<PermissionMode>,
+        written_file: Option<String>,
+        /// Image lue par l'agent : souvent une capture qu'il vient de produire par une commande.
+        viewed_image: Option<String>,
+    },
     Gauges(Gauges),
 }
 
@@ -130,6 +139,7 @@ fn status_from(input: &str, agent_id: String) -> Option<Relayed> {
         permission_mode: None,
         gauges: Some(gauges),
         written_file: None,
+        viewed_image: None,
     })
 }
 
@@ -139,12 +149,19 @@ fn relayed_from(hook_input: &str, agent_id: String) -> Option<Relayed> {
     let field = |k: &str| v.get(k).and_then(Value::as_str).map(str::to_owned);
     let event = field("hook_event_name")?;
     let tool = field("tool_name");
-    let writes = matches!(tool.as_deref(), Some("Write" | "Edit" | "MultiEdit"));
-    let written_file = (event == "PostToolUse" && writes)
+    let file = (event == "PostToolUse")
         .then(|| v.pointer("/tool_input/file_path").and_then(Value::as_str))
         .flatten()
         .filter(|p| p.len() <= 4096)
         .map(str::to_owned);
+    let writes = matches!(tool.as_deref(), Some("Write" | "Edit" | "MultiEdit"));
+    let reads_image = tool.as_deref() == Some("Read")
+        && file.as_deref().and_then(AssetKind::of) == Some(AssetKind::Image);
+    let (written_file, viewed_image) = match (writes, reads_image) {
+        (true, _) => (file, None),
+        (false, true) => (None, file),
+        _ => (None, None),
+    };
     Some(Relayed {
         agent_id,
         event,
@@ -153,6 +170,7 @@ fn relayed_from(hook_input: &str, agent_id: String) -> Option<Relayed> {
         permission_mode: field("permission_mode"),
         gauges: None,
         written_file,
+        viewed_image,
     })
 }
 
@@ -171,7 +189,7 @@ fn observe(r: Relayed) -> Option<Observation> {
     }
     let event = translate(&r)?;
     let permission_mode = r.permission_mode.as_deref().and_then(PermissionMode::parse);
-    Some(Observation::Event { event, permission_mode, written_file: r.written_file })
+    Some(Observation::Event { event, permission_mode, written_file: r.written_file, viewed_image: r.viewed_image })
 }
 
 fn translate(r: &Relayed) -> Option<AgentEvent> {
@@ -254,6 +272,7 @@ mod tests {
             permission_mode: Some("acceptEdits".into()),
             gauges: None,
             written_file: None,
+            viewed_image: None,
         };
         serde_json::to_writer(&mut stream, &msg).unwrap();
         drop(stream);
@@ -265,6 +284,7 @@ mod tests {
                 event: AgentEvent::ToolStarted { tool: "Bash".into() },
                 permission_mode: PermissionMode::parse("acceptEdits"),
                 written_file: None,
+                viewed_image: None,
             }
         );
         assert_eq!(std::fs::metadata(&socket).unwrap().permissions().mode() & 0o777, 0o600);
@@ -287,7 +307,7 @@ mod tests {
         for (input, (event, mode)) in inputs.into_iter().zip(expected) {
             let observed = observe(relayed_from(input, "id".into()).unwrap());
             let permission_mode = mode.and_then(PermissionMode::parse);
-            assert_eq!(observed, Some(Observation::Event { event, permission_mode, written_file: None }));
+            assert_eq!(observed, Some(Observation::Event { event, permission_mode, written_file: None, viewed_image: None }));
         }
     }
 
@@ -306,6 +326,22 @@ mod tests {
         assert_eq!(relayed_from(&pre, "id".into()).unwrap().written_file, None);
         let read = input.replace("\"Write\"", "\"Read\"");
         assert_eq!(relayed_from(&read, "id".into()).unwrap().written_file, None);
+    }
+
+    #[test]
+    fn relays_an_image_the_agent_reads_but_not_other_files() {
+        let input = r#"{"hook_event_name":"PostToolUse","tool_name":"Read","permission_mode":"default",
+            "tool_input":{"file_path":"/private/tmp/scratchpad/shot.png"}}"#;
+        let Some(Observation::Event { written_file, viewed_image, .. }) = observe(relayed_from(input, "id".into()).unwrap())
+        else {
+            panic!()
+        };
+        assert_eq!((written_file, viewed_image.as_deref()), (None, Some("/private/tmp/scratchpad/shot.png")));
+
+        let code = input.replace("shot.png", "Cart.php");
+        assert_eq!(relayed_from(&code, "id".into()).unwrap().viewed_image, None);
+        let notes = input.replace("shot.png", "SPEC.md");
+        assert_eq!(relayed_from(&notes, "id".into()).unwrap().viewed_image, None);
     }
 
     #[test]

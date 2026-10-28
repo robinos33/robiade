@@ -277,6 +277,11 @@ impl Agent {
         self.assets.record(path, now);
     }
 
+    /// L'agent a lu une image : elle rejoint les assets, sans compter comme fichier modifié.
+    pub fn observe_image_viewed(&mut self, path: &str, now: Millis) {
+        self.assets.record(path, now);
+    }
+
     /// J'ai ouvert la session : un tour terminé n'est plus « non lu ».
     pub fn mark_seen(&mut self, now: Millis) {
         if self.status == AgentStatus::AwaitingInput {
