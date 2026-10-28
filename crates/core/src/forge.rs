@@ -71,6 +71,14 @@ impl PipelineStatus {
     }
 }
 
+/// Approbations d'une MR : combien en manquent, et qui a déjà approuvé.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Approvals {
+    pub required: u32,
+    pub left: u32,
+    pub by: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MergeRequest {
     pub mr: MrRef,
@@ -88,6 +96,8 @@ pub struct MergeRequest {
     pub merge_status: String,
     /// `None` sans pipeline, ou quand il n'a pas été lu (MR des autres).
     pub pipeline: Option<PipelineStatus>,
+    /// `None` quand elles n'ont pas été lues (MR des autres).
+    pub approvals: Option<Approvals>,
 }
 
 impl MergeRequest {
@@ -115,9 +125,9 @@ pub enum ForgeError {
 
 /// Lecture des MR sur GitLab.
 pub trait Forge: Send + Sync {
-    /// Mes MR ouvertes, avec leur dernier pipeline.
+    /// Mes MR ouvertes, avec leur dernier pipeline et leurs approbations.
     fn my_merge_requests(&self) -> Result<Vec<MergeRequest>, ForgeError>;
-    /// MR ouvertes des autres où je suis relecteur, brouillons exclus.
+    /// MR ouvertes des autres où je suis relecteur, brouillons et MR déjà approuvées par moi exclus.
     fn review_requests(&self) -> Result<Vec<MergeRequest>, ForgeError>;
     /// Une MR précise, quel que soit son état.
     fn merge_request(&self, mr: &MrRef) -> Result<MergeRequest, ForgeError>;
@@ -182,6 +192,7 @@ mod tests {
             unresolved_discussions: false,
             merge_status: String::new(),
             pipeline: None,
+            approvals: None,
         };
         assert!(mr.is_intermediate_wagon());
         mr.target_branch = "staging".into();

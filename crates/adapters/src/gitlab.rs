@@ -5,7 +5,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use rayon::prelude::*;
-use robiade_core::forge::{Forge, ForgeError, MergeRequest, MrRef, MrState, PipelineStatus, GITLAB_HOST};
+use robiade_core::forge::{Approvals, Forge, ForgeError, MergeRequest, MrRef, MrState, PipelineStatus, GITLAB_HOST};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 
@@ -90,17 +90,30 @@ impl GitLab {
     fn single(&self, project: &str, iid: u64) -> Result<ApiMergeRequest, ForgeError> {
         self.get(&format!("/projects/{}/merge_requests/{iid}", project.replace('/', "%2F")))
     }
+
+    fn approvals(&self, project: &str, iid: u64) -> Result<Approvals, ForgeError> {
+        let path = format!("/projects/{}/merge_requests/{iid}/approvals", project.replace('/', "%2F"));
+        let a: ApiApprovals = self.get(&path)?;
+        Ok(Approvals {
+            required: a.approvals_required,
+            left: a.approvals_left,
+            by: a.approved_by.into_iter().map(|b| b.user.username).collect(),
+        })
+    }
 }
 
 impl Forge for GitLab {
     fn my_merge_requests(&self) -> Result<Vec<MergeRequest>, ForgeError> {
         let listed = self.list("scope=created_by_me")?;
-        // La liste ne donne pas le pipeline : chaque MR est relue, en parallèle.
+        // La liste ne donne ni le pipeline ni les approbations : chaque MR est relue, en parallèle.
         let mut mrs: Vec<MergeRequest> = listed
             .into_par_iter()
             .filter_map(|m| {
-                let detailed = MrRef::from_url(&m.web_url).and_then(|r| self.single(&r.project, r.iid).ok());
-                to_domain(detailed.unwrap_or(m))
+                let r = MrRef::from_url(&m.web_url)?;
+                let detailed = self.single(&r.project, r.iid).ok();
+                let mut mr = to_domain(detailed.unwrap_or(m))?;
+                mr.approvals = self.approvals(&r.project, r.iid).ok();
+                Some(mr)
             })
             .collect();
         mrs.sort_by_key(|m| std::cmp::Reverse(m.updated_at));
@@ -109,7 +122,8 @@ impl Forge for GitLab {
 
     fn review_requests(&self) -> Result<Vec<MergeRequest>, ForgeError> {
         let me = self.username()?;
-        let listed = self.list(&format!("scope=all&wip=no&reviewer_username={me}"))?;
+        let listed =
+            self.list(&format!("scope=all&wip=no&reviewer_username={me}&not%5Bapproved_by_usernames%5D%5B%5D={me}"))?;
         let mut mrs: Vec<MergeRequest> = listed.into_iter().filter_map(to_domain).filter(|m| m.author != me).collect();
         mrs.sort_by_key(|m| std::cmp::Reverse(m.updated_at));
         Ok(mrs)
@@ -128,6 +142,21 @@ fn valid_username(name: &str) -> bool {
 #[derive(Deserialize)]
 struct ApiUser {
     username: String,
+}
+
+#[derive(Deserialize)]
+struct ApiApprovals {
+    #[serde(default)]
+    approvals_required: u32,
+    #[serde(default)]
+    approvals_left: u32,
+    #[serde(default)]
+    approved_by: Vec<ApiApprover>,
+}
+
+#[derive(Deserialize)]
+struct ApiApprover {
+    user: ApiUser,
 }
 
 #[derive(Deserialize)]
@@ -182,6 +211,7 @@ fn to_domain(m: ApiMergeRequest) -> Option<MergeRequest> {
         unresolved_discussions: !m.blocking_discussions_resolved,
         merge_status: m.detailed_merge_status.unwrap_or_default(),
         pipeline: m.head_pipeline.and_then(|p| PipelineStatus::parse(&p.status)),
+        approvals: None,
     })
 }
 
