@@ -31,6 +31,15 @@ impl Engine {
             Self::Elasticsearch => 9200,
         }
     }
+
+    /// Préfixes d'URL acceptés : ceux du `DATABASE_URL` de Symfony.
+    fn schemes(self) -> &'static [&'static str] {
+        match self {
+            Self::Postgres => &["postgresql://", "postgres://"],
+            Self::MariaDb => &["mysql://", "mariadb://"],
+            Self::Mongo | Self::Elasticsearch => &[],
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -170,7 +179,7 @@ impl Connection {
         if !fields.iter().any(|(p, _)| matches!(p, Part::Url | Part::Host)) {
             return Err(DbError::NoTarget);
         }
-        if let Some(part) = Self::forbidden_literals(stage, &fields).next() {
+        if let Some(part) = Self::forbidden_literals(engine, stage, &fields).next() {
             return Err(DbError::SecretInClear(part));
         }
         Ok(Self { id, name: Self::valid_name(name)?, engine, stage, project_path, read_only, fields, refused: vec![] })
@@ -188,7 +197,7 @@ impl Connection {
         read_only: bool,
         fields: Vec<(Part, Source)>,
     ) -> Self {
-        let refused: Vec<Part> = Self::forbidden_literals(stage, &fields).collect();
+        let refused: Vec<Part> = Self::forbidden_literals(engine, stage, &fields).collect();
         let fields = fields.into_iter().filter(|(part, _)| !refused.contains(part)).collect();
         Self { id, name, engine, stage, project_path, read_only: read_only || stage == Stage::Prod, fields, refused }
     }
@@ -202,8 +211,8 @@ impl Connection {
     /// Champs secrets saisis en clair alors que la connexion n'est pas une connexion dev vers la
     /// machine locale. L'hôte doit lui-même être en clair pour en juger : venu de Vault ou du
     /// trousseau, il peut désigner n'importe quelle machine.
-    fn forbidden_literals(stage: Stage, fields: &[(Part, Source)]) -> impl Iterator<Item = Part> + '_ {
-        let local = stage == Stage::Dev && literal_host(fields).is_some_and(|h| is_local_host(&h));
+    fn forbidden_literals(engine: Engine, stage: Stage, fields: &[(Part, Source)]) -> impl Iterator<Item = Part> + '_ {
+        let local = stage == Stage::Dev && literal_host(engine, fields).is_some_and(|h| is_local_host(&h));
         fields
             .iter()
             .filter(move |(part, source)| !local && part.is_secret() && matches!(source, Source::Literal(_)))
@@ -294,7 +303,7 @@ impl Target {
     pub fn assemble(engine: Engine, values: &[(Part, String)]) -> Result<Self, DbError> {
         let url = values.iter().find(|(p, _)| *p == Part::Url).map(|(_, v)| v.as_str());
         let mut target = match url {
-            Some(url) => parse_url(url).ok_or(DbError::Invalid(Part::Url))?,
+            Some(url) => parse_url(engine, url).ok_or(DbError::Invalid(Part::Url))?,
             None => Self { host: String::new(), port: 0, database: None, user: None, password: None, ssl_mode: None },
         };
         for (part, raw) in values {
@@ -358,19 +367,21 @@ fn is_local_host(host: &str) -> bool {
 
 /// L'hôte visé, s'il est connu sans rien résoudre : champ `Host` en clair, ou à défaut celui d'une
 /// URL en clair. Un champ `Host` présent l'emporte, comme dans `Target::assemble`.
-fn literal_host(fields: &[(Part, Source)]) -> Option<String> {
+fn literal_host(engine: Engine, fields: &[(Part, Source)]) -> Option<String> {
     let source = |part| fields.iter().find(|(p, _)| *p == part).map(|(_, s)| s);
     match (source(Part::Host), source(Part::Url)) {
         (Some(Source::Literal(host)), _) => Some(host.trim().to_owned()),
         (Some(_), _) => None,
-        (None, Some(Source::Literal(url))) => parse_url(url).map(|t| t.host),
+        (None, Some(Source::Literal(url))) => parse_url(engine, url).map(|t| t.host),
         (None, _) => None,
     }
 }
 
-/// `postgres[ql]://user:pass@host:port/base?sslmode=…`, identifiants décodés.
-fn parse_url(url: &str) -> Option<Target> {
-    let rest = url.trim().strip_prefix("postgresql://").or_else(|| url.trim().strip_prefix("postgres://"))?;
+/// `postgres[ql]://user:pass@host:port/base?sslmode=…`, ou `mysql://…` pour MariaDB, identifiants
+/// décodés.
+fn parse_url(engine: Engine, url: &str) -> Option<Target> {
+    let url = url.trim();
+    let rest = engine.schemes().iter().find_map(|scheme| url.strip_prefix(scheme))?;
     let (rest, query) = rest.split_once('?').unwrap_or((rest, ""));
     // Le dernier `@` : un mot de passe mal encodé peut en contenir un.
     let (userinfo, rest) = match rest.rfind('@') {
@@ -572,6 +583,20 @@ mod tests {
         let v6 = Target::assemble(Engine::Postgres, &[(Part::Url, "postgres://[::1]/db".into())]).unwrap();
         assert_eq!((v6.host.as_str(), v6.port), ("::1", 5432));
         assert_eq!(Target::assemble(Engine::Postgres, &[(Part::Url, "mysql://h/db".into())]), Err(DbError::Invalid(Part::Url)));
+    }
+
+    #[test]
+    fn reads_a_mariadb_url_with_the_mysql_scheme() {
+        let url = "mysql://app:p%40ss@127.0.0.1/app?serverVersion=10.11.2-MariaDB&charset=utf8mb4";
+        let t = Target::assemble(Engine::MariaDb, &[(Part::Url, url.into())]).unwrap();
+        assert_eq!((t.host.as_str(), t.port, t.database.as_deref()), ("127.0.0.1", 3306, Some("app")));
+        assert_eq!(t.password.as_deref(), Some("p@ss"));
+        assert!(Target::assemble(Engine::MariaDb, &[(Part::Url, "mariadb://h:3307/db".into())]).is_ok());
+        assert_eq!(Target::assemble(Engine::MariaDb, &[(Part::Url, "postgres://h/db".into())]), Err(DbError::Invalid(Part::Url)));
+        // Le `.env` d'un projet local : mot de passe en clair accepté vers localhost.
+        let local = vec![(Part::Url, literal("mysql://app:pw@localhost:3306/app"))];
+        let c = Connection::create(ConnectionId("c".into()), "Boutique", Engine::MariaDb, Stage::Dev, None, false, local);
+        assert!(c.is_ok());
     }
 
     #[test]
