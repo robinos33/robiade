@@ -1,8 +1,9 @@
 <script lang="ts">
   import { app } from '../lib/state.svelte';
   import { api } from '../lib/api';
+  import { openUrl } from '@tauri-apps/plugin-opener';
   import { ago } from '../lib/format';
-  import type { Task, TaskStatus } from '../lib/types';
+  import type { Issue, Task, TaskStatus } from '../lib/types';
   import Icon from '../components/Icon.svelte';
 
   const COLUMNS: { status: TaskStatus; label: string }[] = [
@@ -13,6 +14,24 @@
   const NEXT: Record<TaskStatus, TaskStatus> = { todo: 'doing', doing: 'done', done: 'todo' };
 
   let title = $state('');
+
+  /** Issues du projet GitLab sélectionné, ou celles qui me sont assignées en vue globale. */
+  let issues = $state<Issue[] | null>(null);
+  let issuesError = $state<string | null>(null);
+  const issuesScope = $derived(app.project === null ? 'assigned' : app.selectedGitlabProject);
+
+  $effect(() => {
+    const scope = issuesScope;
+    issues = null;
+    issuesError = null;
+    if (scope === null) return;
+    api.issues(scope === 'assigned' ? null : scope).then(
+      (found) => issuesScope === scope && (issues = found),
+      (e) => issuesScope === scope && (issuesError = String(e)),
+    );
+  });
+
+  const today = $derived(new Date(app.now).toISOString().slice(0, 10));
   const projectName = (root: string | null) => app.projects.find((p) => p.root === root)?.name ?? null;
 
   async function add(e: SubmitEvent) {
@@ -77,8 +96,40 @@
     </div>
 
     <div class="team">
-      <h2 class="section-title">Tâches d'équipe · GitLab</h2>
-      <p class="muted">Les issues GitLab s'afficheront ici en lecture (GitLab reste la source de vérité). Prévu en v2.</p>
+      <h2 class="section-title">
+        Tâches d'équipe · GitLab · {issuesScope === 'assigned' ? 'assignées à moi' : (issuesScope ?? '—')}
+        {#if issues}<span class="num">{issues.length}</span>{/if}
+      </h2>
+      {#if issuesScope === null}
+        <p class="muted">Ce projet n'a pas de remote origin sur gitlab.example.com.</p>
+      {:else if issuesError}
+        <p class="error-text">GitLab illisible : {issuesError}</p>
+      {:else if issues === null}
+        <p class="muted">Lecture de GitLab…</p>
+      {:else}
+        <ul class="issues">
+          {#each issues as i (i.webUrl)}
+            <li class="issue">
+              <span class="ref mono">#{i.iid}</span>
+              <div class="body">
+                <button class="t link" title="Ouvrir dans GitLab" onclick={() => void openUrl(i.webUrl)}>{i.title}</button>
+                <span class="meta">
+                  {#if issuesScope === 'assigned'}<span class="scope" title={i.project}>{i.project.split('/').pop()}</span>{/if}
+                  {#each i.labels as l (l)}<span class="label">{l}</span>{/each}
+                  {#if i.assignees.length}<span>{i.assignees.join(', ')}</span>{/if}
+                  {#if i.mergeRequests}<span>{i.mergeRequests} MR</span>{/if}
+                  <span>{ago(i.updatedAt, app.now)}</span>
+                </span>
+              </div>
+              {#if i.dueDate}
+                <span class="due num" class:late={i.dueDate < today} title="Échéance">{i.dueDate}</span>
+              {/if}
+            </li>
+          {:else}
+            <li class="none muted">Aucune issue ouverte.</li>
+          {/each}
+        </ul>
+      {/if}
     </div>
   </div>
 </section>
@@ -114,4 +165,14 @@
   .none { padding: 4px 2px; }
   .team { border-top: 1px solid var(--line); padding-top: 18px; }
   .team p { margin: 0; }
+  .team h2 span { color: var(--ink-3); margin-left: 4px; }
+  .issues { gap: 0; }
+  .issue { display: flex; align-items: flex-start; gap: 10px; padding: 8px 6px; border-bottom: 1px solid var(--line); }
+  .ref { color: var(--ink-3); font-size: 12px; width: 52px; flex: none; padding-top: 1px; }
+  .link { border: 0; background: none; padding: 0; text-align: left; color: var(--ink); }
+  .link:hover { text-decoration: underline; }
+  .label { padding: 0 6px; border-radius: 8px; border: 1px solid var(--line-strong); color: var(--ink-2); }
+  .due { flex: none; font-size: 12px; color: var(--ink-2); }
+  .due.late { color: var(--danger); }
+  .error-text { color: var(--danger); }
 </style>
