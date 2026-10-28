@@ -23,6 +23,7 @@
 
   const active = $derived(app.agents.find((a) => a.id === app.activeAgentId) ?? app.visibleAgents[0]);
   const session = $derived(active ? app.sessionOf(active) : undefined);
+  const mr = $derived(active ? app.mergeRequestOf(active) : null);
   const viewed = $derived(active?.assets.find((a) => a.path === viewing));
 
   const running = $derived(app.visibleAgents.filter((a) => a.status !== 'ended'));
@@ -218,7 +219,7 @@
             {#if session?.gitBranch}
               <span class="branch mono"><Icon name="branch" size={12} /> {session.gitBranch}</span>
             {/if}
-            {#if session?.mergeRequestUrl}<MrBadge url={session.mergeRequestUrl} />{/if}
+            {#if mr}<MrBadge url={mr.url} state={mr.state} />{/if}
             <span class="spacer"></span>
             {#if active.status !== 'ended'}
               <button class="btn ghost" onclick={restart} title="Relance claude sur la même session : prend une mise à jour installée (« Restart to update »)">

@@ -123,6 +123,22 @@ class AppState {
   /** Écouteurs et minuteries posés par `init`, à libérer si le module est remplacé. */
   private teardown: (() => void)[] = [];
 
+  /**
+   * MR de la session d'un agent : son `pr-link` (écrit pour `gh`, pas pour `glab`), sinon la MR
+   * ouverte du même projet GitLab dont la branche source est celle de la session.
+   */
+  mergeRequestOf(agent: Agent): { url: string; state?: MrState } | null {
+    const session = this.sessionOf(agent);
+    if (session?.mergeRequestUrl) return { url: session.mergeRequestUrl };
+    const project = agent.gitlabProject?.toLowerCase();
+    const branch = session?.gitBranch;
+    if (!project || !branch) return null;
+    const mr = [...(this.forge?.mine ?? []), ...(this.forge?.reviews ?? [])].find(
+      (m) => m.project.toLowerCase() === project && m.sourceBranch === branch,
+    );
+    return mr ? { url: mr.webUrl, state: mr.state } : null;
+  }
+
   async init() {
     this.teardown.push(
       ...(await Promise.all([
