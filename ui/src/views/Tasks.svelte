@@ -5,6 +5,13 @@
   import { ago } from '../lib/format';
   import type { Issue, Task, TaskStatus } from '../lib/types';
   import Icon from '../components/Icon.svelte';
+  import IssueStartDialog from '../components/IssueStartDialog.svelte';
+
+  /** Issue sur laquelle démarrer un agent, avec le dépôt local de son projet. */
+  let starting = $state<{ issue: Issue; root: string } | null>(null);
+  /** Dépôt local du projet GitLab de l'issue, s'il est connu de Robiade. */
+  const localRepo = (i: Issue) =>
+    app.projects.find((p) => p.gitlabProject?.toLowerCase() === i.project.toLowerCase())?.root ?? null;
 
   const COLUMNS: { status: TaskStatus; label: string }[] = [
     { status: 'todo', label: 'À faire' },
@@ -124,6 +131,12 @@
               {#if i.dueDate}
                 <span class="due num" class:late={i.dueDate < today} title="Échéance">{i.dueDate}</span>
               {/if}
+              {#if localRepo(i)}
+                {@const root = localRepo(i) ?? ''}
+                <button class="btn ghost start" title="Worktree, branche et prompt à relire" onclick={() => (starting = { issue: i, root })}>
+                  Démarrer un agent
+                </button>
+              {/if}
             </li>
           {:else}
             <li class="none muted">Aucune issue ouverte.</li>
@@ -133,6 +146,10 @@
     </div>
   </div>
 </section>
+
+{#if starting}
+  <IssueStartDialog issue={starting.issue} projectRoot={starting.root} onclose={() => (starting = null)} />
+{/if}
 
 <style>
   .page { display: flex; flex-direction: column; min-height: 0; flex: 1; }
@@ -175,4 +192,6 @@
   .due { flex: none; font-size: 12px; color: var(--ink-2); }
   .due.late { color: var(--danger); }
   .error-text { color: var(--danger); }
+  .start { flex: none; height: 24px; padding: 0 8px; font-size: 12px; opacity: 0; }
+  .issue:hover .start, .issue:focus-within .start { opacity: 1; }
 </style>
