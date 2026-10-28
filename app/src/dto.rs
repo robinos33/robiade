@@ -589,9 +589,10 @@ pub struct WorktreeRemovalDto {
     pub repository: String,
     /// `None` : tête détachée.
     pub branch: Option<String>,
-    /// Raison du refus ; `None` si la suppression est possible.
+    /// Raison du refus (un agent dedans) ; `None` si la suppression est possible.
     pub blocker: Option<String>,
-    /// Fichiers modifiés ou non suivis qui bloquent, les premiers seulement ; `change_count` les compte tous.
+    /// Fichiers modifiés ou non suivis que la suppression ferait perdre, les premiers seulement ;
+    /// `change_count` les compte tous.
     pub changes: Vec<FileChangeDto>,
     pub change_count: usize,
 }

@@ -603,17 +603,13 @@ fn linked_worktree(state: &AppState, raw: &str) -> CmdResult<(String, String)> {
 /// Fichiers en cause affichés au plus dans la confirmation ; le total reste donné.
 const SHOWN_CHANGES: usize = 50;
 
-/// Ce qui empêche de supprimer le worktree : un agent dedans, ou des modifications non commitées,
-/// renvoyées avec la raison pour que l'interface les montre.
+/// Ce qui empêche de supprimer le worktree, un agent dedans, et sinon les modifications non
+/// commitées que la suppression ferait perdre.
 fn removal_blocker(state: &AppState, dir: &str) -> CmdResult<(Option<String>, Vec<FileChange>)> {
     if state.agents.running_in(dir) {
         return Ok((Some("un agent tourne encore dans ce worktree : arrête-le d'abord".into()), Vec::new()));
     }
-    let changes = state.vcs.changes(dir).map_err(|e| e.to_string())?;
-    let blocker = (!changes.is_empty()).then(|| {
-        format!("{} fichier(s) modifié(s) ou non suivi(s) : commite-les ou annule-les d'abord", changes.len())
-    });
-    Ok((blocker, changes))
+    Ok((None, state.vcs.changes(dir).map_err(|e| e.to_string())?))
 }
 
 /// Ce que « supprimer le worktree » ferait : cible exacte, branche, et raison d'un refus.
@@ -636,16 +632,25 @@ pub async fn prepare_worktree_removal(app: tauri::AppHandle, path: String) -> Cm
     .map_err(|e| e.to_string())?
 }
 
-/// Supprime le worktree, sans force ; sa branche reste. Les vérifications sont refaites ici.
+/// Supprime le worktree ; sa branche reste. `discard` est le nombre de modifications non commitées
+/// que j'ai accepté de perdre, 0 pour un arbre propre : s'il ne correspond plus à ce que contient
+/// le worktree, rien n'est supprimé. Les vérifications sont refaites ici.
 #[tauri::command]
-pub async fn remove_worktree(app: tauri::AppHandle, path: String) -> CmdResult<()> {
+pub async fn remove_worktree(app: tauri::AppHandle, path: String, discard: usize) -> CmdResult<()> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
         let (dir, repository) = linked_worktree(&state, &path)?;
-        if let (Some(blocker), _) = removal_blocker(&state, &dir)? {
+        let (blocker, changes) = removal_blocker(&state, &dir)?;
+        if let Some(blocker) = blocker {
             return Err(blocker);
         }
-        state.worktrees.remove(&repository, &dir, false).map_err(|e| e.to_string())?;
+        if changes.len() != discard {
+            return Err(format!(
+                "le worktree compte maintenant {} modification(s) non commitée(s) : relis-les avant de supprimer",
+                changes.len()
+            ));
+        }
+        state.worktrees.remove(&repository, &dir, discard > 0).map_err(|e| e.to_string())?;
         state.workspaces.forget(&dir);
         state.agents.reattach(&dir);
         Ok(())
