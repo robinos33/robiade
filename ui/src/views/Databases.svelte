@@ -2,6 +2,7 @@
   import { untrack } from 'svelte';
   import { app } from '../lib/state.svelte';
   import { api } from '../lib/api';
+  import { engineLabel } from '../lib/format';
   import type { DbConnection, DbProbe, DbTarget } from '../lib/types';
   import DbConnectionDialog from '../components/DbConnectionDialog.svelte';
   import DbExplorer from '../components/DbExplorer.svelte';
@@ -121,7 +122,7 @@
           <div class="line">
             <StageBadge stage={c.stage} />
             <span class="name ellipsis">{c.name}</span>
-            <span class="tag">PostgreSQL</span>
+            <span class="tag">{engineLabel(c.engine)}</span>
             {#if c.readOnly}<span class="tag">lecture seule</span>{/if}
             <span class="mono muted ellipsis where" title={where(c)}>{where(c)}</span>
             <div class="actions">
@@ -138,7 +139,7 @@
           {#if r?.probe}
             <p class="result ok">
               {c.stage === 'prod' ? 'PROD · ' : ''}{c.name} → <span class="mono">{targetLabel(r.probe.target)}</span>
-              · PostgreSQL {r.probe.serverVersion} · connecté en {r.probe.user} sur {r.probe.database}
+              · {engineLabel(c.engine)} {r.probe.serverVersion} · connecté en {r.probe.user} sur {r.probe.database}
               · {r.probe.readOnly ? 'lecture seule (vérifiée sur le serveur)' : 'lecture-écriture'}
             </p>
           {:else if r?.error}

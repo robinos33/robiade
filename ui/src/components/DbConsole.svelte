@@ -1,6 +1,6 @@
 <script lang="ts">
   import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
-  import { sql, PostgreSQL } from '@codemirror/lang-sql';
+  import { sql, MariaSQL, PostgreSQL } from '@codemirror/lang-sql';
   import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
   import { EditorState, Prec } from '@codemirror/state';
   import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers } from '@codemirror/view';
@@ -80,7 +80,7 @@
           drawSelection(),
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
-          sql({ dialect: PostgreSQL }),
+          sql({ dialect: connection.engine === 'mariadb' ? MariaSQL : PostgreSQL }),
           syntaxHighlighting(highlight),
           theme,
           EditorView.updateListener.of((u) => {

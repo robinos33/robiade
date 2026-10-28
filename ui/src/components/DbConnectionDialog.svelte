@@ -2,7 +2,7 @@
   import { untrack } from 'svelte';
   import { api } from '../lib/api';
   import { app } from '../lib/state.svelte';
-  import type { DbConnection, DbPart, DbSource, DbStage } from '../lib/types';
+  import type { DbConnection, DbEngine, DbPart, DbSource, DbStage } from '../lib/types';
   import StageBadge from './StageBadge.svelte';
   import VaultPicker from './VaultPicker.svelte';
 
@@ -14,10 +14,16 @@
 
   type Kind = 'none' | DbSource['kind'];
 
+  /** Moteurs qui savent se connecter ; Mongo et Elastic viendront ensuite. */
+  const ENGINES: { engine: DbEngine; label: string; port: number }[] = [
+    { engine: 'postgres', label: 'PostgreSQL', port: 5432 },
+    { engine: 'mariadb', label: 'MariaDB', port: 3306 },
+  ];
+
   const PARTS: { part: DbPart; label: string; secret: boolean; hint: string }[] = [
     { part: 'url', label: 'URL', secret: true, hint: 'DATABASE_URL de Symfony' },
     { part: 'host', label: 'Hôte', secret: false, hint: 'remplace celui de l’URL' },
-    { part: 'port', label: 'Port', secret: false, hint: '5432 par défaut' },
+    { part: 'port', label: 'Port', secret: false, hint: 'port du moteur par défaut' },
     { part: 'database', label: 'Base', secret: false, hint: '' },
     { part: 'user', label: 'Utilisateur', secret: false, hint: '' },
     { part: 'password', label: 'Mot de passe', secret: true, hint: '' },
@@ -39,6 +45,7 @@
   // Valeurs de départ, figées à l'ouverture : la connexion éditée ne change pas sous le formulaire.
   const initial = untrack(() => $state.snapshot(connection));
   let name = $state(initial?.name ?? '');
+  let engine = $state<DbEngine>(initial?.engine ?? 'postgres');
   let stage = $state<DbStage>(initial?.stage ?? 'dev');
   let readOnly = $state(initial?.readOnly ?? true);
   let attached = $state(initial ? initial.projectPath !== null : app.project !== null);
@@ -71,8 +78,9 @@
   const storedClear = (part: DbPart) => initial?.fields.some((f) => f.part === part && f.source.kind === 'literal') ?? false;
 
   const LOCAL_HOSTS = ['localhost', '127.0.0.1', '::1'];
-  /** Hôte d'une URL Postgres, crochets d'IPv6 retirés. */
-  const urlHost = (url: string) => /^postgres(?:ql)?:\/\/(?:[^/]*@)?(\[[^\]]+\]|[^:/?]+)/.exec(url.trim())?.[1]?.replace(/^\[|\]$/g, '');
+  /** Hôte d'une URL Postgres ou MariaDB (`mysql://`), crochets d'IPv6 retirés. */
+  const urlHost = (url: string) =>
+    /^(?:postgres(?:ql)?|mysql|mariadb):\/\/(?:[^/]*@)?(\[[^\]]+\]|[^:/?]+)/.exec(url.trim())?.[1]?.replace(/^\[|\]$/g, '');
 
   /** Même règle que le domaine, pour n'offrir la saisie en clair que là où elle sera acceptée :
    *  dev, et un hôte local connu sans rien résoudre. Rust tranche de toute façon à l'enregistrement. */
@@ -103,7 +111,7 @@
       const saved = await api.saveDbConnection({
         id: initial?.id ?? null,
         name,
-        engine: 'postgres',
+        engine,
         stage,
         projectPath: attached ? projectPath : null,
         readOnly,
@@ -148,7 +156,14 @@
       <input id="db-name" class="field" bind:this={input} bind:value={name} maxlength="100" placeholder="Forum staging" />
 
       <span class="k">Moteur</span>
-      <span>PostgreSQL <span class="muted">· MariaDB, Mongo, Elastic plus tard</span></span>
+      <div class="stages" role="radiogroup" aria-label="Moteur">
+        {#each ENGINES as e (e.engine)}
+          <button class="btn small" class:on={engine === e.engine} role="radio" aria-checked={engine === e.engine} title={`port ${e.port} par défaut`} onclick={() => (engine = e.engine)}>
+            {e.label}
+          </button>
+        {/each}
+        <span class="muted">· Mongo, Elastic plus tard</span>
+      </div>
 
       <span class="k">Environnement</span>
       <div class="stages" role="radiogroup" aria-label="Environnement">
@@ -245,7 +260,7 @@
   label, .k { color: var(--ink-3); font-size: 12.5px; }
   .check { display: flex; align-items: center; gap: 6px; color: var(--ink); }
   .field { height: 30px; }
-  .stages { display: flex; gap: 4px; }
+  .stages { display: flex; align-items: center; gap: 4px; }
   .small { height: 26px; padding: 0 10px; font-size: 12px; }
   .on { border-color: var(--ink-2); font-weight: 600; }
   .prod-choice.on { background: var(--danger); border-color: var(--danger); color: #fff; }

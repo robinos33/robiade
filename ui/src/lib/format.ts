@@ -1,3 +1,5 @@
+import type { DbEngine } from './types';
+
 const rtf = new Intl.RelativeTimeFormat('fr', { numeric: 'auto', style: 'short' });
 const compact = new Intl.NumberFormat('fr', { notation: 'compact', maximumFractionDigits: 1 });
 const integer = new Intl.NumberFormat('fr');
@@ -32,6 +34,14 @@ export const dollars = (n: number) => `≈ ${(n >= 100 ? usdRound : usd).format(
 export const count = (n: number) => integer.format(n);
 export const dateTime = (at: number) => dateTimeFmt.format(at);
 export const time = (at: number) => timeFmt.format(at);
+
+const ENGINE_LABELS: Record<DbEngine, string> = {
+  postgres: 'PostgreSQL',
+  mariadb: 'MariaDB',
+  mongo: 'MongoDB',
+  elasticsearch: 'Elasticsearch',
+};
+export const engineLabel = (engine: DbEngine) => ENGINE_LABELS[engine];
 
 /** `day` : jour local compté depuis l'epoch, tel que calculé côté Rust. */
 export function dayLabel(day: number): string {
