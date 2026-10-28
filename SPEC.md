@@ -45,7 +45,7 @@ Statut : brouillon du 2026-10-27. Les points marqués **[À trancher]** sont reg
 | MR, pipelines, issues | GitLab | Cache court (TTL), jetable |
 | Worktrees, branches | Le dépôt Git | Rien |
 | Conteneurs | Docker Engine | Rien |
-| Connexions DB | Config ADE : chaque champ en valeur, référence trousseau ou référence Vault | La config, **sans aucune valeur secrète** : une URL ou un mot de passe se désigne, il ne se saisit pas |
+| Connexions DB | Config ADE : chaque champ en valeur, référence trousseau ou référence Vault | La config, **sans valeur secrète** : une URL ou un mot de passe se désigne, il ne se saisit pas — sauf pour une base dev locale |
 | Statistiques | Dérivées des transcripts | Agrégats SQLite, **reconstructibles** |
 | Résultats de requêtes DB | La base interrogée | **Rien sur disque** : en mémoire, le temps de l'affichage |
 | Historique des requêtes DB | ADE | SQLite (texte des requêtes, jamais les résultats) |
@@ -249,7 +249,8 @@ abonnement, ce n'est pas ce que je paie. L'UI met les tokens en premier et le co
   - **Connexions** : nom, moteur, environnement (dev / staging / prod), projet optionnel. Chaque
     champ (URL, hôte, port, base, utilisateur, mot de passe) vient d'une valeur saisie, du
     trousseau ou d'une clé Vault choisie dans la liste des secrets d'un montage. Une URL ou un mot
-    de passe ne se saisit jamais en clair. La production est rouge partout où elle apparaît
+    de passe ne se saisit en clair que pour une connexion dev vers la machine locale (hôte en clair,
+    `localhost`/`127.0.0.1`/`::1`) ; il n'est alors jamais renvoyé à l'interface. La production est rouge partout où elle apparaît
     (badge PROD, ligne, formulaire) et une connexion de prod montre son nom et son hôte résolu
     avant de s'ouvrir.
   - **Explorateur** : connexions → bases → schémas → tables / collections / index.
@@ -469,3 +470,6 @@ la console de prod sera limitée à une liste blanche de commandes de lecture. T
 certificat et nom d'hôte vérifiés ; en dev, clair accepté seulement vers localhost. **Risque
 résiduel assumé** : ces protections tiennent contre une fausse manipulation, pas contre un bug de
 Robiade ; un compte en lecture seule côté serveur reste la cible quand il sera disponible.
+Seule exception au « rien en clair » : une base **dev locale**, dont le mot de passe est déjà en
+clair dans le `.env` du projet, se saisit en clair et reste dans `robiade.db` ; staging, prod et dev
+distant passent par Vault ou le trousseau.
