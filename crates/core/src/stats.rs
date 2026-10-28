@@ -1,9 +1,10 @@
 //! Statistiques : modèle de lecture calculé à partir de l'historique.
 
 use std::cmp::Reverse;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::agents::Agent;
+use crate::forge::MrRef;
 use crate::history::{SessionSummary, TokenUsage};
 use crate::pricing::{self, Estimate};
 use crate::Millis;
@@ -42,6 +43,8 @@ pub struct Overview {
     pub cost: Estimate,
     pub tool_calls: u64,
     pub merge_requests: u32,
+    /// MR distinctes liées aux sessions (`pr-link`) : leur état se lit sur GitLab, pas ici.
+    pub merge_request_refs: BTreeSet<MrRef>,
     /// Du premier au dernier message ; une session laissée ouverte une nuit compte sa nuit.
     pub median_duration_ms: Option<Millis>,
     /// Jours consécutifs, de `from_day` à aujourd'hui inclus, y compris les jours vides.
@@ -82,6 +85,7 @@ pub fn overview(
             models.entry(model).or_default().add(usage);
         }
         out.merge_requests += u32::from(s.merge_request_url.is_some());
+        out.merge_request_refs.extend(s.merge_request_url.as_deref().and_then(MrRef::from_url));
         if let Some(d) = days.get_mut(&local_day(s.started_at.max(now - window_days * DAY_MS))) {
             d.sessions += 1;
             d.tokens += s.tokens.total();
@@ -213,6 +217,19 @@ mod tests {
         assert_eq!(o.models.iter().find(|m| m.model == "modele-inconnu").unwrap().cost, None);
         let project_a = o.projects.iter().find(|p| p.project_path == "a").unwrap();
         assert!((project_a.cost.dollars - 25.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn collects_each_merge_request_of_the_period_once() {
+        let now = 10 * DAY_MS;
+        let url = "https://gitlab.example.com/a/b/-/merge_requests/";
+        let mut sessions = [session("a", now, 0, &[]), session("a", now - 1, 0, &[]), session("a", now - 2, 0, &[])];
+        sessions[0].merge_request_url = Some(format!("{url}1"));
+        sessions[1].merge_request_url = Some(format!("{url}1"));
+        sessions[2].merge_request_url = Some("https://github.com/a/b/pull/2".into());
+        let o = overview(&sessions, str::to_owned, now, 0, 7);
+        assert_eq!(o.merge_requests, 3);
+        assert_eq!(o.merge_request_refs.into_iter().collect::<Vec<_>>(), [MrRef { project: "a/b".into(), iid: 1 }]);
     }
 
     #[test]
