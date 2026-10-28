@@ -9,7 +9,7 @@ use robiade_adapters::hooks::{self, Observation};
 use robiade_adapters::pty::{AgentProcess, LaunchSpec};
 use robiade_adapters::shell_env::LoginEnv;
 use robiade_adapters::workspace::WorkspaceResolver;
-use robiade_core::agents::{Agent, AgentEvent, AgentId, AgentJournal, AgentStatus, PermissionMode};
+use robiade_core::agents::{Agent, AgentEvent, AgentId, AgentJournal, AgentStatus, Effort, PermissionMode};
 use robiade_core::assets::Asset;
 use robiade_core::project::Workspace;
 use tauri::{AppHandle, Emitter};
@@ -147,13 +147,13 @@ impl AgentRegistry {
     }
 
     pub fn apply(&self, id: &AgentId, event: AgentEvent) {
-        self.on_event(id, event, None, None, None);
+        self.on_event(id, event, None, None, None, None);
     }
 
     pub fn observe(&self, id: &AgentId, observation: Observation) {
         match observation {
-            Observation::Event { event, permission_mode, written_file, viewed_image } => {
-                self.on_event(id, event, permission_mode, written_file.as_deref(), viewed_image.as_deref())
+            Observation::Event { event, permission_mode, effort, written_file, viewed_image } => {
+                self.on_event(id, event, permission_mode, effort, written_file.as_deref(), viewed_image.as_deref())
             }
             Observation::Gauges(gauges) => {
                 if let Ok(mut live) = self.live.lock() {
@@ -172,6 +172,7 @@ impl AgentRegistry {
         id: &AgentId,
         event: AgentEvent,
         mode: Option<PermissionMode>,
+        effort: Option<Effort>,
         written_file: Option<&str>,
         viewed_image: Option<&str>,
     ) {
@@ -182,6 +183,9 @@ impl AgentRegistry {
             let Some(entry) = live.get_mut(id) else { return };
             if let Some(mode) = mode {
                 entry.agent.observe_permission_mode(mode);
+            }
+            if let Some(effort) = effort {
+                entry.agent.observe_effort(effort);
             }
             if let Some(path) = written_file {
                 entry.agent.observe_file_written(path, now());

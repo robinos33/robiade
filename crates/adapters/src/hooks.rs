@@ -11,7 +11,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use robiade_core::agents::{AgentEvent, AgentId, Gauges, PermissionMode};
+use robiade_core::agents::{AgentEvent, AgentId, Effort, Gauges, PermissionMode};
 use robiade_core::assets::AssetKind;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -30,6 +30,8 @@ struct Relayed {
     notification: Option<String>,
     #[serde(default)]
     permission_mode: Option<String>,
+    #[serde(default)]
+    effort: Option<String>,
     #[serde(default)]
     gauges: Option<RelayedGauges>,
     #[serde(default)]
@@ -58,6 +60,7 @@ pub enum Observation {
     Event {
         event: AgentEvent,
         permission_mode: Option<PermissionMode>,
+        effort: Option<Effort>,
         written_file: Option<String>,
         /// Image lue par l'agent : souvent une capture qu'il vient de produire par une commande.
         viewed_image: Option<String>,
@@ -137,6 +140,7 @@ fn status_from(input: &str, agent_id: String) -> Option<Relayed> {
         tool: None,
         notification: None,
         permission_mode: None,
+        effort: None,
         gauges: Some(gauges),
         written_file: None,
         viewed_image: None,
@@ -168,6 +172,8 @@ fn relayed_from(hook_input: &str, agent_id: String) -> Option<Relayed> {
         tool,
         notification: field("notification_type"),
         permission_mode: field("permission_mode"),
+        // Absent de SessionStart et UserPromptSubmit : il arrive avec le premier outil ou la fin du tour.
+        effort: v.pointer("/effort/level").and_then(Value::as_str).map(str::to_owned),
         gauges: None,
         written_file,
         viewed_image,
@@ -189,7 +195,8 @@ fn observe(r: Relayed) -> Option<Observation> {
     }
     let event = translate(&r)?;
     let permission_mode = r.permission_mode.as_deref().and_then(PermissionMode::parse);
-    Some(Observation::Event { event, permission_mode, written_file: r.written_file, viewed_image: r.viewed_image })
+    let effort = r.effort.as_deref().and_then(Effort::parse);
+    Some(Observation::Event { event, permission_mode, effort, written_file: r.written_file, viewed_image: r.viewed_image })
 }
 
 fn translate(r: &Relayed) -> Option<AgentEvent> {
@@ -270,6 +277,7 @@ mod tests {
             tool: Some("Bash".into()),
             notification: None,
             permission_mode: Some("acceptEdits".into()),
+            effort: Some("high".into()),
             gauges: None,
             written_file: None,
             viewed_image: None,
@@ -283,6 +291,7 @@ mod tests {
             Observation::Event {
                 event: AgentEvent::ToolStarted { tool: "Bash".into() },
                 permission_mode: PermissionMode::parse("acceptEdits"),
+                effort: Effort::parse("high"),
                 written_file: None,
                 viewed_image: None,
             }
@@ -295,19 +304,23 @@ mod tests {
     #[test]
     fn reads_real_hook_inputs() {
         let expected = [
-            (AgentEvent::SessionStarted, None),
-            (AgentEvent::PromptSubmitted, Some("default")),
-            (AgentEvent::ToolStarted { tool: "Bash".into() }, Some("default")),
-            (AgentEvent::ToolFinished, Some("default")),
-            (AgentEvent::TurnFinished, Some("default")),
-            (AgentEvent::SessionEnded, None),
+            (AgentEvent::SessionStarted, None, None),
+            (AgentEvent::PromptSubmitted, Some("default"), None),
+            (AgentEvent::ToolStarted { tool: "Bash".into() }, Some("default"), Some("medium")),
+            (AgentEvent::ToolFinished, Some("default"), Some("medium")),
+            (AgentEvent::TurnFinished, Some("default"), Some("medium")),
+            (AgentEvent::SessionEnded, None, None),
         ];
         let inputs: Vec<&str> = include_str!("../fixtures/hooks-2.1.311.jsonl").lines().collect();
         assert_eq!(inputs.len(), expected.len());
-        for (input, (event, mode)) in inputs.into_iter().zip(expected) {
+        for (input, (event, mode, effort)) in inputs.into_iter().zip(expected) {
             let observed = observe(relayed_from(input, "id".into()).unwrap());
             let permission_mode = mode.and_then(PermissionMode::parse);
-            assert_eq!(observed, Some(Observation::Event { event, permission_mode, written_file: None, viewed_image: None }));
+            let effort = effort.and_then(Effort::parse);
+            assert_eq!(
+                observed,
+                Some(Observation::Event { event, permission_mode, effort, written_file: None, viewed_image: None })
+            );
         }
     }
 
