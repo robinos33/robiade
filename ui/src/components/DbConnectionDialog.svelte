@@ -67,6 +67,24 @@
     return 'non renseigné';
   });
 
+  /** Secret enregistré en clair : il n'est jamais renvoyé ici, laissé vide il reste inchangé. */
+  const storedClear = (part: DbPart) => initial?.fields.some((f) => f.part === part && f.source.kind === 'literal') ?? false;
+
+  const LOCAL_HOSTS = ['localhost', '127.0.0.1', '::1'];
+  /** Hôte d'une URL Postgres, crochets d'IPv6 retirés. */
+  const urlHost = (url: string) => /^postgres(?:ql)?:\/\/(?:[^/]*@)?(\[[^\]]+\]|[^:/?]+)/.exec(url.trim())?.[1]?.replace(/^\[|\]$/g, '');
+
+  /** Même règle que le domaine, pour n'offrir la saisie en clair que là où elle sera acceptée :
+   *  dev, et un hôte local connu sans rien résoudre. Rust tranche de toute façon à l'enregistrement. */
+  const clearAllowed = $derived.by(() => {
+    if (stage !== 'dev') return false;
+    const { host, url } = rows;
+    if (host.kind === 'literal') return LOCAL_HOSTS.includes(host.value.trim());
+    if (host.kind !== 'none' || url.kind !== 'literal') return false;
+    if (!url.value && storedClear('url')) return true;
+    return LOCAL_HOSTS.includes(urlHost(url.value) ?? '');
+  });
+
   function source(row: Row): DbSource | null {
     if (row.kind === 'literal') return { kind: 'literal', value: row.value };
     if (row.kind === 'keychain') return { kind: 'keychain', service: row.service.trim() };
@@ -160,11 +178,16 @@
           <span class="k" title={p.hint}>{p.label}</span>
           <select class="field kind" bind:value={row.kind} onchange={() => (picking = row.kind === 'vault' && !row.vault ? p.part : null)}>
             <option value="none">—</option>
-            <option value="literal" disabled={p.secret}>Valeur{p.secret ? ' (interdit)' : ''}</option>
+            <option value="literal" disabled={p.secret && !clearAllowed && row.kind !== 'literal'}>
+              Valeur{p.secret && !clearAllowed ? ' (dev local seulement)' : ''}
+            </option>
             <option value="keychain">Trousseau</option>
             <option value="vault">Vault</option>
           </select>
-          {#if row.kind === 'literal'}
+          {#if row.kind === 'literal' && p.secret}
+            <input class="field mono" class:refused={!clearAllowed} type="password" bind:value={row.value} autocomplete="off"
+              placeholder={storedClear(p.part) ? 'inchangé' : p.hint} />
+          {:else if row.kind === 'literal'}
             <input class="field mono" bind:value={row.value} placeholder={p.hint} spellcheck="false" />
           {:else if row.kind === 'keychain'}
             <input class="field mono" bind:value={row.service} placeholder="service du trousseau" spellcheck="false" />
@@ -180,9 +203,15 @@
           <VaultPicker onpick={(v) => ((row.vault = v), (picking = null))} />
         {/if}
       {/each}
-      <p class="muted note">
-        Une URL ou un mot de passe ne se saisit jamais en clair : trousseau
-        (<span class="mono">security add-generic-password -s &lt;service&gt; -a "$USER" -w</span>, dans un terminal) ou Vault.
+      <p class="muted note" class:warn={!clearAllowed && PARTS.some((p) => p.secret && rows[p.part].kind === 'literal')}>
+        {#if clearAllowed}
+          Base locale de dev : le mot de passe peut se saisir en clair, il est gardé par Robiade comme dans le
+          <span class="mono">.env</span> du projet.
+        {:else}
+          Une URL ou un mot de passe ne se saisit en clair que pour une connexion dev vers
+          <span class="mono">localhost</span> (hôte en clair). Ailleurs : trousseau
+          (<span class="mono">security add-generic-password -s &lt;service&gt; -a "$USER" -w</span>, dans un terminal) ou Vault.
+        {/if}
       </p>
     </div>
 
@@ -226,6 +255,8 @@
   .hint { font-size: 12px; }
   .path { font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
   .note { margin: 4px 0 0; font-size: 11.5px; }
+  .note.warn { color: var(--danger); }
+  .refused { border-color: var(--danger); }
   .error { margin: 0; color: var(--danger); }
   footer { display: flex; justify-content: flex-end; gap: 8px; }
   .danger { background: var(--danger); border-color: transparent; color: #fff; font-weight: 600; }
