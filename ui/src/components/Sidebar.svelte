@@ -1,6 +1,8 @@
 <script lang="ts">
   import { app, type View } from '../lib/state.svelte';
+  import type { Worktree } from '../lib/types';
   import Icon from './Icon.svelte';
+  import WorktreeRemoveDialog from './WorktreeRemoveDialog.svelte';
 
   const NAV: { view: View; label: string; icon: string; key: string }[] = [
     { view: 'inbox', label: 'Inbox', icon: 'inbox', key: '1' },
@@ -25,7 +27,25 @@
 
   const liveIn = (root: string) => app.liveAgents.filter((a) => a.projectRoot === root);
   const liveInWorktree = (path: string) => app.liveAgents.filter((a) => a.worktreePath === path);
+
+  /** Menu contextuel d'un worktree, ouvert au clic droit à l'endroit du pointeur. */
+  let menu = $state<{ worktree: Worktree; x: number; y: number } | null>(null);
+  let removing = $state<Worktree | null>(null);
+
+  function openMenu(e: MouseEvent, worktree: Worktree) {
+    e.preventDefault();
+    // Les worktrees sont en bas de la barre : le menu remonte plutôt que de sortir de la fenêtre.
+    menu = { worktree, x: e.clientX, y: Math.min(e.clientY, window.innerHeight - 48) };
+  }
+
+  function closeMenu(e: KeyboardEvent | MouseEvent) {
+    if (!menu || (e instanceof KeyboardEvent && e.key !== 'Escape')) return;
+    menu = null;
+    if (e instanceof KeyboardEvent) e.preventDefault();
+  }
 </script>
+
+<svelte:window onclick={closeMenu} onkeydown={closeMenu} onblur={() => (menu = null)} />
 
 <nav>
   <div class="titlebar" data-tauri-drag-region></div>
@@ -95,7 +115,13 @@
         {#each app.worktrees as w (w.path)}
           {@const live = liveInWorktree(w.path)}
           <li>
-            <button class="item" class:active={app.worktree === w.path} onclick={() => app.selectWorktree(w)} title={w.path}>
+            <button
+              class="item"
+              class:active={app.worktree === w.path}
+              onclick={() => app.selectWorktree(w)}
+              oncontextmenu={(e) => openMenu(e, w)}
+              title={w.path}
+            >
               <Icon name="branch" />
               <span class="label">{w.name}</span>
               {#if app.project === null}<span class="of">{w.projectName}</span>{/if}
@@ -111,6 +137,16 @@
     </div>
   {/if}
 </nav>
+
+{#if menu}
+  {@const target = menu.worktree}
+  <div class="menu" role="menu" style:left="{menu.x}px" style:top="{menu.y}px">
+    <button class="danger" role="menuitem" onclick={() => ((removing = target), (menu = null))}>
+      Supprimer le worktree…
+    </button>
+  </div>
+{/if}
+{#if removing}<WorktreeRemoveDialog worktree={removing} onclose={() => (removing = null)} />{/if}
 
 <style>
   nav {
@@ -157,5 +193,15 @@
   .worktrees { flex: 0 1 auto; max-height: 40%; margin-top: 12px; }
   .of { font-size: 11px; color: var(--ink-3); max-width: 70px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--info); }
+  .menu {
+    position: fixed; z-index: 90; min-width: 180px; padding: 4px; border-radius: 8px;
+    background: var(--bg-raised); border: 1px solid var(--line-strong); box-shadow: var(--shadow);
+  }
+  .menu button {
+    display: block; width: 100%; padding: 6px 10px; border: 0; border-radius: var(--radius-sm);
+    background: none; text-align: left; color: var(--ink);
+  }
+  .menu button:hover { background: var(--bg-hover); }
+  .menu .danger { color: var(--danger); }
   .dot.hot { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 </style>

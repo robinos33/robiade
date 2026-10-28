@@ -206,3 +206,6 @@ export interface Environment { claudePath: string | null; home: string }
 
 export interface Project { root: string; name: string; lastActivityAt: number; sessions: number; gitlabProject: string | null }
 export interface Worktree { path: string; name: string; root: string; projectName: string; lastActivityAt: number }
+
+/** Ce que « supprimer le worktree » ferait ; `blocker` dit pourquoi c'est refusé. */
+export interface WorktreeRemoval { path: string; repository: string; branch: string | null; blocker: string | null }

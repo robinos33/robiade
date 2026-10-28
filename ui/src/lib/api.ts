@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
-  Agent, AssetContent, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueStart, MrAction, MrOutcomes, MrRef, MrState, Overview, SearchHit, Session, Task, TaskStatus,
+  Agent, AssetContent, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueStart, MrAction, MrOutcomes, MrRef, MrState, Overview, SearchHit, Session, Task, TaskStatus, WorktreeRemoval,
 } from './types';
 
 export const api = {
@@ -41,6 +41,8 @@ export const api = {
     invoke<{ agentId: string; fetched: boolean }>('start_issue_agent', {
       projectRoot, issue, branch, base, prompt, cols: 120, rows: 36,
     }),
+  prepareWorktreeRemoval: (path: string) => invoke<WorktreeRemoval>('prepare_worktree_removal', { path }),
+  removeWorktree: (path: string) => invoke<void>('remove_worktree', { path }),
   issues: (project: string | null) => invoke<Issue[]>('issues', { project }),
   mergeRequestStates: (urls: string[]) => invoke<Record<string, MrState>>('merge_request_states', { urls }),
   mergeRequestOutcomes: (refs: MrRef[]) => invoke<MrOutcomes>('merge_request_outcomes', { refs }),
