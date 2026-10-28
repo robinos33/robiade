@@ -12,9 +12,7 @@
     { view: 'tasks', label: 'Tâches', icon: 'tasks', key: '4' },
     { view: 'stats', label: 'Statistiques', icon: 'stats', key: '5' },
     { view: 'env', label: 'Environnements', icon: 'env', key: '7' },
-  ];
-  const LATER = [
-    { label: 'Bases de données', icon: 'db', milestone: 'v4' },
+    { view: 'db', label: 'Bases de données', icon: 'db', key: '' },
   ];
 
   function badge(view: View): number | null {
@@ -70,15 +68,6 @@
           <Icon name={item.icon} />
           <span class="label">{item.label}</span>
           {#if n}<span class="count" class:hot={item.view === 'inbox'}>{n}</span>{/if}
-        </button>
-      </li>
-    {/each}
-    {#each LATER as item (item.label)}
-      <li>
-        <button class="item later" disabled title="Prévu en {item.milestone}">
-          <Icon name={item.icon} />
-          <span class="label">{item.label}</span>
-          <span class="milestone">{item.milestone}</span>
         </button>
       </li>
     {/each}
@@ -180,13 +169,11 @@
   }
   .item:hover:not(:disabled) { background: var(--bg-hover); color: var(--ink); }
   .item.active { background: var(--bg-active); color: var(--ink); }
-  .item.later { opacity: 0.45; cursor: default; }
   .label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .count { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--ink-3); }
   .count.hot {
     color: #fff; background: var(--accent); border-radius: 9px; padding: 0 6px; font-weight: 650; line-height: 17px;
   }
-  .milestone { font: 10px var(--mono); color: var(--ink-3); }
   .projects { margin-top: 18px; display: flex; flex-direction: column; min-height: 0; flex: 1; }
   .projects h2 { padding: 0 8px; }
   .projects ul { overflow-y: auto; margin-top: 2px; }

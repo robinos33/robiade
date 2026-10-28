@@ -13,6 +13,7 @@
   import Tasks from './views/Tasks.svelte';
   import Stats from './views/Stats.svelte';
   import Environments from './views/Environments.svelte';
+  import Databases from './views/Databases.svelte';
 
   const KEYS: Record<string, View> = { '1': 'inbox', '2': 'agents', '3': 'history', '4': 'tasks', '5': 'stats', '6': 'mr', '7': 'env' };
 
@@ -44,6 +45,7 @@
     {:else if app.view === 'mr'}<MergeRequests />
     {:else if app.view === 'tasks'}<Tasks />
     {:else if app.view === 'env'}<Environments />
+    {:else if app.view === 'db'}<Databases />
     {:else}<Stats />{/if}
   </main>
 </div>
