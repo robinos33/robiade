@@ -13,7 +13,7 @@ pub const VAULT_HOST: &str = "vault.example.com";
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ConnectionId(pub String);
 
-/// Moteurs prévus par la spec ; Postgres et MariaDB savent se connecter pour l'instant.
+/// Moteurs prévus par la spec, tous pris en charge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Engine {
     Postgres,
