@@ -262,7 +262,12 @@ abonnement, ce n'est pas ce que je paie. L'UI met les tokens en premier et le co
     longue (`pg_cancel_backend`, `KILL QUERY`, `killOp`, annulation de tâche Elastic) et délai
     maximal par connexion. Une instruction à la fois, validée aussitôt (pas de `BEGIN` dans la
     console), résultat borné à 1000 lignes ; hors lecture seule, toute écriture est confirmée sur
-    l'instruction exacte et la cible.
+    l'instruction exacte et la cible. **En prod** (§10, décision du 2026-10-28) : lectures, et
+    INSERT, UPDATE ou DELETE seulement — UPDATE et DELETE avec un WHERE au niveau principal —,
+    sans fonction d'administration connue ; chacun est confirmé en tapant le nom de la
+    connexion, exécuté par Robiade dans une transaction qu'il ouvre lui-même, puis validé ou
+    annulé une fois le nombre de lignes affiché, annulé d'office au bout de 60 s ou si la session
+    se ferme, et inscrit au journal d'audit. L'explorateur et la grille restent en lecture seule.
   - **Langage de la console** : SQL pour Postgres et MariaDB. Pour Elastic, le format de la Dev
     Tools de Kibana (`GET /index/_search` + corps JSON). Pour Mongo, des commandes JSON
     (`find`, `aggregate` avec filtre et pipeline en JSON), **pas** de syntaxe `mongosh` : ce serait
@@ -362,8 +367,9 @@ Le niveau d'exigence est celui d'un outil d'administration.
   passe par une confirmation qui montre **la cible exacte** (projet, MR, branche). Pas de
   confirmation générique « êtes-vous sûr ? ».
 - DB : connexion en lecture seule par défaut ; l'écriture se fait avec un autre utilisateur ou
-  une bascule explicite, par connexion. **Prod toujours en lecture seule, sans bascule**, et TLS
-  exigé hors dev (§10).
+  une bascule explicite, par connexion. **Prod en lecture seule, sans bascule**, sauf dans la
+  console : INSERT, UPDATE ou DELETE un à un, en deux temps (nom de la connexion tapé, puis
+  validation sur le nombre de lignes) ; TLS exigé hors dev (§10).
 - Journal d'audit local des actions sortantes (quoi, quand, cible, résultat), sans les secrets.
 
 **Chaîne de build**
@@ -478,6 +484,20 @@ la console de prod sera limitée à une liste blanche de commandes de lecture. T
 certificat et nom d'hôte vérifiés ; en dev, clair accepté seulement vers localhost. **Risque
 résiduel assumé** : ces protections tiennent contre une fausse manipulation, pas contre un bug de
 Robiade ; un compte en lecture seule côté serveur reste la cible quand il sera disponible.
+
+Décidé le 2026-10-28 (remplace « prod toujours en lecture seule » pour la console) : **en prod,
+la console lit, et écrit par INSERT, UPDATE ou DELETE validés un à un ; rien d'autre.** MERGE,
+COPY, TRUNCATE, DDL, droits, VACUUM, LOCK, `EXPLAIN ANALYZE` d'une écriture et les CTE qui écrivent
+sont refusés ; un UPDATE ou un DELETE sans WHERE au niveau principal aussi. Les fonctions
+d'administration ou à effet de bord connues (`pg_terminate_backend`, `set_config`, `nextval`,
+`lo_*`, `dblink*`, `pg_advisory*`, `pg_read_file`…) sont refusées partout, même dans un SELECT.
+L'écriture part dans une transaction `BEGIN TRANSACTION READ WRITE` ouverte par Robiade, pas par
+le texte saisi : la session reste en lecture seule pour tout le reste, et l'est de nouveau,
+vérifié sur le serveur, après le COMMIT ou le ROLLBACK. Tant qu'une modification attend, la
+session refuse toute autre requête. **Risque résiduel** : le repérage des fonctions est lexical,
+une fonction maison qui écrit passe ; `WHERE true` passe aussi (c'est le nombre de lignes affiché
+avant validation qui le rattrape) ; et l'écriture se fait avec les identifiants applicatifs, donc
+avec tous leurs droits sur ce que l'instruction touche.
 Seule exception au « rien en clair » : une base **dev locale**, dont le mot de passe est déjà en
 clair dans le `.env` du projet, se saisit en clair et reste dans `robiade.db` ; staging, prod et dev
 distant passent par Vault ou le trousseau.
