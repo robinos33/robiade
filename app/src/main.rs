@@ -208,6 +208,7 @@ fn main() {
             commands::create_worktree,
             commands::prepare_worktree_removal,
             commands::remove_worktree,
+            commands::reveal_in_finder,
             commands::audit_log,
             commands::containers,
             commands::prepare_container_action,

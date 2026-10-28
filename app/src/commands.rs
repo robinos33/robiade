@@ -649,6 +649,44 @@ pub async fn remove_worktree(app: tauri::AppHandle, path: String) -> CmdResult<(
     .map_err(|e| e.to_string())?
 }
 
+/// Montre dans le Finder un fichier d'un worktree lié, ou le worktree lui-même si `path` est vide.
+/// Le chemin, relatif, doit rester dans le worktree une fois les liens résolus. Un fichier supprimé
+/// n'existe plus : c'est son dossier existant le plus proche qui est montré.
+#[tauri::command]
+pub async fn reveal_in_finder(app: tauri::AppHandle, worktree: String, path: String) -> CmdResult<()> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let (dir, _) = linked_worktree(&state, &worktree)?;
+        if path.is_empty() {
+            return open(&["--", &dir]);
+        }
+        let target = existing_inside(Path::new(&dir), &path)?;
+        open(&["-R", "--", &target.to_string_lossy()])
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// `relative` dans `root` (canonique), ou son dossier existant le plus proche ; refusé s'il en sort,
+/// par `..`, par un chemin absolu ou par un lien symbolique.
+fn existing_inside(root: &Path, relative: &str) -> CmdResult<PathBuf> {
+    let relative = Path::new(relative);
+    if !relative.components().all(|c| matches!(c, std::path::Component::Normal(_))) {
+        return Err("chemin hors du worktree".into());
+    }
+    root.join(relative)
+        .ancestors()
+        .find_map(|p| p.canonicalize().ok())
+        .filter(|p| p.starts_with(root))
+        .ok_or_else(|| "chemin hors du worktree".into())
+}
+
+/// `open` de macOS, lancé directement : aucun shell n'interprète les arguments.
+fn open(args: &[&str]) -> CmdResult<()> {
+    let status = std::process::Command::new("/usr/bin/open").args(args).status().map_err(|e| e.to_string())?;
+    status.success().then_some(()).ok_or_else(|| "le Finder n'a pas pu ouvrir ce chemin".into())
+}
+
 /// Le conteneur tel que Docker le voit maintenant : une action ne part jamais sur un état périmé.
 fn current_container(state: &AppState, id: &ContainerId) -> CmdResult<Container> {
     let found = state.docker.list().map_err(|e| e.to_string())?.into_iter().find(|c| c.id.matches(id));
@@ -895,4 +933,29 @@ pub async fn test_db_connection(app: tauri::AppHandle, id: String) -> CmdResult<
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reveals_only_what_stays_inside_the_worktree() {
+        let base = std::env::temp_dir().join(format!("robiade-reveal-{}", std::process::id()));
+        let root = base.join("wt");
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(root.join("src/a.rs"), "").unwrap();
+        std::fs::write(base.join("secret"), "").unwrap();
+        std::os::unix::fs::symlink(base.join("secret"), root.join("link")).unwrap();
+        let root = root.canonicalize().unwrap();
+
+        assert_eq!(existing_inside(&root, "src/a.rs").unwrap(), root.join("src/a.rs"));
+        // Fichier supprimé : son dossier existant le plus proche.
+        assert_eq!(existing_inside(&root, "src/gone/b.rs").unwrap(), root.join("src"));
+        assert!(existing_inside(&root, "../secret").is_err());
+        assert!(existing_inside(&root, "/etc/hosts").is_err());
+        assert!(existing_inside(&root, "link").is_err());
+
+        std::fs::remove_dir_all(&base).unwrap();
+    }
 }
