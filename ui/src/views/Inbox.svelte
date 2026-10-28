@@ -47,6 +47,38 @@
       {/if}
     </div>
 
+    {#if app.mrAttention.length > 0 || (app.forge?.reviews.length ?? 0) > 0}
+      <div class="block">
+        <h2 class="section-title">GitLab</h2>
+        <ul class="cards">
+          {#each app.mrAttention as mr (mr.webUrl)}
+            <li>
+              <button class="card failed" onclick={() => (app.view = 'mr')}>
+                <MrBadge url={mr.webUrl} state={mr.state} />
+                <span class="what">
+                  <strong>{mr.title}</strong>
+                  {[
+                    mr.pipeline === 'failed' ? 'pipeline rouge' : '',
+                    mr.hasConflicts ? 'conflits' : '',
+                    mr.unresolvedDiscussions ? 'discussions ouvertes' : '',
+                  ].filter(Boolean).join(', ')}
+                </span>
+              </button>
+            </li>
+          {/each}
+          {#each app.forge?.reviews ?? [] as mr (mr.webUrl)}
+            <li>
+              <button class="card awaitingInput" onclick={() => (app.view = 'mr')}>
+                <MrBadge url={mr.webUrl} state={mr.state} />
+                <span class="what"><strong>{mr.title}</strong> attend ta review ({mr.author})</span>
+                <span class="muted num">{ago(mr.updatedAt, app.now)}</span>
+              </button>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
+
     <div class="grid">
       <div class="block">
         <h2 class="section-title">Agents au travail</h2>
@@ -100,9 +132,7 @@
       </ul>
     </div>
 
-    <p class="later muted">
-      Arrivent ensuite : pipelines rouges et reviews en attente (v2), état des conteneurs (v3).
-    </p>
+    <p class="later muted">Arrive ensuite : état des conteneurs (v3).</p>
   </div>
 </section>
 
