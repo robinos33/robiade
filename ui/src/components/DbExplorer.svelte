@@ -2,6 +2,7 @@
   import { untrack } from 'svelte';
   import { api } from '../lib/api';
   import type { DbConnection, DbOverview, DbRelation, DbRelationKind } from '../lib/types';
+  import { sessionReadOnly } from '../lib/format';
   import DbConsole from './DbConsole.svelte';
   import DbGrid from './DbGrid.svelte';
   import StageBadge from './StageBadge.svelte';
@@ -59,6 +60,9 @@
     n === null ? '' : n >= 1_000_000 ? `~${(n / 1_000_000).toFixed(1)} M` : n >= 1000 ? `~${Math.round(n / 1000)} k` : `~${n}`;
 
   const prod = $derived(connection.stage === 'prod');
+  /** Elasticsearch : pas de lecture seule de session, ni de transaction pour valider une écriture. */
+  const bySession = $derived(sessionReadOnly(connection.engine));
+  const items = $derived(connection.engine === 'elasticsearch' ? 'Index' : 'Tables');
 </script>
 
 <section class="explorer" class:prod>
@@ -76,9 +80,11 @@
       >
         {#each overview.databases as d (d)}<option value={d}>{d}</option>{/each}
       </select>
-      {#if overview.readOnly}<span class="tag">lecture seule (vérifiée sur le serveur)</span>{/if}
+      {#if overview.readOnly}
+        <span class="tag">{bySession ? 'lecture seule (vérifiée sur le serveur)' : 'lecture seule (liste blanche de la console)'}</span>
+      {/if}
       <div class="tabs" role="tablist">
-        <button role="tab" class:on={tab === 'tables'} aria-selected={tab === 'tables'} onclick={() => (tab = 'tables')}>Tables</button>
+        <button role="tab" class:on={tab === 'tables'} aria-selected={tab === 'tables'} onclick={() => (tab = 'tables')}>{items}</button>
         <button role="tab" class:on={tab === 'console'} aria-selected={tab === 'console'} onclick={() => (tab = 'console')}>Console</button>
       </div>
     {/if}
@@ -90,7 +96,7 @@
     <div class="prod-banner">
       <StageBadge stage="prod" />
       <strong>PRODUCTION</strong> · {connection.name}{overview ? ` · base ${overview.database}` : ''} · lecture seule,
-      sauf INSERT, UPDATE ou DELETE validés un à un dans la console
+      {bySession ? 'sauf INSERT, UPDATE ou DELETE validés un à un dans la console' : 'console comprise'}
     </div>
   {/if}
 
@@ -101,7 +107,7 @@
       <input class="search" bind:value={search} placeholder="Filtrer les tables" spellcheck="false" />
       <div class="list">
         {#each schemas as [schema, relations] (schema)}
-          <h3 class="schema mono">{schema}</h3>
+          {#if schema}<h3 class="schema mono">{schema}</h3>{/if}
           {#each relations as r (r.name)}
             <button
               class="relation"

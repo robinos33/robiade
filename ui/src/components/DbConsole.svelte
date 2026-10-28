@@ -59,7 +59,8 @@
           drawSelection(),
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
-          sql({ dialect: connection.engine === 'mariadb' ? MariaSQL : PostgreSQL }),
+          // Elasticsearch : requêtes REST et JSON, pas de SQL à colorer.
+          connection.engine === 'elasticsearch' ? [] : sql({ dialect: connection.engine === 'mariadb' ? MariaSQL : PostgreSQL }),
           robiadeTheme,
           EditorView.updateListener.of((u) => {
             if (u.docChanged) saveDraft(key, u.state.doc.toString());
