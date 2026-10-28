@@ -891,6 +891,7 @@ pub async fn vault_keys(state: State<'_, AppState>, mount: String, path: String)
 
 /// Résout chaque champ (trousseau, Vault) et assemble la cible. Les valeurs ne quittent pas Rust.
 fn resolve_target(state: &AppState, connection: &Connection) -> CmdResult<Target> {
+    connection.usable().map_err(|e| e.to_string())?;
     let mut values = Vec::with_capacity(connection.fields().len());
     for (part, source) in connection.fields() {
         let value = match source {
