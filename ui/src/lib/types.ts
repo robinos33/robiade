@@ -341,3 +341,19 @@ export interface DbPageRequest { sort: DbSort | null; filters: DbFilter[]; curso
 
 /** `next` absent : dernière page. */
 export interface DbPage { columns: DbColumn[]; rows: (DbCell | null)[][]; next: DbCursor | null }
+
+/** Résultat d'une instruction de la console : au plus 1000 lignes, ou le nombre de lignes touchées. */
+export interface DbConsoleResult {
+  columns: DbColumn[];
+  rows: (DbCell | null)[][];
+  truncated: boolean;
+  affected: number | null;
+  elapsedMs: number;
+}
+
+/** Une écriture revient d'abord à confirmer, avec l'instruction exacte qui partira. */
+export type DbConsoleReply =
+  | { kind: 'confirm'; statement: string; connection: string; stage: DbStage; target: string }
+  | { kind: 'done'; statement: string; result: DbConsoleResult };
+
+export interface DbConsoleHistory { sql: string; at: number }
