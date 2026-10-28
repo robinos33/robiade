@@ -1,0 +1,233 @@
+<script lang="ts">
+  import { untrack } from 'svelte';
+  import { api } from '../lib/api';
+  import { app } from '../lib/state.svelte';
+  import type { DbConnection, DbPart, DbSource, DbStage } from '../lib/types';
+  import StageBadge from './StageBadge.svelte';
+  import VaultPicker from './VaultPicker.svelte';
+
+  let { connection, onclose, onsaved }: {
+    connection: DbConnection | null;
+    onclose: () => void;
+    onsaved: (saved: DbConnection) => void;
+  } = $props();
+
+  type Kind = 'none' | DbSource['kind'];
+
+  const PARTS: { part: DbPart; label: string; secret: boolean; hint: string }[] = [
+    { part: 'url', label: 'URL', secret: true, hint: 'DATABASE_URL de Symfony' },
+    { part: 'host', label: 'Hôte', secret: false, hint: 'remplace celui de l’URL' },
+    { part: 'port', label: 'Port', secret: false, hint: '5432 par défaut' },
+    { part: 'database', label: 'Base', secret: false, hint: '' },
+    { part: 'user', label: 'Utilisateur', secret: false, hint: '' },
+    { part: 'password', label: 'Mot de passe', secret: true, hint: '' },
+  ];
+
+  /** Un champ du formulaire : la source choisie, et ce qui a été saisi pour chaque sorte. */
+  interface Row { kind: Kind; value: string; service: string; vault: Extract<DbSource, { kind: 'vault' }> | null }
+
+  function rowOf(part: DbPart): Row {
+    const s = initial?.fields.find((f) => f.part === part)?.source;
+    return {
+      kind: s?.kind ?? 'none',
+      value: s?.kind === 'literal' ? s.value : '',
+      service: s?.kind === 'keychain' ? s.service : '',
+      vault: s?.kind === 'vault' ? s : null,
+    };
+  }
+
+  // Valeurs de départ, figées à l'ouverture : la connexion éditée ne change pas sous le formulaire.
+  const initial = untrack(() => $state.snapshot(connection));
+  let name = $state(initial?.name ?? '');
+  let stage = $state<DbStage>(initial?.stage ?? 'dev');
+  let readOnly = $state(initial?.readOnly ?? true);
+  let attached = $state(initial ? initial.projectPath !== null : app.project !== null);
+  const projectPath = initial ? initial.projectPath ?? app.project : app.project;
+  let rows = $state(Object.fromEntries(PARTS.map(({ part }) => [part, rowOf(part)])) as Record<DbPart, Row>);
+  let picking = $state<DbPart | null>(null);
+  let error = $state<string | null>(null);
+  let busy = $state(false);
+  let input: HTMLInputElement | undefined = $state();
+
+  $effect(() => input?.focus());
+
+  const prod = $derived(stage === 'prod');
+  // La production est en lecture seule, sans bascule : la case suit, désactivée.
+  $effect(() => {
+    if (prod) readOnly = true;
+  });
+
+  /** Ce que le bandeau peut dire de la cible avant toute résolution. */
+  const hostLabel = $derived.by(() => {
+    const host = rows.host;
+    if (host.kind === 'literal' && host.value.trim()) return host.value.trim();
+    const from = host.kind === 'none' ? rows.url : host;
+    if (from.kind === 'vault' && from.vault) return `lu dans Vault : ${from.vault.mount}/${from.vault.path}#${from.vault.key}`;
+    if (from.kind === 'keychain' && from.service) return `lu dans le trousseau : ${from.service}`;
+    return 'non renseigné';
+  });
+
+  function source(row: Row): DbSource | null {
+    if (row.kind === 'literal') return { kind: 'literal', value: row.value };
+    if (row.kind === 'keychain') return { kind: 'keychain', service: row.service.trim() };
+    if (row.kind === 'vault') return row.vault;
+    return null;
+  }
+
+  async function save() {
+    busy = true;
+    error = null;
+    try {
+      const fields = PARTS.flatMap(({ part }) => {
+        const s = source(rows[part]);
+        return s ? [{ part, source: s }] : [];
+      });
+      const saved = await api.saveDbConnection({
+        id: initial?.id ?? null,
+        name,
+        engine: 'postgres',
+        stage,
+        projectPath: attached ? projectPath : null,
+        readOnly,
+        fields,
+      });
+      onsaved(saved);
+      onclose();
+    } catch (e) {
+      error = String(e);
+      busy = false;
+    }
+  }
+
+  function onkeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      if (picking) picking = null;
+      else onclose();
+    }
+  }
+</script>
+
+<svelte:window {onkeydown} />
+
+<div class="scrim" role="presentation">
+  <div class="dialog" class:prod role="dialog" aria-labelledby="db-title">
+    <h2 id="db-title">
+      {initial ? 'Modifier la connexion' : 'Nouvelle connexion'}
+      <StageBadge {stage} />
+    </h2>
+
+    {#if prod}
+      <!-- Nom et cible en clair dès le passage en production : on sait toujours où l'on va. -->
+      <div class="banner" role="alert">
+        <strong>PRODUCTION · lecture seule imposée</strong>
+        <span>Connexion <b>{name.trim() || 'sans nom'}</b> → hôte <b class="mono">{hostLabel}</b></span>
+      </div>
+    {/if}
+
+    <div class="grid">
+      <label for="db-name">Nom</label>
+      <input id="db-name" class="field" bind:this={input} bind:value={name} maxlength="100" placeholder="Forum staging" />
+
+      <span class="k">Moteur</span>
+      <span>PostgreSQL <span class="muted">· MariaDB, Mongo, Elastic plus tard</span></span>
+
+      <span class="k">Environnement</span>
+      <div class="stages" role="radiogroup" aria-label="Environnement">
+        {#each ['dev', 'staging', 'prod'] as const as s (s)}
+          <button class="btn small" class:on={stage === s} class:prod-choice={s === 'prod'} role="radio" aria-checked={stage === s} onclick={() => (stage = s)}>
+            {s === 'prod' ? 'PROD' : s}
+          </button>
+        {/each}
+      </div>
+
+      <span class="k">Accès</span>
+      <label class="check">
+        <input type="checkbox" bind:checked={readOnly} disabled={prod} />
+        Lecture seule {#if prod}<span class="muted">(imposée en production)</span>{/if}
+      </label>
+
+      {#if projectPath}
+        <span class="k">Projet</span>
+        <label class="check"><input type="checkbox" bind:checked={attached} /> <span class="mono path">{projectPath}</span></label>
+      {/if}
+    </div>
+
+    <div class="fields">
+      {#each PARTS as p (p.part)}
+        {@const row = rows[p.part]}
+        <div class="field-row">
+          <span class="k" title={p.hint}>{p.label}</span>
+          <select class="field kind" bind:value={row.kind} onchange={() => (picking = row.kind === 'vault' && !row.vault ? p.part : null)}>
+            <option value="none">—</option>
+            <option value="literal" disabled={p.secret}>Valeur{p.secret ? ' (interdit)' : ''}</option>
+            <option value="keychain">Trousseau</option>
+            <option value="vault">Vault</option>
+          </select>
+          {#if row.kind === 'literal'}
+            <input class="field mono" bind:value={row.value} placeholder={p.hint} spellcheck="false" />
+          {:else if row.kind === 'keychain'}
+            <input class="field mono" bind:value={row.service} placeholder="service du trousseau" spellcheck="false" />
+          {:else if row.kind === 'vault'}
+            <button class="btn vault mono" onclick={() => (picking = picking === p.part ? null : p.part)}>
+              {row.vault ? `${row.vault.mount}/${row.vault.path}#${row.vault.key}` : 'Choisir dans Vault…'}
+            </button>
+          {:else}
+            <span class="muted hint">{p.hint}</span>
+          {/if}
+        </div>
+        {#if picking === p.part}
+          <VaultPicker onpick={(v) => ((row.vault = v), (picking = null))} />
+        {/if}
+      {/each}
+      <p class="muted note">
+        Une URL ou un mot de passe ne se saisit jamais en clair : trousseau
+        (<span class="mono">security add-generic-password -s &lt;service&gt; -a "$USER" -w</span>, dans un terminal) ou Vault.
+      </p>
+    </div>
+
+    {#if error}<p class="error">{error}</p>{/if}
+    <footer>
+      <button class="btn" onclick={onclose}>Annuler</button>
+      <button class="btn" class:primary={!prod} class:danger={prod} disabled={busy || !name.trim()} onclick={() => void save()}>
+        {busy ? 'Enregistrement…' : prod ? 'Enregistrer en PRODUCTION' : 'Enregistrer'}
+      </button>
+    </footer>
+  </div>
+</div>
+
+<style>
+  .scrim {
+    position: fixed; inset: 0; z-index: 80; display: grid; justify-items: center; align-items: start;
+    padding-top: 8vh; background: rgb(0 0 0 / 0.4); backdrop-filter: blur(2px); overflow-y: auto;
+  }
+  .dialog {
+    width: min(680px, 94vw); background: var(--bg-raised); border-radius: 12px; box-shadow: var(--shadow);
+    padding: 18px; display: flex; flex-direction: column; gap: 12px; border: 2px solid transparent; margin-bottom: 8vh;
+  }
+  .dialog.prod { border-color: var(--danger); }
+  h2 { margin: 0; font-size: 15px; display: flex; align-items: center; gap: 10px; }
+  .banner {
+    display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: var(--radius);
+    background: var(--danger); color: #fff; overflow-wrap: anywhere;
+  }
+  .banner strong { letter-spacing: 0.06em; font-size: 12px; }
+  .grid { display: grid; grid-template-columns: 110px 1fr; gap: 8px 12px; align-items: center; }
+  label, .k { color: var(--ink-3); font-size: 12.5px; }
+  .check { display: flex; align-items: center; gap: 6px; color: var(--ink); }
+  .field { height: 30px; }
+  .stages { display: flex; gap: 4px; }
+  .small { height: 26px; padding: 0 10px; font-size: 12px; }
+  .on { border-color: var(--ink-2); font-weight: 600; }
+  .prod-choice.on { background: var(--danger); border-color: var(--danger); color: #fff; }
+  .fields { display: flex; flex-direction: column; gap: 6px; }
+  .field-row { display: grid; grid-template-columns: 110px 120px 1fr; gap: 8px; align-items: center; }
+  .vault { text-align: left; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hint { font-size: 12px; }
+  .path { font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
+  .note { margin: 4px 0 0; font-size: 11.5px; }
+  .error { margin: 0; color: var(--danger); }
+  footer { display: flex; justify-content: flex-end; gap: 8px; }
+  .danger { background: var(--danger); border-color: transparent; color: #fff; font-weight: 600; }
+  .btn:disabled { opacity: 0.5; }
+</style>
