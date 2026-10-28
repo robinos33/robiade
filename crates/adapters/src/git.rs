@@ -9,7 +9,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use robiade_core::issue_start::is_valid_branch;
-use robiade_core::vcs::{ChangeKind, FileChange, VcsError, WorkingTree, Worktrees};
+use robiade_core::vcs::{ChangeKind, FileChange, LinkedWorktree, VcsError, WorkingTree, Worktrees};
 
 /// Arbre vide de Git : base de comparaison d'un dépôt sans commit.
 const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
@@ -178,6 +178,29 @@ fn parse_numstat(raw: &[u8]) -> HashMap<String, (Option<u32>, Option<u32>)> {
     out
 }
 
+/// `git worktree list --porcelain -z` : un bloc de champs par worktree, clos par un champ vide. Le
+/// premier bloc est le dépôt principal, écarté.
+fn parse_worktrees(raw: &[u8]) -> Vec<LinkedWorktree> {
+    let mut out = Vec::new();
+    let mut current: Option<LinkedWorktree> = None;
+    for field in raw.split(|b| *b == 0) {
+        let field = String::from_utf8_lossy(field);
+        let (key, value) = field.split_once(' ').unwrap_or((&field, ""));
+        match (key, current.as_mut()) {
+            ("worktree", _) => {
+                current = Some(LinkedWorktree { path: value.to_owned(), branch: None, locked: false, prunable: false })
+            }
+            ("branch", Some(w)) => w.branch = Some(value.trim_start_matches("refs/heads/").to_owned()),
+            ("locked", Some(w)) => w.locked = true,
+            ("prunable", Some(w)) => w.prunable = true,
+            ("", _) => out.extend(current.take()),
+            _ => {}
+        }
+    }
+    out.extend(current);
+    out.into_iter().skip(1).collect()
+}
+
 fn truncate(mut diff: Vec<u8>) -> String {
     if diff.len() > MAX_DIFF_BYTES {
         diff.truncate(MAX_DIFF_BYTES);
@@ -232,6 +255,10 @@ impl WorkingTree for GitCli {
 }
 
 impl Worktrees for GitCli {
+    fn list(&self, repository: &str) -> Result<Vec<LinkedWorktree>, VcsError> {
+        Ok(parse_worktrees(&self.run(repository, &["worktree", "list", "--porcelain", "-z"])?))
+    }
+
     fn bases(&self, repository: &str) -> Result<Vec<String>, VcsError> {
         let mut args = vec!["for-each-ref", "--format=%(refname:short)"];
         let refs: Vec<String> = BASES.iter().map(|b| format!("refs/remotes/{b}")).collect();
@@ -311,6 +338,21 @@ mod tests {
     fn git(dir: &Path, args: &[&str]) {
         let ok = Command::new("/usr/bin/git").arg("-C").arg(dir).args(args).output().unwrap().status.success();
         assert!(ok, "git {args:?}");
+    }
+
+    #[test]
+    fn reads_linked_worktrees_detached_locked_or_gone() {
+        let raw = b"worktree /r\0HEAD a\0branch refs/heads/main\0\0\
+worktree /r/.claude/worktrees/x\0HEAD b\0branch refs/heads/feat/x\0locked raison\0\0\
+worktree /tmp/y\0HEAD c\0detached\0prunable gitdir file points to non-existent location\0\0";
+        let found = parse_worktrees(raw);
+        let x = LinkedWorktree {
+            path: "/r/.claude/worktrees/x".into(),
+            branch: Some("feat/x".into()),
+            locked: true,
+            prunable: false,
+        };
+        assert_eq!(found, [x, LinkedWorktree { path: "/tmp/y".into(), branch: None, locked: false, prunable: true }]);
     }
 
     #[test]
@@ -409,6 +451,10 @@ mod tests {
         assert!(git_cli.create(r, "y", "HEAD", &format!("{d}3")).is_err());
 
         assert_eq!(git_cli.branch(d), Ok(Some("ticket-1-x".to_owned())));
+        let listed = git_cli.list(r).unwrap();
+        assert_eq!(listed.len(), 1, "le dépôt principal n'est pas listé");
+        assert_eq!(listed[0].branch.as_deref(), Some("ticket-1-x"));
+        assert!(listed[0].path.ends_with("/.claude/worktrees/ticket-1-x"));
         std::fs::write(dir.join("c.txt"), "trois\n").unwrap();
         assert!(git_cli.remove(r, d).is_err(), "un arbre modifié n'est pas supprimé");
         std::fs::remove_file(dir.join("c.txt")).unwrap();

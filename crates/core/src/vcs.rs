@@ -1,6 +1,6 @@
 //! Modifications en cours d'un dossier de travail : ce que l'agent a changé depuis le dernier commit.
 //! Lecture seule : Robiade montre les diffs, il ne commite ni n'annule rien. Seule écriture, à ma
-//! demande : créer un worktree pour démarrer un agent, ou le supprimer (`Worktrees`).
+//! demande : créer un worktree, ou le supprimer (`Worktrees`).
 
 /// Nature d'un changement par rapport au dernier commit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,8 +40,22 @@ pub trait WorkingTree: Send + Sync {
     fn diff(&self, dir: &str, path: &str) -> Result<String, VcsError>;
 }
 
-/// Création de worktrees, toujours sur une branche neuve, et suppression.
+/// Un worktree lié d'un dépôt, tel que `git worktree list` le décrit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinkedWorktree {
+    pub path: String,
+    /// `None` si la tête est détachée.
+    pub branch: Option<String>,
+    /// Verrouillé (`git worktree lock`) : git refuse de le supprimer.
+    pub locked: bool,
+    /// Dossier disparu : git l'oubliera au prochain `git worktree prune`.
+    pub prunable: bool,
+}
+
+/// Liste, création de worktrees, toujours sur une branche neuve, et suppression.
 pub trait Worktrees: Send + Sync {
+    /// Worktrees liés de `repository`, dans l'ordre de git ; le dépôt principal n'en fait pas partie.
+    fn list(&self, repository: &str) -> Result<Vec<LinkedWorktree>, VcsError>;
     /// Branches de base proposées (`origin/staging`, `origin/main`, `origin/master`), celles qui existent.
     fn bases(&self, repository: &str) -> Result<Vec<String>, VcsError>;
     /// Met `base` à jour depuis `origin` si possible, puis crée `branch` à partir d'elle dans `dir`.
