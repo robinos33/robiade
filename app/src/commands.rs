@@ -857,9 +857,10 @@ pub async fn test_db_connection(app: tauri::AppHandle, id: String) -> CmdResult<
         let state = app.state::<AppState>();
         let connection = state.connections.get(&ConnectionId(id)).map_err(|e| e.to_string())?;
         let target = resolve_target(&state, &connection)?;
+        let tls = target.tls(connection.stage()).map_err(|e| e.to_string())?;
         let probe = state
             .databases
-            .probe(connection.engine(), &target, connection.read_only())
+            .probe(connection.engine(), &target, tls, connection.read_only())
             .map_err(|e| e.to_string())?;
         // Une production qui ne serait pas en lecture seule côté serveur est un échec, pas un succès.
         if connection.read_only() && !probe.read_only {

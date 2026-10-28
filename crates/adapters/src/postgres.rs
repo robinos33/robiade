@@ -5,20 +5,19 @@ use std::time::Duration;
 
 use postgres::config::SslMode;
 use postgres_native_tls::MakeTlsConnector;
-use robiade_core::databases::{DatabaseProbe, DbError, Engine, Part, Probe, Target};
+use robiade_core::databases::{DatabaseProbe, DbError, Engine, Probe, Target, Tls};
 
 pub struct Postgres;
 
 const TIMEOUT: Duration = Duration::from_secs(10);
 
-/// `sslmode` de libpq ramené à ce que le client sait faire. Le TLS du système vérifie toujours le
-/// certificat : `require` est donc ici aussi strict que `verify-full`.
-fn ssl_mode(raw: Option<&str>) -> Result<SslMode, DbError> {
-    match raw {
-        None | Some("prefer" | "allow") => Ok(SslMode::Prefer),
-        Some("disable") => Ok(SslMode::Disable),
-        Some("require" | "verify-ca" | "verify-full") => Ok(SslMode::Require),
-        Some(_) => Err(DbError::Invalid(Part::Url)),
+/// Le chiffrement décidé par le domaine. Le connecteur TLS est celui du système, avec ses réglages
+/// par défaut : certificat et nom d'hôte vérifiés, aucune exception (`require` vaut `verify-full`).
+fn ssl_mode(tls: Tls) -> SslMode {
+    match tls {
+        Tls::Required => SslMode::Require,
+        Tls::Preferred => SslMode::Prefer,
+        Tls::Disabled => SslMode::Disable,
     }
 }
 
@@ -39,7 +38,7 @@ fn unreachable(e: postgres::Error) -> DbError {
 }
 
 impl DatabaseProbe for Postgres {
-    fn probe(&self, engine: Engine, target: &Target, read_only: bool) -> Result<Probe, DbError> {
+    fn probe(&self, engine: Engine, target: &Target, tls: Tls, read_only: bool) -> Result<Probe, DbError> {
         if engine != Engine::Postgres {
             return Err(DbError::Unsupported("ce moteur"));
         }
@@ -47,7 +46,7 @@ impl DatabaseProbe for Postgres {
         config
             .host(&target.host)
             .port(target.port)
-            .ssl_mode(ssl_mode(target.ssl_mode.as_deref())?)
+            .ssl_mode(ssl_mode(tls))
             .connect_timeout(TIMEOUT)
             .application_name("robiade")
             .options(&options(read_only));
@@ -85,11 +84,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn maps_libpq_ssl_modes_and_rejects_the_unknown() {
-        assert!(matches!(ssl_mode(None), Ok(SslMode::Prefer)));
-        assert!(matches!(ssl_mode(Some("verify-full")), Ok(SslMode::Require)));
-        assert!(matches!(ssl_mode(Some("disable")), Ok(SslMode::Disable)));
-        assert_eq!(ssl_mode(Some("on")).err(), Some(DbError::Invalid(Part::Url)));
+    fn required_tls_never_falls_back_to_clear_text() {
+        assert!(matches!(ssl_mode(Tls::Required), SslMode::Require));
+        assert!(matches!(ssl_mode(Tls::Preferred), SslMode::Prefer));
+        assert!(matches!(ssl_mode(Tls::Disabled), SslMode::Disable));
     }
 
     #[test]

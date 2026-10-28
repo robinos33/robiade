@@ -92,6 +92,10 @@ pub enum DbError {
     InvalidKeychainService,
     #[error("une connexion de production est toujours en lecture seule")]
     ProdIsReadOnly,
+    #[error("hors dev, la connexion doit être chiffrée : retire `sslmode=disable|allow|prefer` (TLS exigé)")]
+    TlsRequired,
+    #[error("`sslmode=disable` n'est accepté que vers localhost : ailleurs, le mot de passe passerait en clair")]
+    ClearTextOffLocalhost,
     #[error("connexion introuvable")]
     NotFound,
     #[error("{0} : pas encore pris en charge")]
@@ -262,6 +266,43 @@ impl Target {
         }
         Ok(target)
     }
+
+    /// Chiffrement exigé pour joindre cette cible. Hors dev, toujours : un `sslmode` qui laisserait
+    /// un attaquant réseau rabattre la session en clair (`prefer`, `allow`) est refusé, pas
+    /// silencieusement durci, pour que la configuration fautive se voie. En dev, le clair n'est
+    /// accepté explicitement (`disable`) que vers la machine locale.
+    pub fn tls(&self, stage: Stage) -> Result<Tls, DbError> {
+        let mode = self.ssl_mode.as_deref();
+        if stage != Stage::Dev {
+            return match mode {
+                None | Some("require" | "verify-ca" | "verify-full") => Ok(Tls::Required),
+                Some("disable" | "allow" | "prefer") => Err(DbError::TlsRequired),
+                Some(_) => Err(DbError::Invalid(Part::Url)),
+            };
+        }
+        match mode {
+            None | Some("prefer" | "allow") => Ok(Tls::Preferred),
+            Some("require" | "verify-ca" | "verify-full") => Ok(Tls::Required),
+            Some("disable") if is_local_host(&self.host) => Ok(Tls::Disabled),
+            Some("disable") => Err(DbError::ClearTextOffLocalhost),
+            Some(_) => Err(DbError::Invalid(Part::Url)),
+        }
+    }
+}
+
+/// Chiffrement de la session, décidé par `Target::tls`. Le certificat et le nom d'hôte sont
+/// vérifiés dès qu'il y a TLS : l'adapter n'a pas de mode « sans vérification ».
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tls {
+    Required,
+    /// TLS si le serveur le propose : dev seulement, où un repli en clair est acceptable.
+    Preferred,
+    /// Dev vers la machine locale seulement.
+    Disabled,
+}
+
+fn is_local_host(host: &str) -> bool {
+    matches!(host, "localhost" | "127.0.0.1" | "::1")
 }
 
 /// `postgres[ql]://user:pass@host:port/base?sslmode=…`, identifiants décodés.
@@ -343,7 +384,7 @@ pub trait ConnectionRepository: Send + Sync {
 
 /// Ouvre une session, la referme aussitôt et rapporte ce qu'elle a vu.
 pub trait DatabaseProbe: Send + Sync {
-    fn probe(&self, engine: Engine, target: &Target, read_only: bool) -> Result<Probe, DbError>;
+    fn probe(&self, engine: Engine, target: &Target, tls: Tls, read_only: bool) -> Result<Probe, DbError>;
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -434,6 +475,30 @@ mod tests {
         let v6 = Target::assemble(Engine::Postgres, &[(Part::Url, "postgres://[::1]/db".into())]).unwrap();
         assert_eq!((v6.host.as_str(), v6.port), ("::1", 5432));
         assert_eq!(Target::assemble(Engine::Postgres, &[(Part::Url, "mysql://h/db".into())]), Err(DbError::Invalid(Part::Url)));
+    }
+
+    #[test]
+    fn requires_tls_outside_dev_and_clear_text_only_on_localhost() {
+        let target = |host: &str, mode: Option<&str>| Target {
+            host: host.into(),
+            port: 5432,
+            database: None,
+            user: None,
+            password: None,
+            ssl_mode: mode.map(str::to_owned),
+        };
+        for stage in [Stage::Staging, Stage::Prod] {
+            assert_eq!(target("db", None).tls(stage), Ok(Tls::Required));
+            assert_eq!(target("db", Some("verify-full")).tls(stage), Ok(Tls::Required));
+            for weak in ["disable", "allow", "prefer"] {
+                assert_eq!(target("localhost", Some(weak)).tls(stage), Err(DbError::TlsRequired), "{weak}");
+            }
+        }
+        assert_eq!(target("db", None).tls(Stage::Dev), Ok(Tls::Preferred));
+        assert_eq!(target("db", Some("require")).tls(Stage::Dev), Ok(Tls::Required));
+        assert_eq!(target("127.0.0.1", Some("disable")).tls(Stage::Dev), Ok(Tls::Disabled));
+        assert_eq!(target("db.dev.local", Some("disable")).tls(Stage::Dev), Err(DbError::ClearTextOffLocalhost));
+        assert_eq!(target("db", Some("on")).tls(Stage::Prod), Err(DbError::Invalid(Part::Url)));
     }
 
     #[test]
