@@ -356,9 +356,13 @@ function consoleReply(args: Record<string, unknown>) {
     }
   }
   const write = !/^(select|with|values|table|show|explain)\b/i.test(statement.replace(/^(\s*--[^\n]*\n)*\s*/, ''));
-  if (write && args.id === 'db-local' && !args.confirmed) {
-    return { kind: 'confirm', statement, connection: 'Boutique locale', stage: 'dev', target: 'app@localhost:8032/boutique' };
+  const prod = args.id === 'db-prod';
+  if (write && (args.id === 'db-local' || prod) && args.confirmation === null) {
+    const connection = prod ? 'Boutique prod' : 'Boutique locale';
+    const target = prod ? 'app@pg-prod.boutique.internal:5432/boutique' : 'app@localhost:8032/boutique';
+    return { kind: 'confirm', statement, connection, prod, target };
   }
+  if (write && prod) return { kind: 'pending', statement, affected: 3, delayMs: 60_000 };
   if (write) {
     return { kind: 'done', statement, result: { columns: [], rows: [], truncated: false, affected: 3, elapsedMs: 4 } };
   }
@@ -435,6 +439,7 @@ const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
   db_page: (args) => dbPage(args.request as DbPageRequest),
   run_db_statement: (args) => consoleReply(args),
   cancel_db_statement: () => null,
+  finish_db_write: (args) => ({ committed: args.commit, affected: 3, sessionClosed: false }),
   db_console_history: () => consoleHistory,
 };
 

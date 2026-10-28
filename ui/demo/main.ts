@@ -39,6 +39,17 @@ if (params.get('explore')) {
       const sql = params.get('console')!;
       view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: sql }, selection: { anchor: sql.length } });
       await click('.bar button', 'Exécuter');
+      // `&typed=1` : tape le nom de la connexion dans la confirmation de prod, puis exécute.
+      if (params.get('typed')) {
+        const field = await find('.confirm input', '');
+        const name = document.querySelector('.confirm strong')?.textContent ?? '';
+        if (field instanceof HTMLInputElement) {
+          field.value = name;
+          field.dispatchEvent(new Event('input', { bubbles: true }));
+          await new Promise((r) => setTimeout(r, 50));
+          await click('.dialog button.danger', 'Exécuter');
+        }
+      }
     }
   }
 }
