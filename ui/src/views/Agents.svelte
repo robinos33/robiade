@@ -70,13 +70,20 @@
     await api.forgetAgent(id).catch((e) => app.notify(String(e)));
   }
 
+  // Sur l'identifiant seul : chaque `agents:changed` remplace l'objet, et rattacher le terminal
+  // lui redonnerait le focus, ce qui refermerait le champ de renommage.
+  const activeId = $derived(active?.id);
   $effect(() => {
-    if (!active || !container) return;
-    attach(active.id, container);
-    if (active.status === 'awaitingInput') void api.markAgentSeen(active.id);
-    const observer = new ResizeObserver(() => refit(active.id));
+    const id = activeId;
+    if (!id || !container) return;
+    attach(id, container);
+    const observer = new ResizeObserver(() => refit(id));
     observer.observe(container);
     return () => observer.disconnect();
+  });
+
+  $effect(() => {
+    if (active?.status === 'awaitingInput') void api.markAgentSeen(active.id);
   });
 
   /** Arrêt puis reprise de la même session : la conversation continue sur le binaire à jour. */
