@@ -712,6 +712,8 @@ impl From<MrActionDto> for MrAction {
 pub enum IssueActionDto {
     Close,
     Reopen,
+    Assign { assignees: Vec<String> },
+    Label { labels: Vec<String> },
 }
 
 impl From<IssueActionDto> for IssueAction {
@@ -719,6 +721,8 @@ impl From<IssueActionDto> for IssueAction {
         match a {
             IssueActionDto::Close => IssueAction::Close,
             IssueActionDto::Reopen => IssueAction::Reopen,
+            IssueActionDto::Assign { assignees } => IssueAction::Assign(assignees),
+            IssueActionDto::Label { labels } => IssueAction::Label(labels),
         }
     }
 }
