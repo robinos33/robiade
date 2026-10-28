@@ -23,3 +23,5 @@ tokio = { version = "1", features = ["rt-multi-thread"] }
 postgres = "0.19.14"
 postgres-native-tls = "0.5.3"
 native-tls = "0.2.18"
+# Client MariaDB synchrone, TLS du système, compression en Rust pur (sans zlib C).
+mysql = { version = "28.0.4", default-features = false, features = ["minimal-rust", "native-tls"] }
