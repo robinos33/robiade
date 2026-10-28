@@ -12,6 +12,7 @@ use robiade_core::issue_start;
 use robiade_core::history::{SessionSearch, TranscriptReader};
 use robiade_core::stats;
 use robiade_core::tasks::{Task, TaskId, TaskRepository};
+use robiade_core::vcs::FileChange;
 use secrecy::ExposeSecret;
 use tauri::{Manager, State};
 
@@ -594,15 +595,20 @@ fn linked_worktree(state: &AppState, raw: &str) -> CmdResult<(String, String)> {
     Ok((dir, workspace.project_root))
 }
 
-/// Ce qui empêche de supprimer le worktree : un agent dedans, ou des modifications non commitées.
-fn removal_blocker(state: &AppState, dir: &str) -> CmdResult<Option<String>> {
+/// Fichiers en cause affichés au plus dans la confirmation ; le total reste donné.
+const SHOWN_CHANGES: usize = 50;
+
+/// Ce qui empêche de supprimer le worktree : un agent dedans, ou des modifications non commitées,
+/// renvoyées avec la raison pour que l'interface les montre.
+fn removal_blocker(state: &AppState, dir: &str) -> CmdResult<(Option<String>, Vec<FileChange>)> {
     if state.agents.running_in(dir) {
-        return Ok(Some("un agent tourne encore dans ce worktree : arrête-le d'abord".into()));
+        return Ok((Some("un agent tourne encore dans ce worktree : arrête-le d'abord".into()), Vec::new()));
     }
     let changes = state.vcs.changes(dir).map_err(|e| e.to_string())?;
-    Ok((!changes.is_empty()).then(|| {
+    let blocker = (!changes.is_empty()).then(|| {
         format!("{} fichier(s) modifié(s) ou non suivi(s) : commite-les ou annule-les d'abord", changes.len())
-    }))
+    });
+    Ok((blocker, changes))
 }
 
 /// Ce que « supprimer le worktree » ferait : cible exacte, branche, et raison d'un refus.
@@ -611,9 +617,12 @@ pub async fn prepare_worktree_removal(app: tauri::AppHandle, path: String) -> Cm
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
         let (dir, repository) = linked_worktree(&state, &path)?;
+        let (blocker, changes) = removal_blocker(&state, &dir)?;
         Ok(WorktreeRemovalDto {
             branch: state.worktrees.branch(&dir).map_err(|e| e.to_string())?,
-            blocker: removal_blocker(&state, &dir)?,
+            blocker,
+            change_count: changes.len(),
+            changes: changes.into_iter().take(SHOWN_CHANGES).map(Into::into).collect(),
             path: dir,
             repository,
         })
@@ -628,7 +637,7 @@ pub async fn remove_worktree(app: tauri::AppHandle, path: String) -> CmdResult<(
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
         let (dir, repository) = linked_worktree(&state, &path)?;
-        if let Some(blocker) = removal_blocker(&state, &dir)? {
+        if let (Some(blocker), _) = removal_blocker(&state, &dir)? {
             return Err(blocker);
         }
         state.worktrees.remove(&repository, &dir).map_err(|e| e.to_string())?;

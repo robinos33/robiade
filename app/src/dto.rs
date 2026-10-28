@@ -587,6 +587,9 @@ pub struct WorktreeRemovalDto {
     pub branch: Option<String>,
     /// Raison du refus ; `None` si la suppression est possible.
     pub blocker: Option<String>,
+    /// Fichiers modifiés ou non suivis qui bloquent, les premiers seulement ; `change_count` les compte tous.
+    pub changes: Vec<FileChangeDto>,
+    pub change_count: usize,
 }
 
 #[derive(Serialize, Deserialize)]
