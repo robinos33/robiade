@@ -15,3 +15,7 @@ rayon = "1"
 rusqlite = { version = "0.37", features = ["bundled"] }
 ureq = { version = "3.5.0", features = ["json"] }
 secrecy = "0.10.3"
+# Docker par son socket Unix, sans client HTTP/TCP ni TLS.
+bollard = { version = "0.21.1", default-features = false, features = ["pipe"] }
+futures-util = { version = "0.3", default-features = false }
+tokio = { version = "1", features = ["rt-multi-thread"] }
