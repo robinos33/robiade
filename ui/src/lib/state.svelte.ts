@@ -22,6 +22,8 @@ class AppState {
   selectedSessionId = $state<string | null>(null);
   newAgentOpen = $state(false);
   paletteOpen = $state(false);
+  /** Fenêtre « Reprendre une session », l'équivalent visuel de `/resume`. */
+  resumeOpen = $state(false);
   /** Agents qu'une fermeture interromprait ; non nul tant que la confirmation est affichée. */
   quitRequest = $state<Agent[] | null>(null);
   toast = $state<string | null>(null);

@@ -25,6 +25,7 @@ export const api = {
   writeAgent: (id: string, data: string) => invoke<void>('write_agent', { id, data }),
   resizeAgent: (id: string, cols: number, rows: number) => invoke<void>('resize_agent', { id, cols, rows }),
   killAgent: (id: string) => invoke<void>('kill_agent', { id }),
+  restartAgent: (id: string, cols: number, rows: number) => invoke<Agent>('restart_agent', { id, cols, rows }),
   markAgentSeen: (id: string) => invoke<void>('mark_agent_seen', { id }),
   renameAgent: (id: string, name: string) => invoke<void>('rename_agent', { id, name }),
   forgetAgent: (id: string) => invoke<void>('forget_agent', { id }),
