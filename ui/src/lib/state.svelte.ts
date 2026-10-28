@@ -120,22 +120,36 @@ class AppState {
     return this.history.find((s) => s.sessionId === id);
   }
 
+  /** Écouteurs et minuteries posés par `init`, à libérer si le module est remplacé. */
+  private teardown: (() => void)[] = [];
+
   async init() {
-    await Promise.all([
-      listen<Agent[]>('agents:changed', (e) => (this.agents = e.payload)),
-      listen<{ id: string; data: string }>('agent:output', (e) => writeOutput(e.payload.id, e.payload.data)),
-      listen<Agent[]>('app:quit-requested', (e) => (this.quitRequest = e.payload)),
-    ]);
+    this.teardown.push(
+      ...(await Promise.all([
+        listen<Agent[]>('agents:changed', (e) => (this.agents = e.payload)),
+        listen<{ id: string; data: string }>('agent:output', (e) => writeOutput(e.payload.id, e.payload.data)),
+        listen<Agent[]>('app:quit-requested', (e) => (this.quitRequest = e.payload)),
+      ])),
+    );
     this.env = await api.environment();
     this.agents = await api.listAgents();
     this.tasks = await api.listTasks();
     await this.refreshHistory();
-    setInterval(() => (this.now = Date.now()), 15_000);
+    this.every(15_000, () => (this.now = Date.now()));
     // Les transcripts des agents vivants grossissent : on relit (le cache ne reparse que les fichiers modifiés).
-    setInterval(() => this.liveAgents.length > 0 && void this.refreshHistory(), 20_000);
+    this.every(20_000, () => this.liveAgents.length > 0 && void this.refreshHistory());
     void this.refreshForge();
     // Pipelines et reviews bougent sans moi : relus toutes les 2 minutes.
-    setInterval(() => void this.refreshForge(), 120_000);
+    this.every(120_000, () => void this.refreshForge());
+  }
+
+  private every(ms: number, run: () => void) {
+    const timer = setInterval(run, ms);
+    this.teardown.push(() => clearInterval(timer));
+  }
+
+  dispose() {
+    this.teardown.splice(0).forEach((stop) => stop());
   }
 
   /** Lit l'état des MR des sessions récentes ; le cache côté Rust évite de relire les MR closes. */
@@ -235,3 +249,7 @@ class AppState {
 }
 
 export const app = new AppState();
+
+// En dev, Vite réexécute ce module à chaque modification : sans ça, l'ancienne instance garde son
+// abonnement à `agent:output` et chaque sortie de terminal est écrite deux fois dans le même xterm.
+import.meta.hot?.dispose(() => app.dispose());
