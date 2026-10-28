@@ -667,18 +667,23 @@ pub async fn reveal_in_finder(app: tauri::AppHandle, worktree: String, path: Str
     .map_err(|e| e.to_string())?
 }
 
-/// `relative` dans `root` (canonique), ou son dossier existant le plus proche ; refusé s'il en sort,
-/// par `..`, par un chemin absolu ou par un lien symbolique.
+/// `relative` dans `root` (canonique), ou son élément existant le plus proche ; refusé s'il en sort
+/// par `..`, par un chemin absolu ou par un dossier lien. Le dernier élément n'est pas suivi : un
+/// lien (un `node_modules` partagé avec le dépôt, par exemple) est montré comme lien, pas sa cible.
 fn existing_inside(root: &Path, relative: &str) -> CmdResult<PathBuf> {
     let relative = Path::new(relative);
     if !relative.components().all(|c| matches!(c, std::path::Component::Normal(_))) {
         return Err("chemin hors du worktree".into());
     }
-    root.join(relative)
-        .ancestors()
-        .find_map(|p| p.canonicalize().ok())
-        .filter(|p| p.starts_with(root))
-        .ok_or_else(|| "chemin hors du worktree".into())
+    let outside = || "chemin hors du worktree".to_owned();
+    let found = root.join(relative);
+    let found = found.ancestors().find(|p| p.symlink_metadata().is_ok()).ok_or_else(outside)?;
+    let (Some(parent), Some(name)) = (found.parent(), found.file_name()) else { return Err(outside()) };
+    if found == root {
+        return Ok(root.to_path_buf());
+    }
+    let parent = parent.canonicalize().map_err(|_| outside())?;
+    parent.starts_with(root).then(|| parent.join(name)).ok_or_else(outside)
 }
 
 /// `open` de macOS, lancé directement : aucun shell n'interprète les arguments.
@@ -945,16 +950,21 @@ mod tests {
         let root = base.join("wt");
         std::fs::create_dir_all(root.join("src")).unwrap();
         std::fs::write(root.join("src/a.rs"), "").unwrap();
-        std::fs::write(base.join("secret"), "").unwrap();
-        std::os::unix::fs::symlink(base.join("secret"), root.join("link")).unwrap();
+        std::fs::create_dir_all(base.join("outside")).unwrap();
+        std::fs::write(base.join("outside/secret"), "").unwrap();
+        std::os::unix::fs::symlink(base.join("outside"), root.join("node_modules")).unwrap();
         let root = root.canonicalize().unwrap();
 
         assert_eq!(existing_inside(&root, "src/a.rs").unwrap(), root.join("src/a.rs"));
+        assert_eq!(existing_inside(&root, "").unwrap(), root);
         // Fichier supprimé : son dossier existant le plus proche.
         assert_eq!(existing_inside(&root, "src/gone/b.rs").unwrap(), root.join("src"));
-        assert!(existing_inside(&root, "../secret").is_err());
+        // Un lien qui sort est montré lui-même, sans être suivi.
+        assert_eq!(existing_inside(&root, "node_modules").unwrap(), root.join("node_modules"));
+        // Mais on ne passe pas par lui pour atteindre ce qu'il y a derrière.
+        assert!(existing_inside(&root, "node_modules/secret").is_err());
+        assert!(existing_inside(&root, "../outside/secret").is_err());
         assert!(existing_inside(&root, "/etc/hosts").is_err());
-        assert!(existing_inside(&root, "link").is_err());
 
         std::fs::remove_dir_all(&base).unwrap();
     }
