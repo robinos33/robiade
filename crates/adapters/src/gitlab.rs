@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use rayon::prelude::*;
 use robiade_core::forge::{
-    is_project_path, Approvals, Forge, ForgeError, Issue, IssueRef, MergeRequest, MrRef, MrState, PipelineStatus,
+    is_project_path, Approvals, Forge, ForgeError, Issue, IssueRef, IssueState, MergeRequest, MrRef, MrState, PipelineStatus,
     GITLAB_HOST,
 };
 use robiade_core::merge_actions::Planned;
@@ -219,6 +219,7 @@ fn sorted_issues(listed: Vec<ApiIssue>) -> Vec<Issue> {
 #[derive(Deserialize)]
 struct ApiIssue {
     title: String,
+    state: String,
     #[serde(default)]
     description: Option<String>,
     web_url: String,
@@ -233,10 +234,17 @@ struct ApiIssue {
     merge_requests_count: u32,
 }
 
+/// `None` pour une issue hors de l'instance configurée ou dans un état inconnu.
 fn issue_to_domain(i: ApiIssue) -> Option<Issue> {
+    let state = match i.state.as_str() {
+        "opened" => IssueState::Opened,
+        "closed" => IssueState::Closed,
+        _ => return None,
+    };
     Some(Issue {
         issue: IssueRef::from_url(&i.web_url)?,
         title: i.title,
+        state,
         description: i.description.unwrap_or_default(),
         labels: i.labels,
         assignees: i.assignees.into_iter().map(|a| a.username).collect(),
@@ -374,7 +382,7 @@ mod tests {
     #[test]
     fn reads_an_issue_published_as_a_work_item() {
         let issue: ApiIssue = serde_json::from_str(
-            r#"{"iid":5021,"title":"Cache",
+            r#"{"iid":5021,"title":"Cache","state":"closed",
                 "web_url":"https://gitlab.example.com/shop/boutique/-/work_items/5021",
                 "updated_at":"2026-10-26T13:43:40Z","labels":["category::tech"],"assignees":[{"username":"robinos33"}],
                 "due_date":"2026-11-02","merge_requests_count":1}"#,
@@ -383,6 +391,7 @@ mod tests {
         let issue = issue_to_domain(issue).unwrap();
         assert_eq!(issue.issue, IssueRef { project: "shop/boutique".into(), iid: 5021 });
         assert_eq!((issue.assignees, issue.due_date.as_deref()), (vec!["robinos33".to_owned()], Some("2026-11-02")));
+        assert_eq!(issue.state, IssueState::Closed);
     }
 
     #[test]

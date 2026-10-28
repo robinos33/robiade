@@ -56,6 +56,7 @@ impl IssueRef {
 pub struct Issue {
     pub issue: IssueRef,
     pub title: String,
+    pub state: IssueState,
     /// Markdown de GitLab, non fiable.
     pub description: String,
     pub labels: Vec<String>,
@@ -66,6 +67,12 @@ pub struct Issue {
     pub due_date: Option<String>,
     /// MR liées à l'issue.
     pub merge_requests: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IssueState {
+    Opened,
+    Closed,
 }
 
 /// Chemin complet d'un projet GitLab (`groupe/sous-groupe/projet`) : segments non vides, sans

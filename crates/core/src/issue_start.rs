@@ -108,12 +108,13 @@ fn one_line(text: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::forge::IssueRef;
+    use crate::forge::{IssueRef, IssueState};
 
     fn issue(title: &str, description: &str) -> Issue {
         Issue {
             issue: IssueRef { project: "shop/boutique".into(), iid: 5021 },
             title: title.into(),
+            state: IssueState::Opened,
             description: description.into(),
             labels: vec![],
             assignees: vec![],
