@@ -1,9 +1,10 @@
 //! Connexions aux bases de données : leur description, d'où viennent leurs identifiants, et la
 //! règle qui impose la lecture seule en production.
 //!
-//! Aucune valeur secrète n'est portée par une `Connection` : un mot de passe ou une URL complète
-//! se désigne (trousseau, Vault), il ne se recopie pas. Les valeurs ne sont résolues qu'au moment
-//! de se connecter, par l'appelant, puis assemblées ici en une `Target`.
+//! Un mot de passe ou une URL complète se désigne (trousseau, Vault), il ne se recopie pas. Seule
+//! exception : une connexion dev vers la machine locale, dont l'identifiant est déjà en clair dans
+//! le `.env` du projet. Les valeurs ne sont résolues qu'au moment de se connecter, par l'appelant,
+//! puis assemblées ici en une `Target`.
 
 pub const NAME_MAX_CHARS: usize = 100;
 /// Seul hôte Vault que Robiade interroge : le jeton ne part vers aucun autre.
@@ -52,7 +53,7 @@ pub enum Part {
 }
 
 impl Part {
-    /// Champs qui peuvent porter un mot de passe : jamais saisis en clair.
+    /// Champs qui peuvent porter un mot de passe : en clair seulement en dev, vers la machine locale.
     pub fn is_secret(self) -> bool {
         matches!(self, Self::Url | Self::Password)
     }
@@ -82,7 +83,7 @@ pub enum DbError {
     NameTooLong,
     #[error("il faut une URL ou un hôte")]
     NoTarget,
-    #[error("{0:?} ne se saisit pas en clair : trousseau ou Vault")]
+    #[error("{0:?} ne se saisit en clair que pour une connexion dev vers localhost : ailleurs, trousseau ou Vault")]
     SecretInClear(Part),
     #[error("valeur invalide pour {0:?}")]
     Invalid(Part),
@@ -141,11 +142,15 @@ impl Connection {
         if !fields.iter().any(|(p, _)| matches!(p, Part::Url | Part::Host)) {
             return Err(DbError::NoTarget);
         }
+        if let Some(part) = Self::forbidden_literals(stage, &fields).next() {
+            return Err(DbError::SecretInClear(part));
+        }
         Ok(Self { id, name: Self::valid_name(name)?, engine, stage, project_path, read_only, fields })
     }
 
-    /// Reconstitution depuis le stockage : les invariants ont été vérifiés à l'écriture, sauf la
-    /// lecture seule de la production, réimposée ici quoi que dise la ligne.
+    /// Reconstitution depuis le stockage : les invariants ont été vérifiés à l'écriture, sauf ceux qui
+    /// protègent, réimposés ici quoi que dise la ligne : la lecture seule de la production, et aucun
+    /// secret en clair hors dev local (un tel champ est écarté, la connexion échouera sans lui).
     pub fn restore(
         id: ConnectionId,
         name: String,
@@ -155,7 +160,20 @@ impl Connection {
         read_only: bool,
         fields: Vec<(Part, Source)>,
     ) -> Self {
+        let forbidden: Vec<Part> = Self::forbidden_literals(stage, &fields).collect();
+        let fields = fields.into_iter().filter(|(part, _)| !forbidden.contains(part)).collect();
         Self { id, name, engine, stage, project_path, read_only: read_only || stage == Stage::Prod, fields }
+    }
+
+    /// Champs secrets saisis en clair alors que la connexion n'est pas une connexion dev vers la
+    /// machine locale. L'hôte doit lui-même être en clair pour en juger : venu de Vault ou du
+    /// trousseau, il peut désigner n'importe quelle machine.
+    fn forbidden_literals(stage: Stage, fields: &[(Part, Source)]) -> impl Iterator<Item = Part> + '_ {
+        let local = stage == Stage::Dev && literal_host(fields).is_some_and(|h| is_local_host(&h));
+        fields
+            .iter()
+            .filter(move |(part, source)| !local && part.is_secret() && matches!(source, Source::Literal(_)))
+            .map(|(part, _)| *part)
     }
 
     fn valid_name(raw: &str) -> Result<String, DbError> {
@@ -171,7 +189,6 @@ impl Connection {
 
     fn check(part: Part, source: &Source) -> Result<(), DbError> {
         match source {
-            Source::Literal(_) if part.is_secret() => Err(DbError::SecretInClear(part)),
             Source::Literal(v) if part == Part::Port => v.trim().parse::<u16>().map(drop).map_err(|_| DbError::Invalid(part)),
             Source::Literal(v) if v.trim().is_empty() || v.chars().any(char::is_control) => Err(DbError::Invalid(part)),
             Source::Literal(_) => Ok(()),
@@ -305,6 +322,18 @@ fn is_local_host(host: &str) -> bool {
     matches!(host, "localhost" | "127.0.0.1" | "::1")
 }
 
+/// L'hôte visé, s'il est connu sans rien résoudre : champ `Host` en clair, ou à défaut celui d'une
+/// URL en clair. Un champ `Host` présent l'emporte, comme dans `Target::assemble`.
+fn literal_host(fields: &[(Part, Source)]) -> Option<String> {
+    let source = |part| fields.iter().find(|(p, _)| *p == part).map(|(_, s)| s);
+    match (source(Part::Host), source(Part::Url)) {
+        (Some(Source::Literal(host)), _) => Some(host.trim().to_owned()),
+        (Some(_), _) => None,
+        (None, Some(Source::Literal(url))) => parse_url(url).map(|t| t.host),
+        (None, _) => None,
+    }
+}
+
 /// `postgres[ql]://user:pass@host:port/base?sslmode=…`, identifiants décodés.
 fn parse_url(url: &str) -> Option<Target> {
     let rest = url.trim().strip_prefix("postgresql://").or_else(|| url.trim().strip_prefix("postgres://"))?;
@@ -435,14 +464,43 @@ mod tests {
         assert!(stored.read_only());
     }
 
+    fn literal(v: &str) -> Source {
+        Source::Literal(v.into())
+    }
+
     #[test]
-    fn secrets_are_never_typed_in_clear() {
-        let fields = vec![(Part::Host, Source::Literal("localhost".into())), (Part::Password, Source::Literal("x".into()))];
-        assert_eq!(create(Stage::Dev, true, fields), Err(DbError::SecretInClear(Part::Password)));
-        let url = vec![(Part::Url, Source::Literal("postgresql://a:b@h/db".into()))];
-        assert_eq!(create(Stage::Dev, true, url), Err(DbError::SecretInClear(Part::Url)));
-        let keychain = vec![(Part::Host, Source::Literal("localhost".into())), (Part::Password, Source::Keychain("pg-local".into()))];
-        assert_eq!(create(Stage::Dev, true, keychain).unwrap().name(), "Forum");
+    fn secrets_are_typed_in_clear_only_for_a_local_dev_connection() {
+        let password = |host: Source| vec![(Part::Host, host), (Part::Password, literal("x"))];
+        for host in ["localhost", "127.0.0.1", "::1"] {
+            assert!(create(Stage::Dev, false, password(literal(host))).is_ok(), "{host}");
+        }
+        assert!(create(Stage::Dev, false, vec![(Part::Url, literal("postgresql://a:b@localhost:8032/db"))]).is_ok());
+
+        let refused = Err(DbError::SecretInClear(Part::Password));
+        assert_eq!(create(Stage::Dev, true, password(literal("db.dev.local"))), refused);
+        assert_eq!(create(Stage::Staging, true, password(literal("localhost"))), refused);
+        assert_eq!(create(Stage::Prod, true, password(literal("localhost"))), refused);
+        // Hôte venu de Vault : il peut désigner n'importe quelle machine.
+        assert_eq!(create(Stage::Dev, true, password(vault("internal/dev1/DB", "HOST"))), refused);
+        // Le champ `Host` l'emporte sur l'hôte local de l'URL.
+        let moved = vec![(Part::Url, literal("postgresql://a:b@localhost/db")), (Part::Host, literal("db.dev.local"))];
+        assert_eq!(create(Stage::Dev, true, moved), Err(DbError::SecretInClear(Part::Url)));
+        let remote_url = vec![(Part::Url, literal("postgresql://a:b@h/db"))];
+        assert_eq!(create(Stage::Dev, true, remote_url), Err(DbError::SecretInClear(Part::Url)));
+
+        let keychain = vec![(Part::Host, literal("db")), (Part::Password, Source::Keychain("pg-local".into()))];
+        assert_eq!(create(Stage::Prod, true, keychain).unwrap().name(), "Forum");
+    }
+
+    #[test]
+    fn a_stored_clear_secret_is_dropped_once_the_connection_is_no_longer_local_dev() {
+        let restore = |stage, host: &str| {
+            let fields = vec![(Part::Host, literal(host)), (Part::Password, literal("x"))];
+            Connection::restore(ConnectionId("c".into()), "x".into(), Engine::Postgres, stage, None, true, fields)
+        };
+        assert_eq!(restore(Stage::Dev, "localhost").fields().len(), 2);
+        assert_eq!(restore(Stage::Prod, "localhost").fields(), [(Part::Host, literal("localhost"))]);
+        assert_eq!(restore(Stage::Dev, "db.dev.local").fields(), [(Part::Host, literal("db.dev.local"))]);
     }
 
     #[test]
