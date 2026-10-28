@@ -241,7 +241,8 @@ abonnement, ce n'est pas ce que je paie. L'UI met les tokens en premier et le co
 
 ### 4.4 Environments
 - **Worktrees** : liste par projet, branche, propreté (fichiers modifiés), agent actif dessus,
-  création et suppression (suppression refusée si modifications non commitées ou agent actif).
+  création et suppression (refusée si un agent est actif ou le worktree verrouillé ; un arbre
+  modifié liste ses fichiers et ne part qu'une fois leur perte cochée).
 - **Docker** : conteneurs par projet (label compose `com.docker.compose.project`), état, ports,
   start/stop/restart, logs en flux.
 - **DB** : un client façon DataGrip, réduit à l'essentiel. Moteurs v1 : **PostgreSQL, MariaDB,
