@@ -7,7 +7,7 @@ use robiade_adapters::keychain;
 use robiade_core::containers::{Container, ContainerAction, ContainerId};
 use robiade_core::databases::{Connection, ConnectionId, ConnectionRepository, Part, Source, Target};
 use robiade_core::db_browse::{page, page_query, PageRequest, TableRef};
-use robiade_core::db_console::{self, ConsoleHistory, StatementKind};
+use robiade_core::db_console::{self, Admission, ConsoleHistory, Policy, StatementKind};
 use robiade_core::merge_actions::AuditEntry;
 use robiade_core::forge::{IssueRef, MrRef};
 use robiade_core::issue_start;
@@ -1048,7 +1048,12 @@ pub async fn run_db_statement(
         .map_err(|e| e.to_string())?
         .to_owned();
         let shared = state.db_sessions.get(&id)?;
-        let kind = db_console::check(&statement, shared.read_only).map_err(|e| e.to_string())?;
+        let policy = if shared.read_only { Policy::ReadOnly } else { Policy::Writable };
+        let kind = match db_console::admit(&statement, policy).map_err(|e| e.to_string())? {
+            Admission::Run(kind) => kind,
+            Admission::Confirm => StatementKind::Write,
+            Admission::ProdWrite => return Err("modification de production pas encore prise en charge".into()),
+        };
         if kind == StatementKind::Write && !shared.read_only && !confirmed {
             let connection = state.connections.get(&ConnectionId(id)).map_err(|e| e.to_string())?;
             return Ok(ConsoleReplyDto::Confirm {

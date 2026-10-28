@@ -117,6 +117,14 @@ pub enum DbError {
     TransactionControl,
     #[error("refusé sur une connexion en lecture seule : {0}")]
     ReadOnlyGuard(&'static str),
+    #[error("en production, la console n'accepte que des lectures, et des UPDATE ou DELETE validés")]
+    ProdRefused,
+    #[error("UPDATE ou DELETE sans WHERE refusé en production")]
+    ProdWithoutWhere,
+    #[error("fonction refusée en production : {0}")]
+    ProdFunction(String),
+    #[error("une modification de production attend d'être validée ou annulée")]
+    ProdWritePending,
     #[error("{0} : pas encore pris en charge")]
     Unsupported(&'static str),
     #[error("{0}")]

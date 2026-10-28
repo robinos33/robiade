@@ -11,13 +11,51 @@
 //! lexicale ne voit pas l'intérieur d'une fonction : seul un compte en lecture seule côté serveur
 //! est un vrai verrou.
 
-use crate::databases::DbError;
+use crate::databases::{DbError, Stage};
 use crate::db_browse::{cell, Cell, Column};
+use crate::merge_actions::AuditEntry;
+use crate::Millis;
 
 /// Lignes affichées au plus ; une de plus est lue pour savoir que le résultat est tronqué.
 pub const ROWS_MAX: usize = 1000;
 /// Requêtes gardées dans l'historique d'une connexion.
 pub const HISTORY_MAX: usize = 200;
+/// Une modification de prod non validée dans ce délai est annulée : ses verrous de ligne ne
+/// restent pas posés parce qu'on a oublié la fenêtre.
+pub const PROD_WRITE_DELAY_SECS: u64 = 60;
+
+/// Ce que la console permet sur une connexion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Policy {
+    /// Lecture seule hors prod : le serveur refuse les écritures.
+    ReadOnly,
+    /// Dev ou staging sans lecture seule : chaque écriture est confirmée.
+    Writable,
+    /// Lecture, et INSERT, UPDATE ou DELETE validés en deux temps ; rien d'autre.
+    Prod,
+}
+
+impl Policy {
+    pub fn of(stage: Stage, read_only: bool) -> Self {
+        match (stage, read_only) {
+            (Stage::Prod, _) => Policy::Prod,
+            (_, true) => Policy::ReadOnly,
+            (_, false) => Policy::Writable,
+        }
+    }
+}
+
+/// Ce que devient une instruction admise.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Admission {
+    /// Part telle quelle.
+    Run(StatementKind),
+    /// Écriture hors prod : confirmée sur l'instruction exacte, puis envoyée.
+    Confirm,
+    /// INSERT, UPDATE ou DELETE de prod : confirmé en tapant le nom de la connexion, exécuté dans
+    /// une transaction laissée ouverte, puis validé ou annulé une fois le nombre de lignes connu.
+    ProdWrite,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatementKind {
@@ -319,19 +357,73 @@ fn lifts_read_only(tokens: &[Token]) -> Option<&'static str> {
     }
 }
 
-/// Vérifie qu'une instruction peut partir : jamais de contrôle de transaction, et rien qui lève
-/// le verrou sur une connexion en lecture seule.
-pub fn check(statement: &str, read_only: bool) -> Result<StatementKind, DbError> {
+/// Fonctions d'administration ou à effet de bord connues, refusées en prod même dans un SELECT.
+/// Repérage lexical d'un nom suivi de `(` : une fonction maison qui écrit passe quand même.
+const PROD_FUNCTIONS: &[&str] = &[
+    "PG_TERMINATE_BACKEND", "PG_CANCEL_BACKEND", "PG_RELOAD_CONF", "PG_ROTATE_LOGFILE", "SET_CONFIG", "NEXTVAL",
+    "SETVAL", "PG_READ_FILE", "PG_READ_BINARY_FILE", "PG_SWITCH_WAL", "PG_CREATE_RESTORE_POINT", "PG_PROMOTE",
+    "PG_LOGICAL_EMIT_MESSAGE", "PG_DROP_REPLICATION_SLOT", "PG_IMPORT_SYSTEM_COLLATIONS", "PG_FILE_WRITE",
+    "PG_FILE_UNLINK", "PG_FILE_RENAME", "TXID_CURRENT", "PG_CURRENT_XACT_ID",
+];
+const PROD_FUNCTION_PREFIXES: &[&str] =
+    &["LO_", "DBLINK", "PG_ADVISORY", "PG_TRY_ADVISORY", "PG_LS_", "PG_STAT_RESET", "PG_CREATE_", "PG_REPLICATION_"];
+
+fn prod_function(tokens: &[Token]) -> Option<String> {
+    tokens.windows(2).find_map(|pair| match pair {
+        [Token::Word(name), Token::Open]
+            if PROD_FUNCTIONS.contains(&name.as_str()) || PROD_FUNCTION_PREFIXES.iter().any(|p| name.starts_with(p)) =>
+        {
+            Some(name.to_lowercase())
+        }
+        _ => None,
+    })
+}
+
+/// Dit si une instruction peut partir, et comment : jamais de contrôle de transaction, rien qui
+/// lève le verrou d'une connexion en lecture seule, et en prod, seulement des lectures, des
+/// INSERT, et des UPDATE ou DELETE restreints par un WHERE.
+pub fn admit(statement: &str, policy: Policy) -> Result<Admission, DbError> {
     let span = spans(statement).into_iter().next().ok_or(DbError::NoStatement)?;
-    if transaction_control(&top_words(&span.tokens)) {
+    let top = top_words(&span.tokens);
+    if transaction_control(&top) {
         return Err(DbError::TransactionControl);
     }
-    if read_only {
+    if policy != Policy::Writable {
         if let Some(what) = lifts_read_only(&span.tokens) {
             return Err(DbError::ReadOnlyGuard(what));
         }
     }
-    Ok(classify(&span.tokens))
+    let kind = classify(&span.tokens);
+    match policy {
+        Policy::ReadOnly => Ok(Admission::Run(kind)),
+        Policy::Writable if kind == StatementKind::Write => Ok(Admission::Confirm),
+        Policy::Writable => Ok(Admission::Run(kind)),
+        Policy::Prod => {
+            if let Some(function) = prod_function(&span.tokens) {
+                return Err(DbError::ProdFunction(function));
+            }
+            match (kind, top.first().copied()) {
+                (StatementKind::Query | StatementKind::Read, _) => Ok(Admission::Run(kind)),
+                // Un WHERE au niveau principal, pas dans une sous-requête. `WHERE true` passe :
+                // c'est la confirmation, avec le nombre de lignes, qui le rattrape.
+                // INSERT … SELECT et INSERT … ON CONFLICT DO UPDATE compris : un WITH qui écrit,
+                // lui, commence par WITH et reste refusé.
+                (StatementKind::Write, Some("INSERT")) => Ok(Admission::ProdWrite),
+                (StatementKind::Write, Some("UPDATE" | "DELETE")) if top.contains(&"WHERE") => Ok(Admission::ProdWrite),
+                (StatementKind::Write, Some("UPDATE" | "DELETE")) => Err(DbError::ProdWithoutWhere),
+                (StatementKind::Write, _) => Err(DbError::ProdRefused),
+            }
+        }
+    }
+}
+
+impl AuditEntry {
+    /// Une modification de prod faite depuis la console : où, quoi, combien, et son issue
+    /// (`commit`, `rollback`, ou ce qui a échoué).
+    pub fn on_prod_write(at: Millis, target: &str, statement: &str, affected: Option<u64>, outcome: &str) -> Self {
+        let rows = affected.map(|n| format!(" — {n} ligne{}", if n > 1 { "s" } else { "" })).unwrap_or_default();
+        Self { at, target: target.to_owned(), action: format!("{statement}{rows}"), outcome: outcome.to_owned() }
+    }
 }
 
 /// Ce que le serveur a renvoyé : colonnes, lignes en texte (`None` pour NULL), et pour une
@@ -474,19 +566,94 @@ mod tests {
             "SELECT set_config('default_transaction_read_only', 'off', false)",
             "/* rien */ set -- commentaire\n default_transaction_read_only = off",
         ] {
-            assert!(matches!(check(sql, true), Err(DbError::ReadOnlyGuard(_))), "{sql}");
+            assert!(matches!(admit(sql, Policy::ReadOnly), Err(DbError::ReadOnlyGuard(_))), "{sql}");
             // Sur une connexion qui peut écrire, c'est la confirmation qui protège.
-            assert!(check(sql, false).is_ok(), "{sql}");
+            assert!(admit(sql, Policy::Writable).is_ok(), "{sql}");
         }
-        assert_eq!(check("SET search_path = public", true).unwrap(), StatementKind::Write);
-        assert_eq!(check("SELECT 'SET ROLE admin'", true).unwrap(), StatementKind::Query);
+        assert_eq!(admit("SET search_path = public", Policy::ReadOnly).unwrap(), Admission::Run(StatementKind::Write));
+        assert_eq!(admit("SELECT 'SET ROLE admin'", Policy::ReadOnly).unwrap(), Admission::Run(StatementKind::Query));
+        assert_eq!(admit("DELETE FROM t", Policy::Writable).unwrap(), Admission::Confirm);
     }
 
     #[test]
     fn transaction_control_never_runs() {
         for sql in ["BEGIN", "begin read write", "START TRANSACTION READ WRITE", "COMMIT", "ROLLBACK", "SAVEPOINT a", "END"] {
-            assert!(matches!(check(sql, false), Err(DbError::TransactionControl)), "{sql}");
+            assert!(matches!(admit(sql, Policy::Writable), Err(DbError::TransactionControl)), "{sql}");
         }
+    }
+
+    #[test]
+    fn production_reads_inserts_and_updates_or_deletes_with_a_where() {
+        use Admission::*;
+        for (sql, expected) in [
+            ("SELECT * FROM t", Run(StatementKind::Query)),
+            ("WITH a AS (SELECT 1) SELECT * FROM a", Run(StatementKind::Query)),
+            ("EXPLAIN SELECT 1", Run(StatementKind::Read)),
+            ("SHOW search_path", Run(StatementKind::Read)),
+            ("VALUES (1)", Run(StatementKind::Query)),
+            ("TABLE t", Run(StatementKind::Query)),
+            ("UPDATE t SET a = 1 WHERE id = 3", ProdWrite),
+            ("delete from t where id in (select id from u)", ProdWrite),
+            ("UPDATE t SET a = 1 WHERE id = 3 RETURNING id", ProdWrite),
+            ("INSERT INTO t VALUES (1)", ProdWrite),
+            ("INSERT INTO t (a) SELECT b FROM u WHERE c", ProdWrite),
+            ("INSERT INTO t VALUES (1) ON CONFLICT (id) DO UPDATE SET a = excluded.a", ProdWrite),
+        ] {
+            assert_eq!(admit(sql, Policy::Prod).unwrap(), expected, "{sql}");
+        }
+        for sql in ["UPDATE t SET a = 1", "DELETE FROM t", "UPDATE t SET a = (SELECT b FROM u WHERE u.id = 1)", "DELETE FROM t -- WHERE id = 1"] {
+            assert!(matches!(admit(sql, Policy::Prod), Err(DbError::ProdWithoutWhere)), "{sql}");
+        }
+        for sql in [
+            "WITH n AS (SELECT 1) INSERT INTO t SELECT * FROM n",
+            "MERGE INTO t USING u ON t.id = u.id WHEN MATCHED THEN DELETE",
+            "TRUNCATE t",
+            "DROP TABLE t",
+            "CREATE INDEX i ON t (a)",
+            "ALTER TABLE t ADD c int",
+            "COPY t FROM '/tmp/x'",
+            "GRANT SELECT ON t TO x",
+            "VACUUM t",
+            "LOCK TABLE t",
+            "EXPLAIN ANALYZE UPDATE t SET a = 1 WHERE id = 1",
+            "WITH d AS (DELETE FROM t WHERE id = 1 RETURNING *) SELECT * FROM d",
+            "SET search_path = public",
+            "SELECT * INTO copie FROM t",
+        ] {
+            assert!(matches!(admit(sql, Policy::Prod), Err(DbError::ProdRefused)), "{sql}");
+        }
+    }
+
+    #[test]
+    fn production_refuses_admin_functions_even_inside_a_select() {
+        for sql in [
+            "SELECT pg_terminate_backend(42)",
+            "select PG_Cancel_Backend (42)",
+            "SELECT pg_catalog.pg_reload_conf /* rien */ ()",
+            "SELECT nextval('s')",
+            "SELECT lo_import('/etc/passwd')",
+            "SELECT * FROM dblink('h', 'q') AS x(a int)",
+            "SELECT pg_advisory_lock(1)",
+            "SELECT pg_read_file('/etc/hosts')",
+            "SELECT \"pg_ls_dir\"('.')",
+            "UPDATE t SET a = setval('s', 1) WHERE id = 1",
+            "INSERT INTO t SELECT pg_terminate_backend(pid) FROM pg_stat_activity",
+        ] {
+            assert!(matches!(admit(sql, Policy::Prod), Err(DbError::ProdFunction(_))), "{sql}");
+        }
+        // Le nom dans une chaîne, un commentaire ou sans parenthèse n'est pas un appel.
+        for sql in ["SELECT 'pg_terminate_backend(1)'", "SELECT 1 -- nextval(1)", "SELECT nextval FROM t", "SELECT lo FROM t"] {
+            assert!(admit(sql, Policy::Prod).is_ok(), "{sql}");
+        }
+        // Hors prod, la console ne les filtre pas.
+        assert!(admit("SELECT pg_terminate_backend(42)", Policy::ReadOnly).is_ok());
+    }
+
+    #[test]
+    fn audits_a_production_write() {
+        let entry = AuditEntry::on_prod_write(7, "Boutique prod · app@h:5432/boutique", "DELETE FROM t WHERE id = 1", Some(1), "commit");
+        assert_eq!(entry.action, "DELETE FROM t WHERE id = 1 — 1 ligne");
+        assert_eq!((entry.target.as_str(), entry.outcome.as_str()), ("Boutique prod · app@h:5432/boutique", "commit"));
     }
 
     #[test]
