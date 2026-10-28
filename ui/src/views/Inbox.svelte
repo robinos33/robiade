@@ -47,7 +47,7 @@
       {/if}
     </div>
 
-    {#if app.mrAttention.length > 0 || (app.forge?.reviews.length ?? 0) > 0}
+    {#if app.mrAttention.length > 0 || app.pendingReviews.length > 0}
       <div class="block">
         <h2 class="section-title">GitLab</h2>
         <ul class="cards">
@@ -66,7 +66,7 @@
               </button>
             </li>
           {/each}
-          {#each app.forge?.reviews ?? [] as mr (mr.webUrl)}
+          {#each app.pendingReviews as mr (mr.webUrl)}
             <li>
               <button class="card awaitingInput" onclick={() => (app.view = 'mr')}>
                 <MrBadge url={mr.webUrl} state={mr.state} />

@@ -35,6 +35,12 @@
   $effect(() => {
     if (app.forge === null) void app.refreshForge();
   });
+
+  const reviews = $derived((app.forge?.reviews ?? []).filter(app.inGitlabScope));
+  const mine = $derived((app.forge?.mine ?? []).filter(app.inGitlabScope));
+  const scopeLabel = $derived(
+    app.project === null ? 'tous les projets' : (app.selectedGitlabProject ?? 'projet hors de l’instance GitLab'),
+  );
 </script>
 
 {#snippet row(mr: MergeRequest, showAuthor: boolean)}
@@ -75,7 +81,7 @@
 <section class="page">
   <header class="page-head" data-tauri-drag-region>
     <h1>Merge requests</h1>
-    <span class="muted">gitlab.example.com</span>
+    <span class="muted">{scopeLabel}</span>
     <span class="spacer"></span>
     <button class="btn" onclick={() => void app.refreshForge()} disabled={app.forgeLoading}>
       {app.forgeLoading ? 'Lecture…' : 'Relire'}
@@ -99,9 +105,9 @@
       {#if !app.forgeError}<p class="muted">Lecture de GitLab…</p>{/if}
     {:else}
       <div class="block">
-        <h2 class="section-title">À relire · {app.forge.reviews.length}</h2>
+        <h2 class="section-title">À relire · {reviews.length}</h2>
         <ul class="list">
-          {#each app.forge.reviews as mr (mr.webUrl)}
+          {#each reviews as mr (mr.webUrl)}
             {@render row(mr, true)}
           {:else}
             <li class="muted">Aucune MR n’attend ta review.</li>
@@ -110,9 +116,9 @@
       </div>
 
       <div class="block">
-        <h2 class="section-title">Mes MR ouvertes · {app.forge.mine.length}</h2>
+        <h2 class="section-title">Mes MR ouvertes · {mine.length}</h2>
         <ul class="list">
-          {#each app.forge.mine as mr (mr.webUrl)}
+          {#each mine as mr (mr.webUrl)}
             {@render row(mr, false)}
           {:else}
             <li class="muted">Aucune MR ouverte.</li>

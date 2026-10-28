@@ -18,7 +18,7 @@
   function badge(view: View): number | null {
     if (view === 'inbox') return app.attention.length || null;
     if (view === 'agents') return app.visibleAgents.filter((a) => a.status !== 'ended').length || null;
-    if (view === 'mr') return (app.forge?.reviews.length ?? 0) + app.mrAttention.length || null;
+    if (view === 'mr') return app.pendingReviews.length + app.mrAttention.length || null;
     if (view === 'tasks') return app.visibleTasks.filter((t) => t.status === 'doing').length || null;
     return null;
   }
