@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
-use robiade_core::databases::DbError;
+use robiade_core::databases::{DbError, Dialect};
 use robiade_core::db_browse::{Canceller, DbSession};
 use robiade_core::db_console::Policy;
 
@@ -39,6 +39,7 @@ pub struct OpenSession {
     pending: Mutex<Option<PendingWrite>>,
     cancel: Canceller,
     pub policy: Policy,
+    pub dialect: Dialect,
     /// Lecture seule exigée par la connexion et vérifiée sur le serveur à l'ouverture.
     pub read_only: bool,
     /// Nom de la connexion, puis `user@hôte:port/base` : ce que montrent la confirmation et le journal.
@@ -51,12 +52,20 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl OpenSession {
-    pub fn new(session: Box<dyn DbSession>, policy: Policy, read_only: bool, connection: String, target: String) -> Self {
+    pub fn new(
+        session: Box<dyn DbSession>,
+        policy: Policy,
+        dialect: Dialect,
+        read_only: bool,
+        connection: String,
+        target: String,
+    ) -> Self {
         Self {
             cancel: session.canceller(),
             session: Mutex::new(session),
             pending: Mutex::new(None),
             policy,
+            dialect,
             read_only,
             connection,
             target,
@@ -232,7 +241,7 @@ mod tests {
     }
 
     fn idle() -> OpenSession {
-        OpenSession::new(Box::new(Idle), Policy::Prod, true, "Boutique prod".into(), "u@h:5432/db".into())
+        OpenSession::new(Box::new(Idle), Policy::Prod, Dialect::Postgres, true, "Boutique prod".into(), "u@h:5432/db".into())
     }
 
     #[test]
@@ -299,7 +308,7 @@ mod tests {
 
     fn recorded() -> (Arc<OpenSession>, Arc<Mutex<Vec<&'static str>>>) {
         let log = Arc::new(Mutex::new(vec![]));
-        let session = OpenSession::new(Box::new(Recorder(log.clone())), Policy::Prod, true, "Boutique prod".into(), "u@h/db".into());
+        let session = OpenSession::new(Box::new(Recorder(log.clone())), Policy::Prod, Dialect::Postgres, true, "Boutique prod".into(), "u@h/db".into());
         (Arc::new(session), log)
     }
 
@@ -375,7 +384,7 @@ mod tests {
         };
 
         let prod = Postgres.open(Engine::Postgres, &target, Tls::Disabled, true).unwrap();
-        let session = Arc::new(OpenSession::new(prod, Policy::Prod, true, "test".into(), "postgres@127.0.0.1".into()));
+        let session = Arc::new(OpenSession::new(prod, Policy::Prod, Dialect::Postgres, true, "test".into(), "postgres@127.0.0.1".into()));
         let (tx, rx) = std::sync::mpsc::channel();
         let write = session
             .begin_write("DELETE FROM robiade_expiry WHERE a = 1", Duration::from_millis(300), move |f| tx.send(f).unwrap())

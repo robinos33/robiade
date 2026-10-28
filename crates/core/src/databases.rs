@@ -13,7 +13,7 @@ pub const VAULT_HOST: &str = "vault.example.com";
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ConnectionId(pub String);
 
-/// Moteurs prévus par la spec ; seul Postgres sait se connecter pour l'instant.
+/// Moteurs prévus par la spec ; Postgres et MariaDB savent se connecter pour l'instant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Engine {
     Postgres,
@@ -32,6 +32,15 @@ impl Engine {
         }
     }
 
+    /// Langage de la console et des requêtes de page ; Mongo et Elastic n'ont pas de SQL.
+    pub fn dialect(self) -> Option<Dialect> {
+        match self {
+            Self::Postgres => Some(Dialect::Postgres),
+            Self::MariaDb => Some(Dialect::MariaDb),
+            Self::Mongo | Self::Elasticsearch => None,
+        }
+    }
+
     /// Préfixes d'URL acceptés : ceux du `DATABASE_URL` de Symfony.
     fn schemes(self) -> &'static [&'static str] {
         match self {
@@ -40,6 +49,13 @@ impl Engine {
             Self::Mongo | Self::Elasticsearch => &[],
         }
     }
+}
+
+/// Dialecte SQL : il change le découpage du texte, la citation des noms et les garde-fous.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Dialect {
+    Postgres,
+    MariaDb,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -975,6 +975,7 @@ pub async fn open_db(app: tauri::AppHandle, id: String, database: Option<String>
             }
             target.database = Some(database);
         }
+        let dialect = connection.engine().dialect().ok_or_else(|| DbError::Unsupported("parcourir ce moteur").to_string())?;
         let tls = target.tls(connection.stage()).map_err(|e| e.to_string())?;
         let label = target_label(&target);
         let mut session = state
@@ -992,7 +993,7 @@ pub async fn open_db(app: tauri::AppHandle, id: String, database: Option<String>
             read_only,
         };
         let policy = Policy::of(connection.stage(), connection.read_only());
-        let session = OpenSession::new(session, policy, read_only, connection.name().to_owned(), label);
+        let session = OpenSession::new(session, policy, dialect, read_only, connection.name().to_owned(), label);
         state.db_sessions.insert(&id, generation, session)?;
         Ok(overview)
     })
@@ -1068,14 +1069,14 @@ pub async fn run_db_statement(
 ) -> CmdResult<ConsoleReplyDto> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
+        let shared = state.db_sessions.get(&id)?;
         let statement = match cursor {
-            Some(c) => db_console::statement_at(&text, db_console::byte_offset(&text, c)),
-            None => db_console::single_statement(&text),
+            Some(c) => db_console::statement_at(&text, shared.dialect, db_console::byte_offset(&text, c)),
+            None => db_console::single_statement(&text, shared.dialect),
         }
         .map_err(|e| e.to_string())?
         .to_owned();
-        let shared = state.db_sessions.get(&id)?;
-        let admission = db_console::admit(&statement, shared.policy).map_err(|e| e.to_string())?;
+        let admission = db_console::admit(&statement, shared.dialect, shared.policy).map_err(|e| e.to_string())?;
         let confirm = |prod: bool| ConsoleReplyDto::Confirm {
             statement: statement.clone(),
             connection: shared.connection.clone(),
