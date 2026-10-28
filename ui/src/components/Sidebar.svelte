@@ -11,9 +11,9 @@
     { view: 'mr', label: 'Merge requests', icon: 'mr', key: '6' },
     { view: 'tasks', label: 'Tâches', icon: 'tasks', key: '4' },
     { view: 'stats', label: 'Statistiques', icon: 'stats', key: '5' },
+    { view: 'env', label: 'Environnements', icon: 'env', key: '7' },
   ];
   const LATER = [
-    { label: 'Environnements', icon: 'env', milestone: 'v3' },
     { label: 'Bases de données', icon: 'db', milestone: 'v4' },
   ];
 

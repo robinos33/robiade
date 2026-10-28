@@ -9,6 +9,7 @@
 
   const VIEWS: [View, string][] = [
     ['inbox', 'Inbox'], ['agents', 'Agents'], ['history', 'Historique'], ['tasks', 'Tâches'], ['stats', 'Statistiques'],
+    ['env', 'Environnements'],
   ];
 
   const commands = $derived.by<Command[]>(() => {

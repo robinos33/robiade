@@ -3,7 +3,7 @@ import { api } from './api';
 import { writeOutput } from './terminals';
 import type { Agent, Environment, Forge, MergeRequest, MrState, Project, Session, Task, Workspace, Worktree } from './types';
 
-export type View = 'inbox' | 'agents' | 'history' | 'mr' | 'tasks' | 'stats';
+export type View = 'inbox' | 'agents' | 'history' | 'mr' | 'tasks' | 'stats' | 'env';
 
 const ATTENTION_ORDER: Record<string, number> = { awaitingPermission: 0, failed: 1, awaitingInput: 2 };
 
