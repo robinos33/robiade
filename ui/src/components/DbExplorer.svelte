@@ -60,9 +60,10 @@
     n === null ? '' : n >= 1_000_000 ? `~${(n / 1_000_000).toFixed(1)} M` : n >= 1000 ? `~${Math.round(n / 1000)} k` : `~${n}`;
 
   const prod = $derived(connection.stage === 'prod');
-  /** Elasticsearch : pas de lecture seule de session, ni de transaction pour valider une écriture. */
+  /** Mongo, Elasticsearch : pas de lecture seule de session, ni de transaction pour valider une écriture. */
   const bySession = $derived(sessionReadOnly(connection.engine));
-  const items = $derived(connection.engine === 'elasticsearch' ? 'Index' : 'Tables');
+  const ITEMS: Record<DbConnection['engine'], string> = { postgres: 'Tables', mariadb: 'Tables', mongo: 'Collections', elasticsearch: 'Index' };
+  const items = $derived(ITEMS[connection.engine]);
 </script>
 
 <section class="explorer" class:prod>

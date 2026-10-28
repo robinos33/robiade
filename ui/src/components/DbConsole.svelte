@@ -2,7 +2,7 @@
   import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
   import { sql, MariaSQL, PostgreSQL } from '@codemirror/lang-sql';
   import { EditorState, Prec } from '@codemirror/state';
-  import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers } from '@codemirror/view';
+  import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers, placeholder } from '@codemirror/view';
   import { api } from '../lib/api';
   import { robiadeTheme } from '../lib/codemirror';
   import type { DbConnection, DbConsoleHistory, DbConsoleReply, DbConsoleResult } from '../lib/types';
@@ -11,6 +11,14 @@
   import DbWriteCommit from './DbWriteCommit.svelte';
 
   let { connection, readOnly }: { connection: DbConnection; readOnly: boolean } = $props();
+
+  /** Ce que l'éditeur vide montre : le langage de la console n'est pas le même d'un moteur à l'autre. */
+  const EXAMPLE: Record<DbConnection['engine'], string> = {
+    postgres: 'SELECT * FROM … — ⌘↵ exécute l’instruction sous le curseur',
+    mariadb: 'SELECT * FROM … — ⌘↵ exécute l’instruction sous le curseur',
+    mongo: '{"find": "collection", "filter": {"_id": {"$oid": "…"}}} — commande JSON, ⌘↵',
+    elasticsearch: 'GET /index/_search puis le corps JSON à la ligne — ⌘↵',
+  };
 
   let host: HTMLDivElement | undefined = $state();
   let view: EditorView | undefined;
@@ -58,9 +66,12 @@
           highlightActiveLine(),
           drawSelection(),
           history(),
+          placeholder(EXAMPLE[connection.engine]),
           keymap.of([...defaultKeymap, ...historyKeymap]),
-          // Elasticsearch : requêtes REST et JSON, pas de SQL à colorer.
-          connection.engine === 'elasticsearch' ? [] : sql({ dialect: connection.engine === 'mariadb' ? MariaSQL : PostgreSQL }),
+          // Elasticsearch et Mongo : requêtes REST ou commandes JSON, pas de SQL à colorer.
+          connection.engine === 'elasticsearch' || connection.engine === 'mongo'
+            ? []
+            : sql({ dialect: connection.engine === 'mariadb' ? MariaSQL : PostgreSQL }),
           robiadeTheme,
           EditorView.updateListener.of((u) => {
             if (u.docChanged) saveDraft(key, u.state.doc.toString());

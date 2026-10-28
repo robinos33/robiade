@@ -49,7 +49,7 @@
     return '';
   }
 
-  /** Ce que le test a constaté de l'accès. Sans lecture seule de session (Elasticsearch), le
+  /** Ce que le test a constaté de l'accès. Sans lecture seule de session (Mongo, Elasticsearch), le
    *  serveur dit seulement si le compte pourrait écrire ; la console tient la lecture seule. */
   function probeAccess(c: DbConnection, probe: DbProbe): string {
     if (sessionReadOnly(c.engine)) return probe.readOnly ? 'lecture seule (vérifiée sur le serveur)' : 'lecture-écriture';

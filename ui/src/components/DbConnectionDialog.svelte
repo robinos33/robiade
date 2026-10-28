@@ -18,13 +18,13 @@
   const ENGINES: { engine: DbEngine; label: string; port: number }[] = [
     { engine: 'postgres', label: 'PostgreSQL', port: 5432 },
     { engine: 'mariadb', label: 'MariaDB', port: 3306 },
+    { engine: 'mongo', label: 'MongoDB', port: 27017 },
     { engine: 'elasticsearch', label: 'Elasticsearch', port: 9200 },
   ];
-  /** Ce que chaque champ veut dire pour Elasticsearch, qui n'a ni base ni DATABASE_URL. */
-  const ES_HINTS: Partial<Record<DbPart, string>> = {
-    url: 'ELASTICSEARCH_URL, http(s)://',
-    database: 'sans objet',
-    password: 'ou clé d’API encodée, sans utilisateur',
+  /** Ce que chaque champ veut dire pour les moteurs qui ne suivent pas le DATABASE_URL de Doctrine. */
+  const HINTS: Partial<Record<DbEngine, Partial<Record<DbPart, string>>>> = {
+    elasticsearch: { url: 'ELASTICSEARCH_URL, http(s)://', database: 'sans objet', password: 'ou clé d’API encodée, sans utilisateur' },
+    mongo: { url: 'MONGODB_URL, mongodb://, graines h1:p1,h2:p2 acceptées', database: 'sert aussi d’authSource par défaut' },
   };
 
   const PARTS: { part: DbPart; label: string; secret: boolean; hint: string }[] = [
@@ -81,15 +81,19 @@
     return 'non renseigné';
   });
 
-  const hint = (p: (typeof PARTS)[number]) => (engine === 'elasticsearch' ? ES_HINTS[p.part] ?? p.hint : p.hint);
+  const hint = (p: (typeof PARTS)[number]) => HINTS[engine]?.[p.part] ?? p.hint;
 
   /** Secret enregistré en clair : il n'est jamais renvoyé ici, laissé vide il reste inchangé. */
   const storedClear = (part: DbPart) => initial?.fields.some((f) => f.part === part && f.source.kind === 'literal') ?? false;
 
   const LOCAL_HOSTS = ['localhost', '127.0.0.1', '::1'];
-  /** Hôte d'une URL Postgres, MariaDB (`mysql://`) ou Elasticsearch, crochets d'IPv6 retirés. */
-  const urlHost = (url: string) =>
-    /^(?:postgres(?:ql)?|mysql|mariadb|https?):\/\/(?:[^/]*@)?(\[[^\]]+\]|[^:/?]+)/.exec(url.trim())?.[1]?.replace(/^\[|\]$/g, '');
+  /** Hôte d'une URL, crochets d'IPv6 retirés. Une liste de graines Mongo n'a pas d'hôte unique,
+   *  donc jamais local. */
+  function urlHost(url: string): string | undefined {
+    const authority = /^(?:postgres(?:ql)?|mysql|mariadb|https?|mongodb):\/\/(?:[^/]*@)?([^/?]*)/.exec(url.trim())?.[1];
+    if (!authority || authority.includes(',')) return undefined;
+    return /^(\[[^\]]+\]|[^:]+)/.exec(authority)?.[1]?.replace(/^\[|\]$/g, '');
+  }
 
   /** Même règle que le domaine, pour n'offrir la saisie en clair que là où elle sera acceptée :
    *  dev, et un hôte local connu sans rien résoudre. Rust tranche de toute façon à l'enregistrement. */
@@ -171,7 +175,6 @@
             {e.label}
           </button>
         {/each}
-        <span class="muted">· Mongo plus tard</span>
       </div>
 
       <span class="k">Environnement</span>
