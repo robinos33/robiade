@@ -89,7 +89,8 @@
     <!-- Impossible à manquer : on lit la production. -->
     <div class="prod-banner">
       <StageBadge stage="prod" />
-      <strong>PRODUCTION</strong> · {connection.name}{overview ? ` · base ${overview.database}` : ''} · lecture seule
+      <strong>PRODUCTION</strong> · {connection.name}{overview ? ` · base ${overview.database}` : ''} · lecture seule,
+      sauf INSERT, UPDATE ou DELETE validés un à un dans la console
     </div>
   {/if}
 

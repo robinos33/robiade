@@ -196,7 +196,9 @@
       <button class="btn small primary" onclick={() => void run()} title="⌘↵">Exécuter ⌘↵</button>
     {/if}
     <span class="muted hint">la sélection, ou l'instruction sous le curseur</span>
-    {#if readOnly}<span class="tag">lecture seule</span>{/if}
+    {#if connection.stage === 'prod'}
+      <span class="tag prod">prod : lectures ; INSERT, UPDATE ou DELETE (avec WHERE) validés</span>
+    {:else if readOnly}<span class="tag">lecture seule</span>{/if}
     <span class="spacer"></span>
     {#if result}<span class="muted mono">{summary}</span>{/if}
     <button class="btn small" onclick={() => (showHistory = !showHistory)} disabled={past.length === 0}>
@@ -267,6 +269,7 @@
   .small { height: 24px; padding: 0 8px; font-size: 12px; }
   .hint { font-size: 11.5px; }
   .tag { font-size: 11px; padding: 0 6px; border-radius: 8px; border: 1px solid var(--line-strong); color: var(--ink-2); }
+  .tag.prod { border-color: var(--danger); color: var(--danger); }
   .spacer { flex: 1; }
   .num { margin-left: 4px; color: var(--ink-3); }
   .history {
