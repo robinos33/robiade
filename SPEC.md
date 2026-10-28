@@ -498,6 +498,22 @@ session refuse toute autre requête. **Risque résiduel** : le repérage des fon
 une fonction maison qui écrit passe ; `WHERE true` passe aussi (c'est le nombre de lignes affiché
 avant validation qui le rattrape) ; et l'écriture se fait avec les identifiants applicatifs, donc
 avec tous leurs droits sur ce que l'instruction touche.
+
+Décidé le 2026-10-28 : **MariaDB, mêmes règles, adaptées au dialecte.** Constaté sur MariaDB 11.4 :
+`SET SESSION TRANSACTION READ ONLY` refuse DML, DDL, GRANT, tables temporaires et séquences, mais
+se lève par `SET tx_read_only = 0`, `SET STATEMENT tx_read_only = 0 FOR …` (la ligne est écrite),
+`EXECUTE IMMEDIATE`, `PREPARE` puis `EXECUTE`, et les commentaires exécutables `/*! … */`. Hors
+écriture, la console MariaDB refuse donc **tout** `SET` (il change aussi `sql_mode` ou le jeu de
+caractères, donc la lecture du texte), le SQL dynamique, `CALL`, `DO`, `BINLOG` et tout commentaire
+exécutable ; `XA`, `LOCK`/`UNLOCK TABLES` et `SET autocommit` comptent comme contrôle de
+transaction. La session impose un `sql_mode` sans `ANSI_QUOTES` ni `NO_BACKSLASH_ESCAPES` (ni les
+modes composés qui les incluent), relu à l'ouverture : la console découpe le texte comme le serveur
+le lit. En prod, mêmes INSERT, UPDATE ou DELETE validés un à un ; `REPLACE`, `LOAD DATA`,
+`SELECT … INTO OUTFILE` refusés ; fonctions refusées : `LOAD_FILE`, verrous nommés, `BENCHMARK`,
+séquences (`NEXTVAL`, `SETVAL`, `NEXT VALUE FOR`), attente de réplication, `sys_exec`/`sys_eval`.
+L'écriture part dans `START TRANSACTION READ WRITE`, et l'instruction n'est préparée qu'ensuite :
+MariaDB refuse de préparer une écriture dans une session en lecture seule. Même risque résiduel
+que pour Postgres.
 Seule exception au « rien en clair » : une base **dev locale**, dont le mot de passe est déjà en
 clair dans le `.env` du projet, se saisit en clair et reste dans `robiade.db` ; staging, prod et dev
 distant passent par Vault ou le trousseau.
