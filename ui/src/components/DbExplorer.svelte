@@ -2,6 +2,7 @@
   import { untrack } from 'svelte';
   import { api } from '../lib/api';
   import type { DbConnection, DbOverview, DbRelation, DbRelationKind } from '../lib/types';
+  import DbConsole from './DbConsole.svelte';
   import DbGrid from './DbGrid.svelte';
   import StageBadge from './StageBadge.svelte';
 
@@ -12,6 +13,13 @@
   let opening = $state(false);
   let selected = $state<DbRelation | null>(null);
   let search = $state('');
+  /** Tables ou console ; la console reste montée pour garder son texte et son résultat. */
+  let tab = $state<'tables' | 'console'>('tables');
+  /** Montée à la première ouverture seulement : l'éditeur se mesure mal tant qu'il est caché. */
+  let consoleOpened = $state(false);
+  $effect(() => {
+    if (tab === 'console') consoleOpened = true;
+  });
 
   /** Ouvre la session, dans `database` ou la base de la connexion ; elle remplace la précédente. */
   async function open(database: string | null) {
@@ -69,6 +77,10 @@
         {#each overview.databases as d (d)}<option value={d}>{d}</option>{/each}
       </select>
       {#if overview.readOnly}<span class="tag">lecture seule (vérifiée sur le serveur)</span>{/if}
+      <div class="tabs" role="tablist">
+        <button role="tab" class:on={tab === 'tables'} aria-selected={tab === 'tables'} onclick={() => (tab = 'tables')}>Tables</button>
+        <button role="tab" class:on={tab === 'console'} aria-selected={tab === 'console'} onclick={() => (tab = 'console')}>Console</button>
+      </div>
     {/if}
     {#if opening}<span class="muted">connexion…</span>{/if}
   </header>
@@ -93,7 +105,7 @@
             <button
               class="relation"
               class:active={selected?.schema === r.schema && selected?.name === r.name}
-              onclick={() => (selected = r)}
+              onclick={() => ((selected = r), (tab = 'tables'))}
               title="{r.schema}.{r.name}"
             >
               <span class="ellipsis mono">{r.name}</span>
@@ -107,7 +119,12 @@
       </div>
     </nav>
 
-    <div class="main">
+    {#if overview && consoleOpened}
+      <div class="main" hidden={tab !== 'console'}>
+        <DbConsole {connection} readOnly={overview.readOnly} />
+      </div>
+    {/if}
+    <div class="main" hidden={tab !== 'tables'}>
       {#if selected}
         {#key `${overview?.database}/${selected.schema}.${selected.name}`}
           <DbGrid connectionId={connection.id} relation={selected} />
@@ -153,6 +170,14 @@
   .spacer { flex: 1; }
   .none { padding: 0 12px; }
   .main { flex: 1; display: flex; min-width: 0; min-height: 0; }
+  .main[hidden] { display: none; }
+  .tabs { display: flex; gap: 2px; margin-left: 8px; }
+  .tabs button {
+    height: 26px; padding: 0 10px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--ink-3);
+    font-size: 12.5px; cursor: pointer;
+  }
+  .tabs button:hover { color: var(--ink); background: var(--bg-hover); }
+  .tabs button.on { color: var(--ink); background: var(--bg-active); font-weight: 550; }
   .hint { padding: 16px; }
   .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
