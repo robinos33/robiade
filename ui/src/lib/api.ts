@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
-  Agent, AssetContent, Container, DbConnection, DbConnectionInput, DbProbe, DbTarget, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, SearchHit, Session, Task, TaskStatus, GitWorktree, WorktreeCreation, WorktreeRemoval,
+  Agent, AssetContent, Container, DbConnection, DbConnectionInput, DbOverview, DbPage, DbPageRequest, DbProbe, DbTarget, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, SearchHit, Session, Task, TaskStatus, GitWorktree, WorktreeCreation, WorktreeRemoval,
 } from './types';
 
 export const api = {
@@ -71,6 +71,10 @@ export const api = {
   vaultKeys: (mount: string, path: string) => invoke<string[]>('vault_keys', { mount, path }),
   resolveDbTarget: (id: string) => invoke<DbTarget>('resolve_db_target', { id }),
   testDbConnection: (id: string) => invoke<DbProbe>('test_db_connection', { id }),
+  openDb: (id: string, database: string | null) => invoke<DbOverview>('open_db', { id, database }),
+  closeDb: (id: string) => invoke<void>('close_db', { id }),
+  dbPage: (id: string, schema: string, name: string, request: DbPageRequest) =>
+    invoke<DbPage>('db_page', { id, schema, name, request }),
   readAsset: (id: string, path: string) => invoke<AssetContent>('read_asset', { id, path }),
   quit: () => invoke<void>('quit'),
 };

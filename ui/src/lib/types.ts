@@ -314,3 +314,30 @@ export interface DbTarget { host: string; port: number; database: string | null;
 
 /** Ce que le serveur a dit à la connexion d'essai ; `readOnly` est lu sur le serveur. */
 export interface DbProbe { target: DbTarget; serverVersion: string; user: string; database: string; readOnly: boolean }
+
+export type DbRelationKind = 'table' | 'view' | 'materializedView' | 'foreign';
+
+/** `estimatedRows` : estimation du planificateur, absente si la table n'a jamais été analysée. */
+export interface DbRelation { schema: string; name: string; kind: DbRelationKind; estimatedRows: number | null }
+
+/** Une session ouverte ; `readOnly` est lu sur le serveur. */
+export interface DbOverview { database: string; databases: string[]; relations: DbRelation[]; readOnly: boolean }
+
+export interface DbColumn { name: string; dataType: string; primaryKey: number | null }
+
+/** Une valeur affichable ; `null` dans une ligne pour NULL, distinct de la chaîne vide. */
+export interface DbCell { text: string; truncated: boolean }
+
+/** Opaque : renvoyé tel quel pour demander la page suivante. */
+export type DbCursor = { kind: 'start' } | { kind: 'after'; values: string[] } | { kind: 'offset'; offset: number };
+
+export type DbFilter =
+  | { column: string; op: 'equals' | 'contains'; value: string }
+  | { column: string; op: 'isNull' | 'isNotNull' };
+
+export interface DbSort { column: string; descending: boolean }
+
+export interface DbPageRequest { sort: DbSort | null; filters: DbFilter[]; cursor: DbCursor }
+
+/** `next` absent : dernière page. */
+export interface DbPage { columns: DbColumn[]; rows: (DbCell | null)[][]; next: DbCursor | null }
