@@ -91,6 +91,12 @@ fn hold_quit(app: &tauri::AppHandle) -> bool {
     true
 }
 
+/// Un `tauri dev` range ses données à part : il tourne à côté de l'application installée,
+/// qui garde la base, le socket des hooks et l'index de recherche du dossier principal.
+fn own_dir(dir: std::path::PathBuf) -> std::path::PathBuf {
+    if cfg!(debug_assertions) { dir.join("dev") } else { dir }
+}
+
 fn main() {
     // Le même binaire sert de relais aux hooks et à la statusline de Claude Code.
     match std::env::args().nth(1).as_deref() {
@@ -104,7 +110,7 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             main_window(app)?;
-            let data_dir = app.path().app_data_dir()?;
+            let data_dir = own_dir(app.path().app_data_dir()?);
             std::fs::create_dir_all(&data_dir)?;
             let home = app.path().home_dir()?;
 
@@ -123,7 +129,7 @@ fn main() {
 
             let transcripts = Arc::new(TranscriptStore::new(home.join(".claude").join("projects")));
             // L'index recopie le texte des transcripts : il vit dans le cache, exclu de Time Machine.
-            let cache_dir = app.path().app_cache_dir()?;
+            let cache_dir = own_dir(app.path().app_cache_dir()?);
             std::fs::create_dir_all(&cache_dir)?;
             if let Err(e) = backup::exclude_from_backups(&cache_dir) {
                 eprintln!("index de recherche non exclu de Time Machine : {e}");
