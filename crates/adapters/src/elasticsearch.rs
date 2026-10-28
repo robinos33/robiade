@@ -135,20 +135,24 @@ fn complete(found: &Value) -> Result<(), DbError> {
     Ok(())
 }
 
-/// `Preferred` (dev seulement) : HTTPS d'abord, HTTP si le serveur ne le parle pas ou que son
-/// certificat ne se vérifie pas. Le premier `GET /` dit aussi si les identifiants passent.
+/// `Preferred` (dev vers la machine locale) : HTTPS d'abord, HTTP seulement si la connexion HTTPS
+/// n'aboutit pas. Une réponse HTTP, même un refus des identifiants, prouve que le serveur parle
+/// HTTPS : pas de repli. Le premier `GET /` dit aussi si les identifiants passent.
 fn connect(engine: Engine, target: &Target, tls: Tls, timeout: Duration) -> Result<(Client, Value), DbError> {
     if engine != Engine::Elasticsearch {
         return Err(DbError::Unsupported("ce moteur"));
     }
-    let attempt = |https: bool| {
-        let client = Client::new(target, https, timeout);
-        client.json(Method::Get, "/", "").map(|root| (client, root))
-    };
+    let root = |client: Client| client.json(Method::Get, "/", "").map(|root| (client, root));
     match tls {
-        Tls::Required => attempt(true),
-        Tls::Preferred => attempt(true).or_else(|_| attempt(false)),
-        Tls::Disabled => attempt(false),
+        Tls::Required => root(Client::new(target, true, timeout)),
+        Tls::Disabled => root(Client::new(target, false, timeout)),
+        Tls::Preferred => {
+            let https = Client::new(target, true, timeout);
+            match https.send(Method::Get, "/", "") {
+                Ok(_) => root(https),
+                Err(_) => root(Client::new(target, false, timeout)),
+            }
+        }
     }
 }
 
