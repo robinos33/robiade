@@ -7,6 +7,7 @@ pub mod git;
 pub mod gitlab;
 pub mod hooks;
 pub mod keychain;
+pub mod mariadb;
 pub mod postgres;
 pub mod pty;
 pub mod shell_env;
