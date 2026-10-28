@@ -59,6 +59,23 @@ impl PermissionMode {
     }
 }
 
+/// Effort de raisonnement de la session (`low`, `medium`, `high`, `xhigh`, `max`…), tel que rapporté
+/// par les hooks. Comme pour le mode de permission, une valeur inconnue mais bien formée est gardée.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Effort(String);
+
+impl Effort {
+    /// Un identifiant court en minuscules ASCII ; toute autre valeur est ignorée.
+    pub fn parse(raw: &str) -> Option<Self> {
+        let well_formed = (1..=16).contains(&raw.len()) && raw.chars().all(|c| c.is_ascii_lowercase());
+        well_formed.then(|| Self(raw.to_owned()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 /// Jauges rapportées par la statusline de Claude Code : modèle, contexte, quotas.
 /// Chaque champ est optionnel : le JSON de la statusline n'est pas un contrat stable.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -180,6 +197,7 @@ pub struct Agent {
     files_modified: BTreeSet<String>,
     last_tool: Option<String>,
     permission_mode: Option<PermissionMode>,
+    effort: Option<Effort>,
     gauges: Gauges,
     assets: Assets,
     resumed_from: Option<String>,
@@ -204,6 +222,7 @@ impl Agent {
             files_modified: BTreeSet::new(),
             last_tool: None,
             permission_mode: None,
+            effort: None,
             gauges: Gauges::default(),
             assets: Assets::default(),
             resumed_from,
@@ -264,6 +283,11 @@ impl Agent {
     /// Le mode peut changer en cours de session (`Shift+Tab`) : le dernier rapporté fait foi.
     pub fn observe_permission_mode(&mut self, mode: PermissionMode) {
         self.permission_mode = Some(mode);
+    }
+
+    /// L'effort se change en cours de session (`/effort`) : le dernier rapporté fait foi.
+    pub fn observe_effort(&mut self, effort: Effort) {
+        self.effort = Some(effort);
     }
 
     /// La statusline est rafraîchie en continu : le dernier relevé remplace le précédent.
@@ -359,6 +383,9 @@ impl Agent {
     pub fn permission_mode(&self) -> Option<&PermissionMode> {
         self.permission_mode.as_ref()
     }
+    pub fn effort(&self) -> Option<&Effort> {
+        self.effort.as_ref()
+    }
     pub fn gauges(&self) -> &Gauges {
         &self.gauges
     }
@@ -411,6 +438,18 @@ mod tests {
         assert!(!PermissionMode::parse("acceptEdits").unwrap().is_permissive());
         assert_eq!(PermissionMode::parse(""), None);
         assert_eq!(PermissionMode::parse("<script>"), None);
+    }
+
+    #[test]
+    fn effort_is_a_short_lowercase_identifier_and_the_last_one_wins() {
+        assert_eq!(Effort::parse("xhigh").unwrap().as_str(), "xhigh");
+        assert_eq!(Effort::parse(""), None);
+        assert_eq!(Effort::parse("High"), None);
+        assert_eq!(Effort::parse("<script>"), None);
+        let mut agent = Agent::start(AgentId::parse("00000000-0000-4000-8000-000000000000").unwrap(), "/p".into(), None, 0);
+        agent.observe_effort(Effort::parse("medium").unwrap());
+        agent.observe_effort(Effort::parse("max").unwrap());
+        assert_eq!(agent.effort().map(Effort::as_str), Some("max"));
     }
 
     #[test]
