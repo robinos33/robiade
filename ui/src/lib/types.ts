@@ -255,7 +255,7 @@ export interface GitWorktree {
 export interface WorktreeCreation { repository: string; dir: string; bases: string[]; blocker: string | null }
 
 /** Ce que « supprimer le worktree » ferait ; `blocker` dit pourquoi c'est refusé. */
-/** `changes` : les premiers fichiers qui bloquent la suppression ; `changeCount` les compte tous. */
+/** `changes` : les premiers fichiers que la suppression ferait perdre ; `changeCount` les compte tous. */
 export interface WorktreeRemoval {
   path: string;
   repository: string;

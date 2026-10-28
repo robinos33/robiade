@@ -262,7 +262,7 @@ const worktrees: GitWorktree[] = [
   worktree(2, 'pagination', 'ticket-77-pagination-par-curseur', 0),
 ];
 
-/** Ce qui bloque la suppression d'un worktree de démo : ses fichiers modifiés, s'il en a. */
+/** Ce que la suppression d'un worktree de démo ferait perdre : ses fichiers modifiés, s'il en a. */
 const BLOCKING: FileChange[] = [
   { path: 'src/Cart/PromoCode.php', kind: 'modified', added: null, removed: null },
   { path: 'tests/Cart/PromoCodePolicyTest.php', kind: 'untracked', added: null, removed: null },
@@ -275,7 +275,7 @@ const worktreeRemoval = (path: string): WorktreeRemoval => {
     path,
     repository: found.repository,
     branch: found.branch,
-    blocker: changes.length > 0 ? `${changes.length} fichier(s) modifié(s) ou non suivi(s) : commite-les ou annule-les d'abord` : null,
+    blocker: null,
     changes,
     changeCount: changes.length,
   };

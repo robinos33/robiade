@@ -52,7 +52,8 @@ export const api = {
   createWorktree: (repository: string, branch: string, base: string) =>
     invoke<boolean>('create_worktree', { repository, branch, base }),
   prepareWorktreeRemoval: (path: string) => invoke<WorktreeRemoval>('prepare_worktree_removal', { path }),
-  removeWorktree: (path: string) => invoke<void>('remove_worktree', { path }),
+  /** `discard` : modifications non commitées que j'accepte de perdre, 0 pour un arbre propre. */
+  removeWorktree: (path: string, discard: number) => invoke<void>('remove_worktree', { path, discard }),
   /** `path` relatif au worktree ; vide pour montrer le worktree lui-même. */
   revealInFinder: (worktree: string, path: string) => invoke<void>('reveal_in_finder', { worktree, path }),
   issues: (project: string | null) => invoke<Issue[]>('issues', { project }),

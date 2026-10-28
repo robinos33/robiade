@@ -8,6 +8,8 @@
   let removal = $state<WorktreeRemoval | null>(null);
   let error = $state<string | null>(null);
   let busy = $state(false);
+  /** Perte des modifications non commitées acceptée, case cochée. */
+  let discard = $state(false);
   let cancel: HTMLButtonElement | undefined = $state();
 
   $effect(() => cancel?.focus());
@@ -32,7 +34,7 @@
     busy = true;
     error = null;
     try {
-      await api.removeWorktree(worktree.path);
+      await api.removeWorktree(worktree.path, discard ? (removal?.changeCount ?? 0) : 0);
       if (app.worktree === worktree.path) app.selectProject(worktree.root);
       await Promise.all([app.refreshHistory(), app.refreshWorktrees()]);
       app.notify(`Worktree ${worktree.name} supprimé${removal?.branch ? `, branche ${removal.branch} conservée` : ''}.`);
@@ -69,21 +71,27 @@
       </div>
       {#if removal.blocker}
         <p class="error">{removal.blocker}</p>
-        {#if removal.changes.length > 0}
-          <ul class="changes">
-            {#each removal.changes as c (c.path)}
-              <li>
-                <button class="link" onclick={() => reveal(c.path)} title="Montrer dans le Finder">
-                  <span class="letter {c.kind}">{LETTER[c.kind]}</span>
-                  <span class="mono">{c.path}</span>
-                </button>
-              </li>
-            {/each}
-          </ul>
-          {#if removal.changeCount > removal.changes.length}
-            <p class="muted note">… et {removal.changeCount - removal.changes.length} autre(s).</p>
-          {/if}
+      {:else if removal.changeCount > 0}
+        <p class="error">
+          {removal.changeCount} fichier(s) modifié(s) ou non suivi(s), dans aucun commit : la suppression les efface.
+        </p>
+        <ul class="changes">
+          {#each removal.changes as c (c.path)}
+            <li>
+              <button class="link" onclick={() => reveal(c.path)} title="Montrer dans le Finder">
+                <span class="letter {c.kind}">{LETTER[c.kind]}</span>
+                <span class="mono">{c.path}</span>
+              </button>
+            </li>
+          {/each}
+        </ul>
+        {#if removal.changeCount > removal.changes.length}
+          <p class="muted note">… et {removal.changeCount - removal.changes.length} autre(s).</p>
         {/if}
+        <label class="discard">
+          <input type="checkbox" bind:checked={discard} />
+          Perdre ces {removal.changeCount} modification(s){removal.branch ? `, la branche ${removal.branch} est conservée` : ''}
+        </label>
       {:else}
         <p class="muted note">
           Le dossier est effacé. {removal.branch ? `La branche ${removal.branch} est conservée` : 'Aucune branche n’est touchée'} ;
@@ -94,8 +102,12 @@
     {#if error}<p class="error">{error}</p>{/if}
     <footer>
       <button class="btn" bind:this={cancel} onclick={onclose}>Annuler</button>
-      <button class="btn danger" disabled={!removal || !!removal.blocker || busy} onclick={() => void remove()}>
-        {busy ? 'Suppression…' : 'Supprimer le worktree'}
+      <button
+        class="btn danger"
+        disabled={!removal || !!removal.blocker || (removal.changeCount > 0 && !discard) || busy}
+        onclick={() => void remove()}
+      >
+        {busy ? 'Suppression…' : removal?.changeCount ? 'Supprimer avec les modifications' : 'Supprimer le worktree'}
       </button>
     </footer>
   </div>
@@ -132,6 +144,7 @@
   .letter.deleted { color: var(--danger); }
   .letter.renamed { color: var(--info); }
   .error { margin: 0; color: var(--danger); }
+  .discard { display: flex; gap: 8px; align-items: center; font-size: 12.5px; cursor: pointer; }
   footer { display: flex; justify-content: flex-end; gap: 8px; }
   .danger { background: var(--danger); border-color: transparent; color: #fff; font-weight: 550; }
   .danger:hover:not(:disabled) { filter: brightness(1.08); }
