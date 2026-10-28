@@ -45,12 +45,12 @@ Statut : brouillon du 2026-10-27. Les points marqués **[À trancher]** sont reg
 | MR, pipelines, issues | GitLab | Cache court (TTL), jetable |
 | Worktrees, branches | Le dépôt Git | Rien |
 | Conteneurs | Docker Engine | Rien |
-| Connexions DB | Config ADE (hôte, port, user) + Keychain (mot de passe) | La config — c'est la seule donnée propre à l'ADE avec les préférences |
+| Connexions DB | Config ADE : chaque champ en valeur, référence trousseau ou référence Vault | La config, **sans aucune valeur secrète** : une URL ou un mot de passe se désigne, il ne se saisit pas |
 | Statistiques | Dérivées des transcripts | Agrégats SQLite, **reconstructibles** |
 | Résultats de requêtes DB | La base interrogée | **Rien sur disque** : en mémoire, le temps de l'affichage |
 | Historique des requêtes DB | ADE | SQLite (texte des requêtes, jamais les résultats) |
 | **Tâches perso** | **ADE** | SQLite, **sauvegardée** (export JSON horodaté quotidien) |
-| Identifiants DB de prod | Vault | Rien : secrets dynamiques à durée de vie courte, en mémoire |
+| Identifiants DB de prod | Vault (KV v2 statique) | Rien : valeur lue au moment de se connecter, en mémoire |
 | Préférences, vues sauvegardées | ADE | SQLite |
 
 Conséquence de design : **supprimer le cache de l'ADE ne doit rien faire perdre.** Les tâches perso
@@ -246,6 +246,12 @@ abonnement, ce n'est pas ce que je paie. L'UI met les tokens en premier et le co
   start/stop/restart, logs en flux.
 - **DB** : un client façon DataGrip, réduit à l'essentiel. Moteurs v1 : **PostgreSQL, MariaDB,
   MongoDB, Elasticsearch**.
+  - **Connexions** : nom, moteur, environnement (dev / staging / prod), projet optionnel. Chaque
+    champ (URL, hôte, port, base, utilisateur, mot de passe) vient d'une valeur saisie, du
+    trousseau ou d'une clé Vault choisie dans la liste des secrets d'un montage. Une URL ou un mot
+    de passe ne se saisit jamais en clair. La production est rouge partout où elle apparaît
+    (badge PROD, ligne, formulaire) et une connexion de prod montre son nom et son hôte résolu
+    avant de s'ouvrir.
   - **Explorateur** : connexions → bases → schémas → tables / collections / index.
   - **Grille** : ouvrir une table affiche ses lignes dans une grille virtualisée, triable et
     filtrable. Pagination côté serveur (keyset quand une clé le permet, sinon `LIMIT/OFFSET`) :
@@ -353,7 +359,8 @@ Le niveau d'exigence est celui d'un outil d'administration.
   passe par une confirmation qui montre **la cible exacte** (projet, MR, branche). Pas de
   confirmation générique « êtes-vous sûr ? ».
 - DB : connexion en lecture seule par défaut ; l'écriture se fait avec un autre utilisateur ou
-  une bascule explicite, par connexion. **Prod uniquement via Vault** (§10).
+  une bascule explicite, par connexion. **Prod toujours en lecture seule, sans bascule**, et TLS
+  exigé hors dev (§10).
 - Journal d'audit local des actions sortantes (quoi, quand, cible, résultat), sans les secrets.
 
 **Chaîne de build**
@@ -434,11 +441,7 @@ requête, une grille performante) et le moins lié aux agents ; DataGrip fait le
 
 ## 10. À trancher
 
-1. **Vault** : quelle méthode d'authentification (OIDC, token, AppRole) et quels chemins
-   (`database/creds/<rôle>` en secrets dynamiques, ou KV statique) ? Les secrets dynamiques sont
-   la bonne cible : identifiants à durée de vie courte, révoqués à la fermeture de la connexion,
-   et la lecture seule garantie par le rôle Vault, pas par l'ADE. Une connexion prod est marquée
-   de façon impossible à confondre (couleur de fenêtre, bandeau permanent).
+Aucun point ouvert.
 
 Décidé le 2026-10-27 : pilotage par CLI intégré (PTY) ; seules les sessions lancées par l'ADE
 sont vivantes dans l'ADE ; status par session (§4.1) ; tâches = issues GitLab ; client DB avec
@@ -452,3 +455,17 @@ JSON sur le socket des hooks et n'écrit rien dans le terminal. L'interface dess
 (modèle, contexte, quotas 5 h et semaine, seuils 50 % / 80 %). La statusline de `~/.claude` reste
 celle d'iTerm. Les champs lus viennent de la statusline existante, pas d'un contrat documenté :
 même règle de tolérance que pour les transcripts.
+
+Décidé le 2026-10-28 : **Vault en KV v2 statique, variables choisies à la main.** Les montages
+existants (`forum-kv`, `boutique-kv`…) portent les identifiants applicatifs ; il n'y a pas de
+secrets dynamiques. Robiade ne fait aucun flux d'authentification : il réutilise le jeton que la
+CLI dépose après `vault login -method=oidc` (`~/.vault-token`), ou un jeton de secours au trousseau.
+Il liste les noms des secrets d'un montage et je choisis la clé de chaque champ ; les valeurs ne
+sont lues qu'au moment de se connecter, en mémoire, et ne remontent jamais à l'interface.
+Conséquence : **la prod passe par les identifiants applicatifs**, donc en lecture-écriture côté
+serveur. Robiade impose la lecture seule (paramètre de session, vérifié sur le serveur au test),
+sans bascule possible en prod ; pour Mongo et Elastic, qui n'ont pas de lecture seule de session,
+la console de prod sera limitée à une liste blanche de commandes de lecture. TLS exigé hors dev,
+certificat et nom d'hôte vérifiés ; en dev, clair accepté seulement vers localhost. **Risque
+résiduel assumé** : ces protections tiennent contre une fausse manipulation, pas contre un bug de
+Robiade ; un compte en lecture seule côté serveur reste la cible quand il sera disponible.
