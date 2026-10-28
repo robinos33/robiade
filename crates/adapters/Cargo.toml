@@ -29,3 +29,5 @@ native-tls = "0.2.18"
 # Client MariaDB synchrone, TLS du système, compression en Rust pur (sans zlib C).
 mysql = { version = "28.0.4", default-features = false, features = ["minimal-rust", "native-tls"] }
 base64 = "0.22"
+# Client Mongo officiel, API synchrone, rustls ; sans résolveur DNS (pas de mongodb+srv://).
+mongodb = { version = "3.9.1", default-features = false, features = ["sync", "rustls-tls", "compat-3-0-0"] }
