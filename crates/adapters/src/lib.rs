@@ -10,6 +10,7 @@ pub mod gitlab;
 pub mod hooks;
 pub mod keychain;
 pub mod mariadb;
+pub mod mongo;
 pub mod postgres;
 pub mod pty;
 pub mod self_update;
