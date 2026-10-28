@@ -277,7 +277,7 @@ const worktreeRemoval = (path: string): WorktreeRemoval => {
 /** Connexions de démo : une locale, une staging et une production lue dans Vault. */
 const dbConnections: DbConnection[] = [
   {
-    id: 'db-local', name: 'Boutique locale', engine: 'postgres', stage: 'dev', projectPath: `${HOME}/code/${PROJECTS[0]!.name}`, readOnly: true,
+    id: 'db-local', name: 'Boutique locale', engine: 'postgres', stage: 'dev', projectPath: `${HOME}/code/${PROJECTS[0]!.name}`, readOnly: false,
     fields: [
       { part: 'host', source: { kind: 'literal', value: 'localhost' } },
       { part: 'port', source: { kind: 'literal', value: '8032' } },
@@ -340,6 +340,44 @@ function orderRow(id: number): (DbCell | null)[] {
   ];
 }
 
+/** Console : l'instruction sous le curseur, découpée grossièrement ; le vrai découpage est en Rust. */
+function consoleReply(args: Record<string, unknown>) {
+  const text = String(args.text);
+  const cursor = args.cursor as number | null;
+  let statement = text.trim();
+  if (cursor !== null) {
+    let start = 0;
+    for (const part of text.split(';')) {
+      if (cursor <= start + part.length + 1) {
+        statement = part.trim();
+        break;
+      }
+      start += part.length + 1;
+    }
+  }
+  const write = !/^(select|with|values|table|show|explain)\b/i.test(statement.replace(/^(\s*--[^\n]*\n)*\s*/, ''));
+  if (write && args.id === 'db-local' && !args.confirmed) {
+    return { kind: 'confirm', statement, connection: 'Boutique locale', stage: 'dev', target: 'app@localhost:8032/boutique' };
+  }
+  if (write) {
+    return { kind: 'done', statement, result: { columns: [], rows: [], truncated: false, affected: 3, elapsedMs: 4 } };
+  }
+  const cell = (text: string): DbCell => ({ text, truncated: false });
+  const rows = STATUSES.map((status, i) => [cell(status), cell(String(301_078 - i * 48_211)), cell((8_412_930.5 - i * 1_120_448.25).toFixed(2))]);
+  const columns: DbColumn[] = [
+    { name: 'status', dataType: 'text', primaryKey: null },
+    { name: 'orders', dataType: 'int8', primaryKey: null },
+    { name: 'revenue', dataType: 'numeric', primaryKey: null },
+  ];
+  return { kind: 'done', statement, result: { columns, rows, truncated: false, affected: null, elapsedMs: 182 } };
+}
+
+const consoleHistory = [
+  { sql: 'SELECT status, count(*) AS orders, sum(total) AS revenue FROM "order" GROUP BY status ORDER BY 2 DESC', at: Date.UTC(2026, 9, 28, 8, 12) },
+  { sql: "SELECT * FROM promo_code WHERE code ILIKE 'BIENVENUE%'", at: Date.UTC(2026, 9, 27, 16, 40) },
+  { sql: 'EXPLAIN SELECT * FROM order_line WHERE order_id = 42', at: Date.UTC(2026, 9, 27, 15, 2) },
+];
+
 /** Pages de `public.order` par id décroissant… ou croissant : assez pour voir la grille vivre. */
 function dbPage(request: DbPageRequest) {
   const after = request.cursor.kind === 'after' ? Number(request.cursor.values[0]) : 0;
@@ -388,8 +426,16 @@ const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
   vault_keys: (args) => (String(args.path).endsWith('DATABASE') ? ['URL'] : ['DSN', 'URL']),
   resolve_db_target: (args) => dbTarget(args.id),
   test_db_connection: (args) => ({ target: dbTarget(args.id), serverVersion: '17.2', user: 'app', database: 'boutique', readOnly: true }),
-  open_db: (args) => ({ database: args.database ?? 'boutique', databases: ['boutique', 'boutique_archive', 'postgres'], relations: dbRelations, readOnly: true }),
+  open_db: (args) => ({
+    database: args.database ?? 'boutique',
+    databases: ['boutique', 'boutique_archive', 'postgres'],
+    relations: dbRelations,
+    readOnly: args.id !== 'db-local',
+  }),
   db_page: (args) => dbPage(args.request as DbPageRequest),
+  run_db_statement: (args) => consoleReply(args),
+  cancel_db_statement: () => null,
+  db_console_history: () => consoleHistory,
 };
 
 const callbacks = new Map<number, (payload: unknown) => void>();

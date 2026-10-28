@@ -1,4 +1,5 @@
 /** Entrée de démo : `/demo/?view=agents&dialog=resume`, pour `screens.sh`. */
+import { EditorView } from '@codemirror/view';
 import { AGENT_IDS, emit, install } from './mock';
 
 install();
@@ -29,6 +30,17 @@ if (params.get('explore')) {
   await click('.dialog button.danger', 'Ouvrir');
   if (params.get('table')) await click('.relation', params.get('table')!);
   if (params.get('cell')) await click('.rows .cell', `"promo"`);
+  // `&console=<sql>` : ouvre la console, y écrit la requête et l'exécute.
+  if (params.get('console')) {
+    await click('.tabs button', 'Console');
+    const content = await find('.cm-content', '');
+    const view = content && EditorView.findFromDOM(content);
+    if (view) {
+      const sql = params.get('console')!;
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: sql }, selection: { anchor: sql.length } });
+      await click('.bar button', 'Exécuter');
+    }
+  }
 }
 
 const ESC = '\x1b[';
