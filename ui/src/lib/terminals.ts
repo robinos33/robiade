@@ -77,12 +77,28 @@ export function writeOutput(id: string, base64: string) {
 export function attach(id: string, container: HTMLElement) {
   const h = host(id);
   container.replaceChildren(h.el);
-  if (!h.opened) {
+  const fresh = !h.opened;
+  if (fresh) {
     h.term.open(h.el);
     h.opened = true;
   }
   refit(id);
+  if (fresh) void redraw(id, h.term);
   h.term.focus();
+}
+
+/**
+ * Après un rechargement de l'interface, l'agent tourne toujours mais son xterm est neuf et vide,
+ * alors que Claude Code ne réécrit que les cellules qui changent. Une colonne de moins puis la
+ * taille réelle : deux SIGWINCH, et Claude Code redessine tout l'écran.
+ */
+async function redraw(id: string, term: Terminal) {
+  try {
+    await api.resizeAgent(id, Math.max(term.cols - 1, 1), term.rows);
+    await api.resizeAgent(id, term.cols, term.rows);
+  } catch {
+    // Agent terminé entre-temps : rien à redessiner.
+  }
 }
 
 export function refit(id: string) {
