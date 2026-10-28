@@ -60,6 +60,8 @@ if (params.get('explore')) {
   row?.querySelector<HTMLElement>('.actions button')?.click();
   await click('.dialog button.danger', 'Ouvrir');
   if (params.get('table')) await click('.relation', params.get('table')!);
+  // `&tab=Console` : ouvre la console sans rien y écrire.
+  if (params.get('tab')) await click('.tabs button', params.get('tab')!);
   if (params.get('cell')) await click('.rows .cell', `"promo"`);
   // `&console=<sql>` : ouvre la console, y écrit la requête et l'exécute.
   if (params.get('console')) {

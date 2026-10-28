@@ -373,6 +373,10 @@ const dbConnections: DbConnection[] = [
     fields: [{ part: 'url', source: { kind: 'literal', value: 'mysql://app:app@127.0.0.1:3306/catalogue?serverVersion=10.11.2-MariaDB' } }],
   },
   {
+    id: 'db-avis', name: 'Avis clients', engine: 'mongo', stage: 'staging', projectPath: null, readOnly: true,
+    fields: [{ part: 'url', source: { kind: 'vault', mount: 'boutique-kv', path: 'internal/staging/MONGODB', key: 'URL' } }],
+  },
+  {
     id: 'db-logs', name: 'Journaux prod', engine: 'elasticsearch', stage: 'prod', projectPath: null, readOnly: true,
     fields: [{ part: 'url', source: { kind: 'vault', mount: 'boutique-kv', path: 'internal/prod/ELASTICSEARCH', key: 'URL' } }],
   },
@@ -385,6 +389,9 @@ const dbConnections: DbConnection[] = [
     fields: [{ part: 'url', source: { kind: 'vault', mount: 'boutique-kv', path: 'internal/prod/DATABASE', key: 'URL' } }],
   },
 ];
+
+/** Collections d'une base Mongo : pas de schéma, et pas d'estimation de taille. */
+const mongoCollections = ['avis', 'moderation', 'signalements'].map((name) => ({ schema: '', name, kind: 'table', estimatedRows: null }));
 
 /** Index d'un cluster Elasticsearch : pas de schéma. */
 const esIndices = ['commandes', 'logs-2026.09', 'logs-2026.10', 'recherches'].map((name, i) => ({
@@ -679,6 +686,8 @@ const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
   open_db: (args) =>
     args.id === 'db-logs'
       ? { database: 'boutique-logs', databases: ['boutique-logs'], relations: esIndices, readOnly: true }
+      : args.id === 'db-avis'
+      ? { database: 'avis', databases: ['avis', 'avis_archive'], relations: mongoCollections, readOnly: true }
       : {
           database: args.database ?? 'boutique',
           databases: ['boutique', 'boutique_archive', 'postgres'],
