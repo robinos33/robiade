@@ -2,7 +2,7 @@
  * Faux backend Tauri pour les captures du README : l'interface réelle, des données inventées.
  * Rien de ce fichier n'entre dans le build (seul `index.html` est une entrée Vite).
  */
-import type { Agent, Forge, Issue, MergeRequest, Overview, Session, Task, Tokens } from '../src/lib/types';
+import type { Agent, Container, Forge, Issue, MergeRequest, Overview, Session, Task, Tokens } from '../src/lib/types';
 
 const NOW = Date.now();
 const MIN = 60_000;
@@ -204,6 +204,38 @@ const overview = (): Overview => {
   };
 };
 
+let containerIndex = 1;
+const container = (
+  name: string,
+  project: number | null,
+  service: string,
+  image: string,
+  state: Container['state'],
+  status: string,
+  ports: [number, number | null][] = [],
+): Container => ({
+  id: `${(containerIndex++).toString(16).padStart(4, '0')}${'c0ffee'.repeat(10)}`,
+  name,
+  image,
+  state,
+  status,
+  ports: ports.map(([priv, pub]) => ({ private: priv, public: pub, protocol: 'tcp' })),
+  composeProject: project === null ? null : PROJECTS[project]!.name,
+  service: project === null ? null : service,
+  workingDir: project === null ? null : `${HOME}/code/${PROJECTS[project]!.name}`,
+  workspace: project === null ? null : workspace(project),
+});
+
+const containers: Container[] = [
+  container('boutique-php', 0, 'php', 'boutique/php:8.4', 'running', 'Up 3 hours (healthy)', [[80, null], [443, null]]),
+  container('boutique-postgres', 0, 'postgres', 'postgres:17', 'running', 'Up 3 hours', [[5432, 8032]]),
+  container('boutique-redis', 0, 'redis', 'redis:7', 'running', 'Up 3 hours', [[6379, 8079]]),
+  container('boutique-node', 0, 'node', 'node:22', 'exited', 'Exited (0) 2 hours ago'),
+  container('facturation-app', 1, 'app', 'facturation/app:dev', 'running', 'Up 20 minutes', [[8080, 8880]]),
+  container('facturation-mariadb', 1, 'mariadb', 'mariadb:11', 'restarting', 'Restarting (1) 4 seconds ago', [[3306, 33018]]),
+  container('mailpit', null, '', 'axllent/mailpit', 'exited', 'Exited (0) 3 weeks ago', [[8025, 8025]]),
+];
+
 const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
   environment: () => ({ claudePath: '/usr/local/bin/claude', home: HOME }),
   list_history: () => sessions,
@@ -223,6 +255,12 @@ const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
     { path: 'tests/Cart/PromoCodePolicyTest.php', kind: 'added', added: 88, removed: 0 },
   ],
   working_diff: () => '',
+  containers: () => containers,
+  prepare_container_action: (args) => {
+    const found = containers.find((c) => c.id === args.id)!;
+    return { container: found, action: args.action, blocker: null };
+  },
+  follow_container_logs: () => 1,
 };
 
 const callbacks = new Map<number, (payload: unknown) => void>();
