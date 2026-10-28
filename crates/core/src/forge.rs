@@ -56,6 +56,8 @@ impl IssueRef {
 pub struct Issue {
     pub issue: IssueRef,
     pub title: String,
+    /// Markdown de GitLab, non fiable.
+    pub description: String,
     pub labels: Vec<String>,
     pub assignees: Vec<String>,
     pub web_url: String,
@@ -178,6 +180,8 @@ pub trait Forge: Send + Sync {
     fn merge_request(&self, mr: &MrRef) -> Result<MergeRequest, ForgeError>;
     /// Issues ouvertes qui me sont assignées, tous projets confondus.
     fn my_issues(&self) -> Result<Vec<Issue>, ForgeError>;
+    /// Une issue précise, avec sa description.
+    fn issue(&self, issue: &IssueRef) -> Result<Issue, ForgeError>;
     /// Issues ouvertes d'un projet (chemin complet, validé par `is_project_path`).
     fn project_issues(&self, project: &str) -> Result<Vec<Issue>, ForgeError>;
     /// Envoie une action planifiée ; seul appel qui écrit sur GitLab.

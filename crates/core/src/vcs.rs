@@ -1,5 +1,6 @@
 //! Modifications en cours d'un dossier de travail : ce que l'agent a changé depuis le dernier commit.
-//! Lecture seule : Robiade montre les diffs, il ne commite ni n'annule rien.
+//! Lecture seule : Robiade montre les diffs, il ne commite ni n'annule rien. Seule écriture, à ma
+//! demande : créer un worktree pour démarrer un agent (`Worktrees`).
 
 /// Nature d'un changement par rapport au dernier commit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,4 +38,13 @@ pub trait WorkingTree: Send + Sync {
     fn changes(&self, dir: &str) -> Result<Vec<FileChange>, VcsError>;
     /// Diff unifié d'un fichier de `changes` ; tout autre chemin est refusé.
     fn diff(&self, dir: &str, path: &str) -> Result<String, VcsError>;
+}
+
+/// Création de worktrees, toujours sur une branche neuve.
+pub trait Worktrees: Send + Sync {
+    /// Branches de base proposées (`origin/staging`, `origin/main`, `origin/master`), celles qui existent.
+    fn bases(&self, repository: &str) -> Result<Vec<String>, VcsError>;
+    /// Met `base` à jour depuis `origin` si possible, puis crée `branch` à partir d'elle dans `dir`.
+    /// Renvoie `false` si la mise à jour a échoué et que la base locale a servi.
+    fn create(&self, repository: &str, branch: &str, base: &str, dir: &str) -> Result<bool, VcsError>;
 }
