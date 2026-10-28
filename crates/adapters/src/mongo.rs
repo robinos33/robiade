@@ -63,7 +63,10 @@ fn read_preference(mode: &str) -> Option<SelectionCriteria> {
 }
 
 /// Les options du client, depuis la cible et ses paramètres de la liste blanche du domaine.
-fn options(target: &Target, tls: bool) -> Result<ClientOptions, DbError> {
+/// `direct` : le clair est permis (machine locale), donc pas de découverte de la topologie. Le
+/// serveur local annoncerait les autres membres d'un replica set, peut-être distants, et le client
+/// s'y connecterait en clair avec les identifiants.
+fn options(target: &Target, tls: bool, direct: bool) -> Result<ClientOptions, DbError> {
     let invalid = |what: &str| DbError::Unreachable(format!("paramètre Mongo invalide : {what}"));
     let option = |key: &str| target.options.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
     let hosts = if target.host.contains(',') {
@@ -85,6 +88,14 @@ fn options(target: &Target, tls: bool) -> Result<ClientOptions, DbError> {
         Some(other) => return Err(invalid(other)),
         None => None,
     };
+    if direct {
+        if options.hosts.len() > 1 || options.repl_set_name.is_some() || options.direct_connection == Some(false) {
+            return Err(DbError::Unreachable(
+                "sans TLS, connexion directe seulement : retire replicaSet et les autres graines, ou active tls=true".into(),
+            ));
+        }
+        options.direct_connection = Some(true);
+    }
     if let Some(mode) = option("readPreference") {
         options.selection_criteria = Some(read_preference(mode).ok_or_else(|| invalid(mode))?);
     }
@@ -108,8 +119,10 @@ fn connect(engine: Engine, target: &Target, tls: Tls) -> Result<Client, DbError>
     if engine != Engine::Mongo {
         return Err(DbError::Unsupported("ce moteur"));
     }
+    // Sauf TLS exigé, la cible est la machine locale (règle du domaine) et le clair possible.
+    let direct = tls != Tls::Required;
     let attempt = |tls: bool, selection: Duration| -> Result<Client, DbError> {
-        let mut options = options(target, tls)?;
+        let mut options = options(target, tls, direct)?;
         options.server_selection_timeout = Some(selection);
         let client = Client::with_options(options).map_err(unreachable)?;
         client.database("admin").run_command(doc! { "ping": 1 }).run().map_err(unreachable)?;
@@ -438,6 +451,29 @@ mod tests {
         assert_eq!(cell(None), None);
         assert_eq!(cell(Some(&Bson::Document(doc! { "a": 1 }))).as_deref(), Some(r#"{"a":1}"#));
         assert_eq!(type_name(&Bson::Int64(1)), "long");
+    }
+
+    #[test]
+    fn without_tls_the_client_never_discovers_other_members() {
+        let local = |options: Vec<(&str, &str)>, host: &str| Target {
+            host: host.into(),
+            port: 27017,
+            database: None,
+            user: None,
+            password: None,
+            ssl_mode: None,
+            options: options.into_iter().map(|(k, v)| (k.to_owned(), v.to_owned())).collect(),
+        };
+        assert_eq!(options(&local(vec![], "localhost"), false, true).unwrap().direct_connection, Some(true));
+        for refused in [
+            local(vec![("replicaSet", "rs0")], "localhost"),
+            local(vec![("directConnection", "false")], "localhost"),
+            local(vec![], "localhost:1,localhost:2"),
+        ] {
+            assert!(options(&refused, false, true).is_err(), "{refused:?}");
+        }
+        // TLS exigé : la découverte reste possible, chiffrée.
+        assert_eq!(options(&local(vec![("replicaSet", "rs0")], "m1:1,m2:2"), true, false).unwrap().hosts.len(), 2);
     }
 
     #[test]
