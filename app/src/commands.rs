@@ -16,7 +16,7 @@ use crate::dto::{
     ActionPreviewDto, AgentDto, AssetContentDto, AuditEntryDto, ContainerActionPreviewDto, ContainerDto, EntryDto,
     EnvironmentDto, FileChangeDto, ForgeDto, IssueActionDto, IssueActionPreviewDto, IssueDto, IssueRefDto,
     IssueStartDto, IssueStartedDto, MergeRequestDto, MrActionDto, MrOutcomesDto, MrRefDto, NewIssueDto, OverviewDto,
-    SearchHitDto, SessionDto, TaskDto, TaskStatusDto, WorktreeRemovalDto,
+    SearchHitDto, SessionDto, TaskDto, TaskStatusDto, WorktreeCreationDto, WorktreeDto, WorktreeRemovalDto,
 };
 use crate::{now, AppState};
 
@@ -499,6 +499,82 @@ pub async fn start_issue_agent(
             state.agents.spawn(Path::new(&dir), None, Some(prompt), cols.clamp(20, 500), rows.clamp(5, 200))?;
         state.agents.rename(&agent_id(&agent.id)?, &issue_start::tab_name(&found))?;
         Ok(IssueStartedDto { agent_id: agent.id, fetched })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Dépôt principal désigné par l'interface : ni worktree, ni sous-dossier, ni dossier hors Git.
+fn main_repository(state: &AppState, raw: &str) -> CmdResult<String> {
+    let dir = project_dir(raw)?.to_string_lossy().into_owned();
+    let workspace = state.workspaces.resolve(&dir);
+    if workspace.project_root != dir || workspace.worktree.is_some() || !workspace.is_repository {
+        return Err("ce dossier n'est pas un dépôt principal".into());
+    }
+    Ok(dir)
+}
+
+/// Worktrees liés d'un dépôt, avec leur branche et leurs modifications en cours.
+#[tauri::command]
+pub async fn worktrees(app: tauri::AppHandle, repository: String) -> CmdResult<Vec<WorktreeDto>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let repository = main_repository(&state, &repository)?;
+        let found = state.worktrees.list(&repository).map_err(|e| e.to_string())?;
+        Ok(found
+            .into_iter()
+            .map(|w| {
+                let changes = if w.prunable { None } else { state.vcs.changes(&w.path).ok().map(|c| c.len()) };
+                WorktreeDto::new(w, &repository, changes)
+            })
+            .collect())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Ce qui empêche de créer le worktree : un nom de branche refusé, ou un dossier déjà là.
+fn creation_blocker(branch: &str, dir: &str) -> Option<String> {
+    if !issue_start::is_valid_branch(branch) {
+        return Some("nom de branche refusé".into());
+    }
+    Path::new(dir).exists().then(|| "ce dossier existe déjà".into())
+}
+
+/// Ce que « créer un worktree » ferait : dossier exact, bases proposées, et raison d'un refus.
+#[tauri::command]
+pub async fn prepare_worktree_creation(
+    app: tauri::AppHandle,
+    repository: String,
+    branch: String,
+) -> CmdResult<WorktreeCreationDto> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let repository = main_repository(&state, &repository)?;
+        let bases = state.worktrees.bases(&repository).map_err(|e| e.to_string())?;
+        let dir = issue_start::worktree_dir(&repository, branch.trim());
+        let blocker = if bases.is_empty() {
+            Some("aucune base origin/staging, origin/main ni origin/master dans ce dépôt".into())
+        } else {
+            creation_blocker(branch.trim(), &dir)
+        };
+        Ok(WorktreeCreationDto { repository, dir, bases, blocker })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Crée la branche et son worktree sur la base mise à jour. Renvoie `false` si la base locale a servi.
+#[tauri::command]
+pub async fn create_worktree(app: tauri::AppHandle, repository: String, branch: String, base: String) -> CmdResult<bool> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let repository = main_repository(&state, &repository)?;
+        let dir = issue_start::worktree_dir(&repository, &branch);
+        if let Some(blocker) = creation_blocker(&branch, &dir) {
+            return Err(blocker);
+        }
+        state.worktrees.create(&repository, &branch, &base, &dir).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?

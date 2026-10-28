@@ -13,7 +13,7 @@ use robiade_core::history::{EntryKind, SearchHit, SessionSummary, TokenUsage, Tr
 use robiade_core::pricing::{Estimate, PRICES_AS_OF};
 use robiade_core::stats::{self, AgentsOverview, Overview};
 use robiade_core::tasks::{Task, TaskStatus};
-use robiade_core::vcs::{ChangeKind, FileChange};
+use robiade_core::vcs::{ChangeKind, FileChange, LinkedWorktree};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Clone)]
@@ -534,6 +534,46 @@ pub struct IssueStartedDto {
     pub agent_id: String,
     /// La base a été mise à jour depuis origin ; sinon, la base locale a servi.
     pub fetched: bool,
+}
+
+/// Un worktree lié d'un dépôt, avec ce qui décide de sa suppression : modifications et verrou.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeDto {
+    pub path: String,
+    pub name: String,
+    pub repository: String,
+    /// `None` : tête détachée.
+    pub branch: Option<String>,
+    /// Fichiers modifiés ou non suivis ; `None` si le dossier est illisible ou disparu.
+    pub changes: Option<usize>,
+    pub locked: bool,
+    pub prunable: bool,
+}
+
+impl WorktreeDto {
+    pub fn new(w: LinkedWorktree, repository: &str, changes: Option<usize>) -> Self {
+        Self {
+            name: project::display_name(&w.path).to_owned(),
+            repository: repository.to_owned(),
+            changes,
+            branch: w.branch,
+            locked: w.locked,
+            prunable: w.prunable,
+            path: w.path,
+        }
+    }
+}
+
+/// Ce que « créer un worktree » ferait, montré avant de confirmer.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeCreationDto {
+    pub repository: String,
+    pub dir: String,
+    pub bases: Vec<String>,
+    /// Raison du refus ; `None` si la création est possible.
+    pub blocker: Option<String>,
 }
 
 /// Ce que « supprimer le worktree » ferait, montré avant de confirmer.
