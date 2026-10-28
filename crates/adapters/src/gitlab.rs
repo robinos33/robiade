@@ -1,11 +1,14 @@
-//! MR lues sur l'API REST de GitLab, instance configurée uniquement, avec le token du trousseau.
+//! MR et issues lues sur l'API REST de GitLab, instance configurée uniquement, avec le token du trousseau.
 //! Lecture seule : aucune requête autre que `GET` ne part d'ici.
 
 use std::sync::Mutex;
 use std::time::Duration;
 
 use rayon::prelude::*;
-use robiade_core::forge::{Approvals, Forge, ForgeError, MergeRequest, MrRef, MrState, PipelineStatus, GITLAB_HOST};
+use robiade_core::forge::{
+    is_project_path, Approvals, Forge, ForgeError, Issue, IssueRef, MergeRequest, MrRef, MrState, PipelineStatus,
+    GITLAB_HOST,
+};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 
@@ -133,6 +136,52 @@ impl Forge for GitLab {
         let found = self.single(&mr.project, mr.iid)?;
         to_domain(found).ok_or_else(|| ForgeError::Api("MR hors de l'instance configurée".into()))
     }
+
+    fn my_issues(&self) -> Result<Vec<Issue>, ForgeError> {
+        Ok(sorted_issues(self.get(&format!("/issues?scope=assigned_to_me&state=opened&per_page={PER_PAGE}"))?))
+    }
+
+    fn project_issues(&self, project: &str) -> Result<Vec<Issue>, ForgeError> {
+        if !is_project_path(project) {
+            return Err(ForgeError::NotFound);
+        }
+        let path = format!("/projects/{}/issues?state=opened&per_page={PER_PAGE}", project.replace('/', "%2F"));
+        Ok(sorted_issues(self.get(&path)?))
+    }
+}
+
+fn sorted_issues(listed: Vec<ApiIssue>) -> Vec<Issue> {
+    let mut issues: Vec<Issue> = listed.into_iter().filter_map(issue_to_domain).collect();
+    issues.sort_by_key(|i| std::cmp::Reverse(i.updated_at));
+    issues
+}
+
+#[derive(Deserialize)]
+struct ApiIssue {
+    title: String,
+    web_url: String,
+    updated_at: String,
+    #[serde(default)]
+    labels: Vec<String>,
+    #[serde(default)]
+    assignees: Vec<ApiUser>,
+    #[serde(default)]
+    due_date: Option<String>,
+    #[serde(default)]
+    merge_requests_count: u32,
+}
+
+fn issue_to_domain(i: ApiIssue) -> Option<Issue> {
+    Some(Issue {
+        issue: IssueRef::from_url(&i.web_url)?,
+        title: i.title,
+        labels: i.labels,
+        assignees: i.assignees.into_iter().map(|a| a.username).collect(),
+        updated_at: chrono::DateTime::parse_from_rfc3339(&i.updated_at).ok()?.timestamp_millis(),
+        web_url: i.web_url,
+        due_date: i.due_date,
+        merge_requests: i.merge_requests_count,
+    })
 }
 
 fn valid_username(name: &str) -> bool {
@@ -238,6 +287,20 @@ mod tests {
         assert_eq!(mr.pipeline, Some(PipelineStatus::Failed));
         assert!(mr.has_conflicts && mr.unresolved_discussions);
         assert_eq!(mr.updated_at, 1_793_022_220_062);
+    }
+
+    #[test]
+    fn reads_an_issue_published_as_a_work_item() {
+        let issue: ApiIssue = serde_json::from_str(
+            r#"{"iid":5021,"title":"Cache",
+                "web_url":"https://gitlab.example.com/shop/boutique/-/work_items/5021",
+                "updated_at":"2026-10-26T13:43:40Z","labels":["category::tech"],"assignees":[{"username":"robinos33"}],
+                "due_date":"2026-11-02","merge_requests_count":1}"#,
+        )
+        .unwrap();
+        let issue = issue_to_domain(issue).unwrap();
+        assert_eq!(issue.issue, IssueRef { project: "shop/boutique".into(), iid: 5021 });
+        assert_eq!((issue.assignees, issue.due_date.as_deref()), (vec!["robinos33".to_owned()], Some("2026-11-02")));
     }
 
     #[test]
