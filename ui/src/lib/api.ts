@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
-  Agent, AssetContent, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueStart, MrAction, MrOutcomes, MrRef, MrState, Overview, SearchHit, Session, Task, TaskStatus, WorktreeRemoval,
+  Agent, AssetContent, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, MrAction, MrOutcomes, MrRef, MrState, Overview, SearchHit, Session, Task, TaskStatus, WorktreeRemoval,
 } from './types';
 
 export const api = {
@@ -34,6 +34,9 @@ export const api = {
   mergeRequests: () => invoke<Forge>('merge_requests'),
   previewMrAction: (target: MrRef, action: MrAction) => invoke<ActionPreview>('preview_mr_action', { target, action }),
   runMrAction: (target: MrRef, action: MrAction) => invoke<string>('run_mr_action', { target, action }),
+  previewIssueAction: (target: MrRef, action: IssueAction) =>
+    invoke<IssueActionPreview>('preview_issue_action', { target, action }),
+  runIssueAction: (target: MrRef, action: IssueAction) => invoke<string>('run_issue_action', { target, action }),
   auditLog: () => invoke<AuditEntry[]>('audit_log'),
   prepareIssueStart: (projectRoot: string, issue: MrRef) =>
     invoke<IssueStart>('prepare_issue_start', { projectRoot, issue }),

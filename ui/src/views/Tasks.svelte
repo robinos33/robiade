@@ -3,12 +3,19 @@
   import { api } from '../lib/api';
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { ago } from '../lib/format';
-  import type { Issue, Task, TaskStatus } from '../lib/types';
+  import type { Issue, IssueAction, Task, TaskStatus } from '../lib/types';
   import Icon from '../components/Icon.svelte';
+  import IssueActionConfirm from '../components/IssueActionConfirm.svelte';
   import IssueStartDialog from '../components/IssueStartDialog.svelte';
 
   /** Issue sur laquelle démarrer un agent, avec le dépôt local de son projet. */
   let starting = $state<{ issue: Issue; root: string } | null>(null);
+  /** Action sur une issue, en attente de confirmation. */
+  let acting = $state<{ issue: Issue; action: IssueAction } | null>(null);
+  /** Une issue fermée ici reste affichée jusqu'à la prochaine lecture, pour pouvoir la rouvrir. */
+  function replaced(updated: Issue) {
+    issues = issues?.map((i) => (i.webUrl === updated.webUrl ? updated : i)) ?? null;
+  }
   /** Dépôt local du projet GitLab de l'issue, s'il est connu de Robiade. */
   const localRepo = (i: Issue) =>
     app.projects.find((p) => p.gitlabProject?.toLowerCase() === i.project.toLowerCase())?.root ?? null;
@@ -116,7 +123,7 @@
       {:else}
         <ul class="issues">
           {#each issues as i (i.webUrl)}
-            <li class="issue">
+            <li class="issue" class:closed={i.state === 'closed'}>
               <span class="ref mono">#{i.iid}</span>
               <div class="body">
                 <button class="t link" title="Ouvrir dans GitLab" onclick={() => void openUrl(i.webUrl)}>{i.title}</button>
@@ -131,7 +138,16 @@
               {#if i.dueDate}
                 <span class="due num" class:late={i.dueDate < today} title="Échéance">{i.dueDate}</span>
               {/if}
-              {#if localRepo(i)}
+              {#if i.state === 'opened'}
+                <button class="btn ghost act" title="Fermer l'issue sur GitLab, après confirmation" onclick={() => (acting = { issue: i, action: { kind: 'close' } })}>
+                  Fermer
+                </button>
+              {:else}
+                <button class="btn ghost act shown" title="Rouvrir l'issue sur GitLab, après confirmation" onclick={() => (acting = { issue: i, action: { kind: 'reopen' } })}>
+                  Rouvrir
+                </button>
+              {/if}
+              {#if localRepo(i) && i.state === 'opened'}
                 {@const root = localRepo(i) ?? ''}
                 <button class="btn ghost start" title="Worktree, branche et prompt à relire" onclick={() => (starting = { issue: i, root })}>
                   Démarrer un agent
@@ -146,6 +162,10 @@
     </div>
   </div>
 </section>
+
+{#if acting}
+  <IssueActionConfirm issue={acting.issue} action={acting.action} ondone={replaced} onclose={() => (acting = null)} />
+{/if}
 
 {#if starting}
   <IssueStartDialog issue={starting.issue} projectRoot={starting.root} onclose={() => (starting = null)} />
@@ -192,6 +212,7 @@
   .due { flex: none; font-size: 12px; color: var(--ink-2); }
   .due.late { color: var(--danger); }
   .error-text { color: var(--danger); }
-  .start { flex: none; height: 24px; padding: 0 8px; font-size: 12px; opacity: 0; }
-  .issue:hover .start, .issue:focus-within .start { opacity: 1; }
+  .start, .act { flex: none; height: 24px; padding: 0 8px; font-size: 12px; opacity: 0; }
+  .issue:hover .start, .issue:focus-within .start, .issue:hover .act, .issue:focus-within .act, .act.shown { opacity: 1; }
+  .closed .link { color: var(--ink-3); text-decoration: line-through; }
 </style>

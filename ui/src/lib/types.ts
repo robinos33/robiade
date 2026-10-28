@@ -157,6 +157,7 @@ export interface Issue {
   project: string;
   iid: number;
   title: string;
+  state: IssueState;
   labels: string[];
   assignees: string[];
   webUrl: string;
@@ -164,6 +165,21 @@ export interface Issue {
   /** `AAAA-MM-JJ`. */
   dueDate: string | null;
   mergeRequests: number;
+}
+
+export type IssueState = 'opened' | 'closed';
+
+export type IssueAction = { kind: 'close' } | { kind: 'reopen' };
+
+/** Issue relue sur GitLab et description de ce qui partira, produite par le domaine. */
+export interface IssueActionPreview {
+  project: string;
+  iid: number;
+  title: string;
+  state: IssueState;
+  assignees: string[];
+  labels: string[];
+  action: string;
 }
 
 export type MrAction =

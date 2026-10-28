@@ -157,9 +157,9 @@ const forge: Forge = {
 };
 
 const issues: Issue[] = [
-  { project: 'shop/boutique', iid: 230, title: 'Panier abandonné : e-mail de rappel après 24 h', labels: ['feature'], assignees: ['demo'], webUrl: `${GITLAB}/shop/boutique/-/issues/230`, updatedAt: NOW - 2 * 60 * MIN, dueDate: null, mergeRequests: 0 },
-  { project: 'shop/catalogue-api', iid: 41, title: 'Filtre par marque sur la recherche', labels: ['feature', 'api'], assignees: ['demo'], webUrl: `${GITLAB}/shop/catalogue-api/-/issues/41`, updatedAt: NOW - 20 * 60 * MIN, dueDate: '2026-11-06', mergeRequests: 0 },
-  { project: 'shop/facturation', iid: 19, title: 'Les avoirs doivent avoir une numérotation continue', labels: ['bug'], assignees: ['demo'], webUrl: `${GITLAB}/shop/facturation/-/issues/19`, updatedAt: NOW - 50 * 60 * MIN, dueDate: null, mergeRequests: 1 },
+  { project: 'shop/boutique', iid: 230, state: 'opened', title: 'Panier abandonné : e-mail de rappel après 24 h', labels: ['feature'], assignees: ['demo'], webUrl: `${GITLAB}/shop/boutique/-/issues/230`, updatedAt: NOW - 2 * 60 * MIN, dueDate: null, mergeRequests: 0 },
+  { project: 'shop/catalogue-api', iid: 41, state: 'opened', title: 'Filtre par marque sur la recherche', labels: ['feature', 'api'], assignees: ['demo'], webUrl: `${GITLAB}/shop/catalogue-api/-/issues/41`, updatedAt: NOW - 20 * 60 * MIN, dueDate: '2026-11-06', mergeRequests: 0 },
+  { project: 'shop/facturation', iid: 19, state: 'opened', title: 'Les avoirs doivent avoir une numérotation continue', labels: ['bug'], assignees: ['demo'], webUrl: `${GITLAB}/shop/facturation/-/issues/19`, updatedAt: NOW - 50 * 60 * MIN, dueDate: null, mergeRequests: 1 },
 ];
 
 const tasks: Task[] = [
