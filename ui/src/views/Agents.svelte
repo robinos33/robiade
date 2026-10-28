@@ -337,7 +337,7 @@
 </section>
 
 {#if active && viewed}
-  <AssetViewer agentId={active.id} asset={viewed} onclose={() => (viewing = null)} />
+  <AssetViewer agentId={active.id} asset={viewed} assets={active.assets} onnavigate={(path) => (viewing = path)} onclose={() => (viewing = null)} />
 {/if}
 
 <style>

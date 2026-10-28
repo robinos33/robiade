@@ -20,7 +20,18 @@
     img { max-width: 100%; }
   </style>`;
 
-  let { agentId, asset, onclose }: { agentId: string; asset: Asset; onclose: () => void } = $props();
+  let { agentId, asset, assets, onnavigate, onclose }: {
+    agentId: string;
+    asset: Asset;
+    /** Assets de l'agent, dans l'ordre de la liste : ← et → passent de l'un à l'autre. */
+    assets: Asset[];
+    onnavigate: (path: string) => void;
+    onclose: () => void;
+  } = $props();
+
+  const index = $derived(assets.findIndex((a) => a.path === asset.path));
+  const prev = $derived(index > 0 ? assets[index - 1] : undefined);
+  const next = $derived(index >= 0 && index < assets.length - 1 ? assets[index + 1] : undefined);
 
   let content = $state<AssetContent | null>(null);
   let error = $state<string | null>(null);
@@ -49,8 +60,11 @@
   });
 
   function onkeydown(e: KeyboardEvent) {
-    if (e.key !== 'Escape') return;
-    onclose();
+    if (e.metaKey || e.altKey || e.ctrlKey) return;
+    if (e.key === 'Escape') onclose();
+    else if (e.key === 'ArrowLeft' && prev) onnavigate(prev.path);
+    else if (e.key === 'ArrowRight' && next) onnavigate(next.path);
+    else return;
     e.preventDefault();
   }
 </script>
@@ -62,6 +76,13 @@
     <header>
       <h2 id="asset-title" class="ellipsis">{asset.name}</h2>
       <span class="mono muted ellipsis path selectable">{shortPath(asset.path, app.env?.home ?? '')}</span>
+      {#if assets.length > 1}
+        <div class="nav">
+          <button class="btn ghost icon" disabled={!prev} onclick={() => prev && onnavigate(prev.path)} title="Précédent (←)"><Icon name="prev" size={14} /></button>
+          <span class="muted num">{index + 1} / {assets.length}</span>
+          <button class="btn ghost icon" disabled={!next} onclick={() => next && onnavigate(next.path)} title="Suivant (→)"><Icon name="next" size={14} /></button>
+        </div>
+      {/if}
       {#if asset.kind === 'html' || asset.kind === 'markdown'}
         <button class="btn ghost" onclick={() => (source = !source)}>{source ? 'Rendu' : 'Source'}</button>
       {/if}
@@ -99,6 +120,7 @@
   .path { flex: 1; font-size: 12px; }
   .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .icon { padding: 0 6px; }
+  .nav { display: flex; align-items: center; gap: 2px; flex: none; font-size: 12px; }
   .body { flex: 1; min-height: 0; display: flex; background: var(--bg); }
   .center { margin: auto; }
   .image {
