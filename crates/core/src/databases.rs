@@ -91,6 +91,8 @@ pub enum DbError {
     InvalidVaultRef,
     #[error("service du trousseau invalide")]
     InvalidKeychainService,
+    #[error("mot de passe en clair refusé pour cette connexion (staging/prod ou hôte distant) : utilise le trousseau ou Vault")]
+    ClearSecretRefused,
     #[error("une connexion de production est toujours en lecture seule")]
     ProdIsReadOnly,
     #[error("hors dev, la connexion doit être chiffrée : retire `sslmode=disable|allow|prefer` (TLS exigé)")]
@@ -117,6 +119,8 @@ pub struct Connection {
     project_path: Option<String>,
     read_only: bool,
     fields: Vec<(Part, Source)>,
+    /// Secrets en clair écartés à la relecture : la connexion le dit au lieu d'échouer sans eux.
+    refused: Vec<Part>,
 }
 
 impl Connection {
@@ -145,12 +149,12 @@ impl Connection {
         if let Some(part) = Self::forbidden_literals(stage, &fields).next() {
             return Err(DbError::SecretInClear(part));
         }
-        Ok(Self { id, name: Self::valid_name(name)?, engine, stage, project_path, read_only, fields })
+        Ok(Self { id, name: Self::valid_name(name)?, engine, stage, project_path, read_only, fields, refused: vec![] })
     }
 
     /// Reconstitution depuis le stockage : les invariants ont été vérifiés à l'écriture, sauf ceux qui
     /// protègent, réimposés ici quoi que dise la ligne : la lecture seule de la production, et aucun
-    /// secret en clair hors dev local (un tel champ est écarté, la connexion échouera sans lui).
+    /// secret en clair hors dev local (un tel champ est écarté, et `usable` dit pourquoi).
     pub fn restore(
         id: ConnectionId,
         name: String,
@@ -160,9 +164,15 @@ impl Connection {
         read_only: bool,
         fields: Vec<(Part, Source)>,
     ) -> Self {
-        let forbidden: Vec<Part> = Self::forbidden_literals(stage, &fields).collect();
-        let fields = fields.into_iter().filter(|(part, _)| !forbidden.contains(part)).collect();
-        Self { id, name, engine, stage, project_path, read_only: read_only || stage == Stage::Prod, fields }
+        let refused: Vec<Part> = Self::forbidden_literals(stage, &fields).collect();
+        let fields = fields.into_iter().filter(|(part, _)| !refused.contains(part)).collect();
+        Self { id, name, engine, stage, project_path, read_only: read_only || stage == Stage::Prod, fields, refused }
+    }
+
+    /// Une connexion dont un secret en clair a été écarté ne se connecte pas : sans lui, l'échec
+    /// viendrait du serveur, sans dire que la cause est ici.
+    pub fn usable(&self) -> Result<(), DbError> {
+        if self.refused.is_empty() { Ok(()) } else { Err(DbError::ClearSecretRefused) }
     }
 
     /// Champs secrets saisis en clair alors que la connexion n'est pas une connexion dev vers la
@@ -499,8 +509,13 @@ mod tests {
             Connection::restore(ConnectionId("c".into()), "x".into(), Engine::Postgres, stage, None, true, fields)
         };
         assert_eq!(restore(Stage::Dev, "localhost").fields().len(), 2);
-        assert_eq!(restore(Stage::Prod, "localhost").fields(), [(Part::Host, literal("localhost"))]);
-        assert_eq!(restore(Stage::Dev, "db.dev.local").fields(), [(Part::Host, literal("db.dev.local"))]);
+        assert_eq!(restore(Stage::Dev, "localhost").usable(), Ok(()));
+        let prod = restore(Stage::Prod, "localhost");
+        assert_eq!(prod.fields(), [(Part::Host, literal("localhost"))]);
+        assert_eq!(prod.usable(), Err(DbError::ClearSecretRefused));
+        let remote = restore(Stage::Dev, "db.dev.local");
+        assert_eq!(remote.fields(), [(Part::Host, literal("db.dev.local"))]);
+        assert_eq!(remote.usable(), Err(DbError::ClearSecretRefused));
     }
 
     #[test]
