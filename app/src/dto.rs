@@ -533,6 +533,15 @@ pub struct MergeRequestDto {
     pub merge_status: String,
     pub pipeline: Option<&'static str>,
     pub wagon: bool,
+    pub approvals: Option<ApprovalsDto>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApprovalsDto {
+    pub required: u32,
+    pub left: u32,
+    pub by: Vec<String>,
 }
 
 impl From<MergeRequest> for MergeRequestDto {
@@ -559,6 +568,7 @@ impl From<MergeRequest> for MergeRequestDto {
                 PipelineStatus::Canceled => "canceled",
             }),
             wagon,
+            approvals: m.approvals.map(|a| ApprovalsDto { required: a.required, left: a.left, by: a.by }),
         }
     }
 }
