@@ -1,9 +1,37 @@
 <script lang="ts">
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { app } from '../lib/state.svelte';
+  import { api } from '../lib/api';
   import { ago } from '../lib/format';
-  import type { MergeRequest, PipelineStatus } from '../lib/types';
+  import type { AuditEntry, MergeRequest, MrAction, PipelineStatus } from '../lib/types';
   import MrBadge from '../components/MrBadge.svelte';
+  import MrActionConfirm from '../components/MrActionConfirm.svelte';
+
+  /** Action en attente de confirmation. */
+  let pending = $state<{ mr: MergeRequest; action: MrAction } | null>(null);
+  let audit = $state<AuditEntry[]>([]);
+  let showAudit = $state(false);
+
+  $effect(() => {
+    void app.forge; // relu après chaque rafraîchissement, donc après chaque action
+    if (showAudit) api.auditLog().then((a) => (audit = a), (e) => app.notify(String(e)));
+  });
+
+  const act = (mr: MergeRequest, action: MrAction) => (pending = { mr, action });
+
+  /** Actions proposées : le domaine revérifie tout au moment de l'aperçu. */
+  function actionsOf(mr: MergeRequest, mine: boolean): { label: string; action: MrAction }[] {
+    const out: { label: string; action: MrAction }[] = [{ label: 'Commenter', action: { kind: 'comment', body: '' } }];
+    if (!mine) return [...out, { label: 'Approuver', action: { kind: 'approve' } }];
+    if (mr.pipeline === 'failed' || mr.pipeline === 'canceled') out.push({ label: 'Relancer', action: { kind: 'retryPipeline' } });
+    if (mr.mergeStatus === 'need_rebase' || mr.hasConflicts) out.push({ label: 'Rebaser', action: { kind: 'rebase' } });
+    if (mr.state === 'draft') out.push({ label: 'Prête', action: { kind: 'markReady' } });
+    else out.push({ label: 'Draft', action: { kind: 'markDraft' } });
+    if (mr.state === 'opened' && mr.mergeStatus === 'mergeable') {
+      out.push({ label: mr.wagon ? 'Merger (sans squash)' : 'Merger', action: { kind: 'merge', expectedSha: mr.sha } });
+    }
+    return out;
+  }
 
   /** Libellés de `detailed_merge_status` ; une valeur inconnue s'affiche telle quelle. */
   const MERGE_STATUS: Record<string, string> = {
@@ -44,6 +72,7 @@
 </script>
 
 {#snippet row(mr: MergeRequest, showAuthor: boolean)}
+  {@const actions = actionsOf(mr, !showAuthor)}
   {@const sessions = app.sessionsOf(mr)}
   <li class="mr-row">
     <MrBadge url={mr.webUrl} state={mr.state} />
@@ -85,6 +114,11 @@
       {/if}
     </div>
     <span class="muted num when">{ago(mr.updatedAt, app.now)}</span>
+    <div class="actions">
+      {#each actions as a (a.label)}
+        <button class="btn ghost small" class:merge={a.action.kind === 'merge'} onclick={() => act(mr, a.action)}>{a.label}</button>
+      {/each}
+    </div>
   </li>
 {/snippet}
 
@@ -135,9 +169,33 @@
           {/each}
         </ul>
       </div>
+
+      <div class="block">
+        <button class="section-title toggle" onclick={() => (showAudit = !showAudit)}>
+          {showAudit ? '▾' : '▸'} Journal des actions envoyées
+        </button>
+        {#if showAudit}
+          <ul class="list audit">
+            {#each audit as e (`${e.at}-${e.target}-${e.action}`)}
+              <li>
+                <span class="muted num">{ago(e.at, app.now)}</span>
+                <span class="mono">{e.target}</span>
+                <span class="grow">{e.action}</span>
+                <span class:ok={e.outcome === 'ok'} class:ko={e.outcome !== 'ok'} title={e.outcome}>{e.outcome === 'ok' ? '✓' : `✕ ${e.outcome}`}</span>
+              </li>
+            {:else}
+              <li class="muted">Aucune action envoyée depuis Robiade.</li>
+            {/each}
+          </ul>
+        {/if}
+      </div>
     {/if}
   </div>
 </section>
+
+{#if pending}
+  <MrActionConfirm mr={pending.mr} action={pending.action} onclose={() => (pending = null)} />
+{/if}
 
 <style>
   .page { display: flex; flex-direction: column; min-height: 0; flex: 1; }
@@ -183,4 +241,13 @@
     border-left: 3px solid var(--danger); border-radius: var(--radius); background: var(--danger-soft);
   }
   code { font: 12px var(--mono); }
+  .actions { display: flex; gap: 4px; flex: none; opacity: 0; }
+  .mr-row:hover .actions, .mr-row:focus-within .actions { opacity: 1; }
+  .small { height: 24px; padding: 0 8px; font-size: 12px; }
+  .merge { color: var(--mr-merged); }
+  .toggle { border: 0; background: none; padding: 0; cursor: pointer; }
+  .audit li { display: flex; gap: 12px; align-items: baseline; padding: 4px 6px; font-size: 12.5px; }
+  .grow { flex: 1; min-width: 0; }
+  .ok { color: var(--ok); }
+  .ko { color: var(--danger); max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
