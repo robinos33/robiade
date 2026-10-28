@@ -4,6 +4,7 @@
   import { api } from '../lib/api';
   import type { DbConnection, DbProbe, DbTarget } from '../lib/types';
   import DbConnectionDialog from '../components/DbConnectionDialog.svelte';
+  import DbExplorer from '../components/DbExplorer.svelte';
   import StageBadge from '../components/StageBadge.svelte';
 
   let connections = $state<DbConnection[] | null>(null);
@@ -12,8 +13,10 @@
   let editing = $state<DbConnection | null | undefined>(undefined);
   let deleting = $state<string | null>(null);
   let results = $state<Record<string, { probe?: DbProbe; error?: string; busy?: boolean }>>({});
-  /** Production à tester : la cible est résolue et relue avant d'ouvrir une session. */
-  let confirming = $state<{ connection: DbConnection; target?: DbTarget; error?: string } | null>(null);
+  /** Production à tester ou ouvrir : la cible est résolue et relue avant d'ouvrir une session. */
+  let confirming = $state<{ connection: DbConnection; action: 'test' | 'open'; target?: DbTarget; error?: string } | null>(null);
+  /** Connexion ouverte dans l'explorateur. */
+  let exploring = $state<DbConnection | null>(null);
 
   async function refresh() {
     try {
@@ -57,14 +60,20 @@
     }
   }
 
-  async function askTest(c: DbConnection) {
-    if (c.stage !== 'prod') return void test(c);
-    confirming = { connection: c };
+  function explore(c: DbConnection) {
+    confirming = null;
+    exploring = c;
+  }
+
+  /** Hors production, l'action part aussitôt ; en production, après relecture de la cible. */
+  async function ask(c: DbConnection, action: 'test' | 'open') {
+    if (c.stage !== 'prod') return void (action === 'test' ? test(c) : explore(c));
+    confirming = { connection: c, action };
     try {
       const target = await api.resolveDbTarget(c.id);
-      if (confirming?.connection.id === c.id) confirming = { connection: c, target };
+      if (confirming?.connection.id === c.id) confirming = { connection: c, action, target };
     } catch (e) {
-      if (confirming?.connection.id === c.id) confirming = { connection: c, error: String(e) };
+      if (confirming?.connection.id === c.id) confirming = { connection: c, action, error: String(e) };
     }
   }
 
@@ -89,6 +98,9 @@
 
 <svelte:window {onkeydown} />
 
+{#if exploring}
+  <DbExplorer connection={exploring} onclose={() => (exploring = null)} />
+{:else}
 <section class="page">
   <header class="page-head" data-tauri-drag-region>
     <h1>Bases de données</h1>
@@ -113,7 +125,8 @@
             {#if c.readOnly}<span class="tag">lecture seule</span>{/if}
             <span class="mono muted ellipsis where" title={where(c)}>{where(c)}</span>
             <div class="actions">
-              <button class="btn small" class:danger={c.stage === 'prod'} disabled={r?.busy} onclick={() => void askTest(c)}>
+              <button class="btn small" class:danger={c.stage === 'prod'} onclick={() => void ask(c, 'open')}>Ouvrir</button>
+              <button class="btn small" disabled={r?.busy} onclick={() => void ask(c, 'test')}>
                 {r?.busy ? 'Test…' : 'Tester'}
               </button>
               <button class="btn small" onclick={() => (editing = c)}>Modifier</button>
@@ -136,6 +149,7 @@
     </ul>
   </div>
 </section>
+{/if}
 
 {#if editing !== undefined}
   <DbConnectionDialog connection={editing} onclose={() => (editing = undefined)} onsaved={() => void refresh()} />
@@ -157,7 +171,11 @@
       {#if confirming.error}<p class="error-text">{confirming.error}</p>{/if}
       <footer>
         <button class="btn" onclick={() => (confirming = null)}>Annuler</button>
-        <button class="btn danger" disabled={!confirming.target} onclick={() => void test(c)}>Tester sur la PRODUCTION</button>
+        {#if confirming.action === 'open'}
+          <button class="btn danger" disabled={!confirming.target} onclick={() => explore(c)}>Ouvrir la PRODUCTION</button>
+        {:else}
+          <button class="btn danger" disabled={!confirming.target} onclick={() => void test(c)}>Tester sur la PRODUCTION</button>
+        {/if}
       </footer>
     </div>
   </div>
