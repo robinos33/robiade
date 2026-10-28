@@ -260,7 +260,9 @@ abonnement, ce n'est pas ce que je paie. L'UI met les tokens en premier et le co
   - **Console** : éditeur CodeMirror 6 avec coloration par dialecte, exécution de la requête sous
     le curseur, résultat dans la même grille, historique local, **annulation** d'une requête
     longue (`pg_cancel_backend`, `KILL QUERY`, `killOp`, annulation de tâche Elastic) et délai
-    maximal par connexion.
+    maximal par connexion. Une instruction à la fois, validée aussitôt (pas de `BEGIN` dans la
+    console), résultat borné à 1000 lignes ; hors lecture seule, toute écriture est confirmée sur
+    l'instruction exacte et la cible.
   - **Langage de la console** : SQL pour Postgres et MariaDB. Pour Elastic, le format de la Dev
     Tools de Kibana (`GET /index/_search` + corps JSON). Pour Mongo, des commandes JSON
     (`find`, `aggregate` avec filtre et pipeline en JSON), **pas** de syntaxe `mongosh` : ce serait
@@ -465,7 +467,13 @@ Il liste les noms des secrets d'un montage et je choisis la clé de chaque champ
 sont lues qu'au moment de se connecter, en mémoire, et ne remontent jamais à l'interface.
 Conséquence : **la prod passe par les identifiants applicatifs**, donc en lecture-écriture côté
 serveur. Robiade impose la lecture seule (paramètre de session, vérifié sur le serveur au test),
-sans bascule possible en prod ; pour Mongo et Elastic, qui n'ont pas de lecture seule de session,
+sans bascule possible en prod. Ce paramètre arrête l'écriture accidentelle, mais le serveur accepte
+qu'une instruction de la session le désactive (`SET default_transaction_read_only = off`, constaté
+le 2026-10-28) : la console Postgres refuse donc avant envoi ce qui lève le verrou (`SET`/`RESET` de
+la lecture seule, `SET ROLE`, `SESSION AUTHORIZATION`, `set_config`, `RESET ALL`, `DISCARD ALL`,
+`DO`, `CALL`, `COPY … PROGRAM`, tout contrôle de transaction), relit l'état après chaque
+instruction et ferme la session s'il a changé. Une fonction côté serveur qui lèverait le verrou
+échappe à cette analyse ; pour Mongo et Elastic, qui n'ont pas de lecture seule de session,
 la console de prod sera limitée à une liste blanche de commandes de lecture. TLS exigé hors dev,
 certificat et nom d'hôte vérifiés ; en dev, clair accepté seulement vers localhost. **Risque
 résiduel assumé** : ces protections tiennent contre une fausse manipulation, pas contre un bug de
