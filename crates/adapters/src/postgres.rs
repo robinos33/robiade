@@ -224,6 +224,31 @@ impl DbSession for PgSession {
         Ok(executed(messages, &types, kind, max_rows))
     }
 
+    fn begin_write(&mut self, statement: &str) -> Result<u64, DbError> {
+        // Une seule instruction, vérifiée par le serveur avant d'ouvrir quoi que ce soit.
+        self.0.prepare(statement).map_err(unreachable)?;
+        // Seule cette transaction, ouverte ici et pas par le texte saisi, écrit : la session garde
+        // `default_transaction_read_only` pour tout le reste.
+        self.0.batch_execute("BEGIN TRANSACTION READ WRITE").map_err(unreachable)?;
+        let affected = self.0.simple_query(statement).map(|messages| {
+            messages.iter().find_map(|m| match m {
+                SimpleQueryMessage::CommandComplete(n) => Some(*n),
+                _ => None,
+            })
+        });
+        match affected {
+            Ok(n) => Ok(n.unwrap_or(0)),
+            Err(e) => {
+                let _ = self.0.batch_execute("ROLLBACK");
+                Err(unreachable(e))
+            }
+        }
+    }
+
+    fn finish_write(&mut self, commit: bool) -> Result<(), DbError> {
+        self.0.batch_execute(if commit { "COMMIT" } else { "ROLLBACK" }).map_err(unreachable)
+    }
+
     fn canceller(&self) -> Canceller {
         let token = self.0.cancel_token();
         Box::new(move || {
@@ -388,6 +413,41 @@ mod tests {
         writable.execute("CREATE TEMP TABLE t (a int)", StatementKind::Write, 10).unwrap();
         let inserted = writable.execute("INSERT INTO t VALUES (1), (2)", StatementKind::Write, 10).unwrap();
         assert_eq!(inserted.affected, Some(2));
+    }
+
+    /// Contre le même Postgres jetable : une modification de prod, comptée puis annulée ou validée.
+    #[test]
+    #[ignore = "demande un Postgres local jetable"]
+    fn writes_in_production_only_inside_its_own_transaction() {
+        let target = Target {
+            host: "127.0.0.1".into(),
+            port: std::env::var("ROBIADE_PG_TEST_PORT").unwrap().parse().unwrap(),
+            database: None,
+            user: Some("postgres".into()),
+            password: Some(std::env::var("ROBIADE_PG_TEST_PASSWORD").unwrap()),
+            ssl_mode: None,
+        };
+        let mut setup = connect(Engine::Postgres, &target, Tls::Disabled, false, TIMEOUT).unwrap();
+        setup.batch_execute("DROP TABLE IF EXISTS robiade_w; CREATE TABLE robiade_w (a int); INSERT INTO robiade_w VALUES (1), (2), (5)").unwrap();
+        let sum = |c: &mut Client| c.query_one("SELECT sum(a)::int FROM robiade_w", &[]).unwrap().get::<_, i32>(0);
+
+        // Session de prod : en lecture seule pour tout ce qui n'est pas la transaction ouverte ici.
+        let mut prod = Postgres.open(Engine::Postgres, &target, Tls::Disabled, true).unwrap();
+        assert_eq!(prod.begin_write("UPDATE robiade_w SET a = a + 10 WHERE a < 3").unwrap(), 2);
+        prod.finish_write(false).unwrap();
+        assert_eq!(sum(&mut setup), 8, "annulée : rien n'a changé");
+        assert!(prod.read_only().unwrap());
+
+        assert_eq!(prod.begin_write("INSERT INTO robiade_w SELECT a FROM robiade_w WHERE a = 5").unwrap(), 1);
+        prod.finish_write(true).unwrap();
+        assert_eq!(sum(&mut setup), 13, "validée");
+        assert!(prod.read_only().unwrap(), "la session revient en lecture seule");
+        assert!(prod.execute("DELETE FROM robiade_w", StatementKind::Write, 10).is_err());
+
+        // Un échec annule la transaction : la session reste utilisable et en lecture seule.
+        assert!(prod.begin_write("UPDATE robiade_w SET a = 1 / 0 WHERE a = 5").is_err());
+        assert!(prod.read_only().unwrap());
+        setup.batch_execute("DROP TABLE robiade_w").unwrap();
     }
 
     #[test]

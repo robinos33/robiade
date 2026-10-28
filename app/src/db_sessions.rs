@@ -112,6 +112,12 @@ mod tests {
         fn canceller(&self) -> Canceller {
             Box::new(|| Ok(()))
         }
+        fn begin_write(&mut self, _: &str) -> Result<u64, DbError> {
+            Ok(0)
+        }
+        fn finish_write(&mut self, _: bool) -> Result<(), DbError> {
+            Ok(())
+        }
     }
 
     fn idle() -> OpenSession {

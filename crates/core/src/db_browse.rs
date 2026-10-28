@@ -332,6 +332,11 @@ pub trait DbSession: Send {
     fn execute(&mut self, statement: &str, kind: StatementKind, max_rows: usize) -> Result<Executed, DbError>;
     /// De quoi annuler la requête en cours depuis un autre fil, pendant que la session est occupée.
     fn canceller(&self) -> Canceller;
+    /// Ouvre une transaction en écriture, y exécute `statement` (admis en `ProdWrite`) et la
+    /// laisse ouverte : rend le nombre de lignes touchées. En cas d'échec, tout est annulé.
+    fn begin_write(&mut self, statement: &str) -> Result<u64, DbError>;
+    /// Valide ou annule la transaction ouverte par `begin_write`.
+    fn finish_write(&mut self, commit: bool) -> Result<(), DbError>;
 }
 
 /// Demande au serveur d'interrompre la requête en cours de la session.
