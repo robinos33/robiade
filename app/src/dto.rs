@@ -5,6 +5,7 @@ use robiade_core::assets::{Asset, AssetKind};
 use robiade_core::containers::{Container, ContainerState};
 use robiade_core::databases::{Connection, Engine, Part, Probe, Source, Stage, Target, VaultRef};
 use robiade_core::db_browse::{Cell, Column, Cursor, Filter, FilterOp, Page, PageRequest, Relation, RelationKind, Sort};
+use robiade_core::db_console::{HistoryEntry, Outcome};
 use robiade_core::forge::{
     Issue, IssueRef, IssueState, MergeRequest, MrOutcomes, MrRef, MrState, PipelineStatus, GITLAB_HOST,
 };
@@ -1318,6 +1319,52 @@ impl From<Page> for PageDto {
             rows: p.rows.into_iter().map(|row| row.into_iter().map(cell).collect()).collect(),
             next: p.next.map(CursorDto::from),
         }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsoleResultDto {
+    pub columns: Vec<ColumnDto>,
+    pub rows: Vec<Vec<Option<CellDto>>>,
+    pub truncated: bool,
+    pub affected: Option<u64>,
+    pub elapsed_ms: u64,
+}
+
+impl ConsoleResultDto {
+    pub fn new(o: Outcome, elapsed_ms: u64) -> Self {
+        let cell = |c: Option<Cell>| c.map(|c| CellDto { text: c.text, truncated: c.truncated });
+        Self {
+            columns: o.columns.into_iter().map(ColumnDto::from).collect(),
+            rows: o.rows.into_iter().map(|row| row.into_iter().map(cell).collect()).collect(),
+            truncated: o.truncated,
+            affected: o.affected,
+            elapsed_ms,
+        }
+    }
+}
+
+/// Ce que la console reçoit : une écriture à confirmer, ou le résultat.
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum ConsoleReplyDto {
+    #[serde(rename_all = "camelCase")]
+    Confirm { statement: String, connection: String, stage: StageDto, target: String },
+    #[serde(rename_all = "camelCase")]
+    Done { statement: String, result: ConsoleResultDto },
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsoleHistoryDto {
+    pub sql: String,
+    pub at: i64,
+}
+
+impl From<HistoryEntry> for ConsoleHistoryDto {
+    fn from(h: HistoryEntry) -> Self {
+        Self { sql: h.sql, at: h.at }
     }
 }
 

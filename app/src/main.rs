@@ -19,6 +19,7 @@ use robiade_adapters::sqlite_agents::SqliteAgentJournal;
 use robiade_adapters::postgres::Postgres;
 use robiade_adapters::sqlite_audit::SqliteAuditLog;
 use robiade_adapters::sqlite_connections::SqliteConnectionRepository;
+use robiade_adapters::sqlite_console_history::SqliteConsoleHistory;
 use robiade_adapters::sqlite_search::SearchIndex;
 use robiade_adapters::vault::VaultKv;
 use robiade_adapters::workspace::WorkspaceResolver;
@@ -50,6 +51,7 @@ pub struct AppState {
     pub databases: Arc<dyn DatabaseProbe>,
     pub browser: Arc<dyn DatabaseBrowser>,
     pub db_sessions: db_sessions::DbSessions,
+    pub console_history: SqliteConsoleHistory,
     /// Fermeture confirmée dans l'interface malgré des agents au travail.
     pub quit_confirmed: AtomicBool,
 }
@@ -166,6 +168,7 @@ fn main() {
                 databases: Arc::new(Postgres),
                 browser: Arc::new(Postgres),
                 db_sessions: db_sessions::DbSessions::default(),
+                console_history: SqliteConsoleHistory::open(&data_dir.join("robiade.db"))?,
                 quit_confirmed: AtomicBool::new(false),
             });
             Ok(())
@@ -231,6 +234,9 @@ fn main() {
             commands::open_db,
             commands::close_db,
             commands::db_page,
+            commands::run_db_statement,
+            commands::cancel_db_statement,
+            commands::db_console_history,
             commands::merge_request_outcomes,
             commands::merge_request_states,
             commands::quit,

@@ -7,6 +7,7 @@ use robiade_adapters::keychain;
 use robiade_core::containers::{Container, ContainerAction, ContainerId};
 use robiade_core::databases::{Connection, ConnectionId, ConnectionRepository, Part, Source, Target};
 use robiade_core::db_browse::{page, page_query, PageRequest, TableRef};
+use robiade_core::db_console::{self, ConsoleHistory, StatementKind};
 use robiade_core::merge_actions::AuditEntry;
 use robiade_core::forge::{IssueRef, MrRef};
 use robiade_core::issue_start;
@@ -18,13 +19,14 @@ use secrecy::ExposeSecret;
 use tauri::{Manager, State};
 
 use crate::dto::{
-    ActionPreviewDto, AgentDto, AssetContentDto, AuditEntryDto, ContainerActionPreviewDto, ContainerDto,
-    DbConnectionDto, DbConnectionInputDto, DbOverviewDto, DbProbeDto, DbTargetDto, EntryDto, EnvironmentDto,
+    ActionPreviewDto, AgentDto, AssetContentDto, AuditEntryDto, ConsoleHistoryDto, ConsoleReplyDto, ConsoleResultDto,
+    ContainerActionPreviewDto, ContainerDto, DbConnectionDto, DbConnectionInputDto, DbOverviewDto, DbProbeDto, DbTargetDto, EntryDto, EnvironmentDto,
     FileChangeDto, ForgeDto, IssueActionDto, IssueActionPreviewDto, IssueDto, IssueRefDto, IssueStartDto,
     IssueStartedDto, MergeRequestDto, MrActionDto, MrOutcomesDto, MrRefDto, NewIssueDto, OverviewDto, PageDto,
     PageRequestDto, RelationDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto, WorktreeCreationDto, WorktreeDto,
     WorktreeRemovalDto,
 };
+use crate::db_sessions::OpenSession;
 use crate::{now, AppState};
 
 type CmdResult<T> = Result<T, String>;
@@ -873,6 +875,9 @@ pub fn delete_db_connection(state: State<AppState>, id: String) -> CmdResult<()>
     let deleted = state.connections.delete(&ConnectionId(id.clone())).map_err(|e| e.to_string());
     // Après la suppression : une ouverture qui relirait encore la connexion verrait sa génération périmée.
     state.db_sessions.close(&id);
+    if deleted.is_ok() {
+        state.console_history.forget(&id).map_err(|e| e.to_string())?;
+    }
     deleted
 }
 
@@ -966,6 +971,7 @@ pub async fn open_db(app: tauri::AppHandle, id: String, database: Option<String>
             target.database = Some(database);
         }
         let tls = target.tls(connection.stage()).map_err(|e| e.to_string())?;
+        let label = target_label(&target);
         let mut session = state
             .browser
             .open(connection.engine(), &target, tls, connection.read_only())
@@ -980,7 +986,7 @@ pub async fn open_db(app: tauri::AppHandle, id: String, database: Option<String>
             relations: session.relations().map_err(|e| e.to_string())?.into_iter().map(RelationDto::from).collect(),
             read_only,
         };
-        state.db_sessions.insert(&id, generation, session)?;
+        state.db_sessions.insert(&id, generation, OpenSession::new(session, read_only, label))?;
         Ok(overview)
     })
     .await
@@ -1005,7 +1011,7 @@ pub async fn db_page(
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
         let shared = state.db_sessions.get(&id)?;
-        let mut session = shared.lock().unwrap_or_else(|e| e.into_inner());
+        let mut session = shared.lock();
         let shape = session.describe(&TableRef { schema, name }).map_err(|e| e.to_string())?;
         let query = page_query(&shape, &PageRequest::from(request)).map_err(|e| e.to_string())?;
         let rows = session.fetch(&query).map_err(|e| e.to_string())?;
@@ -1013,6 +1019,77 @@ pub async fn db_page(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+fn target_label(t: &Target) -> String {
+    let user = t.user.as_deref().map(|u| format!("{u}@")).unwrap_or_default();
+    let database = t.database.as_deref().map(|d| format!("/{d}")).unwrap_or_default();
+    format!("{user}{}:{}{database}", t.host, t.port)
+}
+
+/// Exécute l'instruction sous le curseur (position de l'éditeur, en unités UTF-16), ou à défaut le
+/// texte entier, qui doit alors tenir en une instruction : c'est ce qu'envoie une sélection, et ce
+/// que renvoie une confirmation. Une écriture sur une connexion qui le permet revient d'abord à
+/// confirmer, avec l'instruction exacte.
+#[tauri::command]
+pub async fn run_db_statement(
+    app: tauri::AppHandle,
+    id: String,
+    text: String,
+    cursor: Option<usize>,
+    confirmed: bool,
+) -> CmdResult<ConsoleReplyDto> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let statement = match cursor {
+            Some(c) => db_console::statement_at(&text, db_console::byte_offset(&text, c)),
+            None => db_console::single_statement(&text),
+        }
+        .map_err(|e| e.to_string())?
+        .to_owned();
+        let shared = state.db_sessions.get(&id)?;
+        let kind = db_console::check(&statement, shared.read_only).map_err(|e| e.to_string())?;
+        if kind == StatementKind::Write && !shared.read_only && !confirmed {
+            let connection = state.connections.get(&ConnectionId(id)).map_err(|e| e.to_string())?;
+            return Ok(ConsoleReplyDto::Confirm {
+                statement,
+                connection: connection.name().to_owned(),
+                stage: connection.stage().into(),
+                target: shared.target.clone(),
+            });
+        }
+        if let Err(e) = state.console_history.record(&id, &statement, now()) {
+            eprintln!("historique de la console non enregistré : {e}");
+        }
+        let mut session = shared.lock();
+        let started = std::time::Instant::now();
+        let executed = session.execute(&statement, kind, db_console::ROWS_MAX);
+        let elapsed_ms = started.elapsed().as_millis() as u64;
+        // Le serveur accepte qu'une instruction lève la lecture seule de la session : le domaine
+        // refuse ce qu'il reconnaît, et ceci rattrape le reste en relisant l'état.
+        if shared.read_only && !session.read_only().unwrap_or(false) {
+            drop(session);
+            state.db_sessions.close(&id);
+            return Err("la session n'était plus en lecture seule : elle est fermée, rouvre la connexion".into());
+        }
+        let result = ConsoleResultDto::new(db_console::outcome(executed.map_err(|e| e.to_string())?), elapsed_ms);
+        Ok(ConsoleReplyDto::Done { statement, result })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Interrompt la requête en cours de la connexion, sans attendre qu'elle rende la main.
+#[tauri::command]
+pub async fn cancel_db_statement(app: tauri::AppHandle, id: String) -> CmdResult<()> {
+    tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().db_sessions.get(&id)?.cancel())
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub fn db_console_history(state: State<AppState>, id: String) -> CmdResult<Vec<ConsoleHistoryDto>> {
+    Ok(state.console_history.recent(&id).map_err(|e| e.to_string())?.into_iter().map(ConsoleHistoryDto::from).collect())
 }
 
 #[cfg(test)]
