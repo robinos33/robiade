@@ -109,6 +109,14 @@ pub enum DbError {
     InvalidCursor,
     #[error("connexion introuvable")]
     NotFound,
+    #[error("aucune instruction à exécuter")]
+    NoStatement,
+    #[error("une seule instruction à la fois : sélectionne-la, ou place le curseur dedans")]
+    MultipleStatements,
+    #[error("pas de contrôle de transaction dans la console : chaque instruction part seule et est validée aussitôt")]
+    TransactionControl,
+    #[error("refusé sur une connexion en lecture seule : {0}")]
+    ReadOnlyGuard(&'static str),
     #[error("{0} : pas encore pris en charge")]
     Unsupported(&'static str),
     #[error("{0}")]
