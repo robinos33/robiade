@@ -173,6 +173,17 @@ pub fn spawn_agent(
     state.agents.spawn(&cwd, resume, None, cols.clamp(20, 500), rows.clamp(5, 200))
 }
 
+/// Redémarre un agent sur sa session ; en tâche de fond, l'arrêt du process peut prendre un instant.
+#[tauri::command]
+pub async fn restart_agent(app: tauri::AppHandle, id: String, cols: u16, rows: u16) -> CmdResult<AgentDto> {
+    let id = agent_id(&id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().agents.restart(&id, cols.clamp(20, 500), rows.clamp(5, 200))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub fn write_agent(state: State<AppState>, id: String, data: String) -> CmdResult<()> {
     state.agents.process(&agent_id(&id)?)?.write(data.as_bytes())

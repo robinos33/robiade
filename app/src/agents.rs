@@ -222,6 +222,29 @@ impl AgentRegistry {
         Ok(())
     }
 
+    /// Arrête le process puis reprend la même session dans le même dossier : c'est ainsi qu'un agent
+    /// passe sur une nouvelle version de Claude Code (« Restart to update »). L'onglet garde son nom.
+    pub fn restart(self: &Arc<Self>, id: &AgentId, cols: u16, rows: u16) -> Result<AgentDto, String> {
+        let (process, session, path) = {
+            let live = self.live.lock().map_err(|e| e.to_string())?;
+            let entry = live.get(id).ok_or("agent inconnu")?;
+            (entry.process.clone(), entry.agent.session_id().to_owned(), entry.agent.project_path().to_owned())
+        };
+        let session = AgentId::parse(&session).map_err(|e| e.to_string())?;
+        if let Some(process) = process {
+            process.kill();
+            // La reprise remplace l'onglet terminé : attendre que la sortie du process soit constatée.
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while self.live.lock().map_err(|e| e.to_string())?.get(id).is_some_and(|l| l.process.is_some()) {
+                if std::time::Instant::now() > deadline {
+                    return Err("l'agent ne s'est pas arrêté".into());
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+        }
+        self.spawn(Path::new(&path), Some(session), None, cols, rows)
+    }
+
     /// Ferme l'onglet d'un agent terminé ; sa session reste dans l'historique.
     pub fn forget(&self, id: &AgentId) -> Result<(), String> {
         {
