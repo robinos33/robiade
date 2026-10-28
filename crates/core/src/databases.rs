@@ -99,6 +99,14 @@ pub enum DbError {
     TlsRequired,
     #[error("`sslmode=disable` n'est accepté que vers localhost : ailleurs, le mot de passe passerait en clair")]
     ClearTextOffLocalhost,
+    #[error("colonne ou table inconnue : {0}")]
+    UnknownColumn(String),
+    #[error("trop de filtres (10 au plus)")]
+    TooManyFilters,
+    #[error("un filtre « contient » demande une valeur")]
+    EmptyFilter,
+    #[error("curseur de pagination invalide : recharge la table")]
+    InvalidCursor,
     #[error("connexion introuvable")]
     NotFound,
     #[error("{0} : pas encore pris en charge")]
