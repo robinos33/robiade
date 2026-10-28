@@ -19,3 +19,7 @@ secrecy = "0.10.3"
 bollard = { version = "0.21.1", default-features = false, features = ["pipe"] }
 futures-util = { version = "0.3", default-features = false }
 tokio = { version = "1", features = ["rt-multi-thread"] }
+# Client Postgres synchrone, TLS du système (Security.framework), sans OpenSSL.
+postgres = "0.19.14"
+postgres-native-tls = "0.5.3"
+native-tls = "0.2.18"
