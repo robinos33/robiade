@@ -3,6 +3,7 @@
 use robiade_core::agents::{Agent, AgentStatus, Gauges, Level};
 use robiade_core::assets::{Asset, AssetKind};
 use robiade_core::containers::{Container, ContainerState};
+use robiade_core::databases::{Connection, Engine, Part, Probe, Source, Stage, Target, VaultRef};
 use robiade_core::forge::{
     Issue, IssueRef, IssueState, MergeRequest, MrOutcomes, MrRef, MrState, PipelineStatus, GITLAB_HOST,
 };
@@ -926,6 +927,216 @@ pub struct ContainerActionPreviewDto {
     pub action: &'static str,
     /// Raison du refus ; `None` si l'action est possible.
     pub blocker: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub enum EngineDto {
+    Postgres,
+    Mariadb,
+    Mongo,
+    Elasticsearch,
+}
+
+impl From<Engine> for EngineDto {
+    fn from(e: Engine) -> Self {
+        match e {
+            Engine::Postgres => Self::Postgres,
+            Engine::MariaDb => Self::Mariadb,
+            Engine::Mongo => Self::Mongo,
+            Engine::Elasticsearch => Self::Elasticsearch,
+        }
+    }
+}
+
+impl From<EngineDto> for Engine {
+    fn from(e: EngineDto) -> Self {
+        match e {
+            EngineDto::Postgres => Self::Postgres,
+            EngineDto::Mariadb => Self::MariaDb,
+            EngineDto::Mongo => Self::Mongo,
+            EngineDto::Elasticsearch => Self::Elasticsearch,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub enum StageDto {
+    Dev,
+    Staging,
+    Prod,
+}
+
+impl From<Stage> for StageDto {
+    fn from(s: Stage) -> Self {
+        match s {
+            Stage::Dev => Self::Dev,
+            Stage::Staging => Self::Staging,
+            Stage::Prod => Self::Prod,
+        }
+    }
+}
+
+impl From<StageDto> for Stage {
+    fn from(s: StageDto) -> Self {
+        match s {
+            StageDto::Dev => Self::Dev,
+            StageDto::Staging => Self::Staging,
+            StageDto::Prod => Self::Prod,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub enum PartDto {
+    Url,
+    Host,
+    Port,
+    Database,
+    User,
+    Password,
+}
+
+impl From<Part> for PartDto {
+    fn from(p: Part) -> Self {
+        match p {
+            Part::Url => Self::Url,
+            Part::Host => Self::Host,
+            Part::Port => Self::Port,
+            Part::Database => Self::Database,
+            Part::User => Self::User,
+            Part::Password => Self::Password,
+        }
+    }
+}
+
+impl From<PartDto> for Part {
+    fn from(p: PartDto) -> Self {
+        match p {
+            PartDto::Url => Self::Url,
+            PartDto::Host => Self::Host,
+            PartDto::Port => Self::Port,
+            PartDto::Database => Self::Database,
+            PartDto::User => Self::User,
+            PartDto::Password => Self::Password,
+        }
+    }
+}
+
+/// D'où vient la valeur d'un champ. Seul `literal` porte une valeur, jamais pour un champ secret.
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum SourceDto {
+    Literal { value: String },
+    Keychain { service: String },
+    Vault { mount: String, path: String, key: String },
+}
+
+impl From<&Source> for SourceDto {
+    fn from(s: &Source) -> Self {
+        match s {
+            Source::Literal(value) => Self::Literal { value: value.clone() },
+            Source::Keychain(service) => Self::Keychain { service: service.clone() },
+            Source::Vault(r) => Self::Vault { mount: r.mount.clone(), path: r.path.clone(), key: r.key.clone() },
+        }
+    }
+}
+
+impl From<SourceDto> for Source {
+    fn from(s: SourceDto) -> Self {
+        match s {
+            SourceDto::Literal { value } => Self::Literal(value),
+            SourceDto::Keychain { service } => Self::Keychain(service),
+            SourceDto::Vault { mount, path, key } => Self::Vault(VaultRef { mount, path, key }),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct FieldDto {
+    pub part: PartDto,
+    pub source: SourceDto,
+}
+
+/// Une connexion telle que le formulaire l'envoie ; `id` absent pour une création.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbConnectionInputDto {
+    pub id: Option<String>,
+    pub name: String,
+    pub engine: EngineDto,
+    pub stage: StageDto,
+    pub project_path: Option<String>,
+    pub read_only: bool,
+    pub fields: Vec<FieldDto>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbConnectionDto {
+    pub id: String,
+    pub name: String,
+    pub engine: EngineDto,
+    pub stage: StageDto,
+    pub project_path: Option<String>,
+    pub read_only: bool,
+    pub fields: Vec<FieldDto>,
+}
+
+impl From<&Connection> for DbConnectionDto {
+    fn from(c: &Connection) -> Self {
+        Self {
+            id: c.id().0.clone(),
+            name: c.name().to_owned(),
+            engine: c.engine().into(),
+            stage: c.stage().into(),
+            project_path: c.project_path().map(str::to_owned),
+            read_only: c.read_only(),
+            fields: c.fields().iter().map(|(p, s)| FieldDto { part: (*p).into(), source: s.into() }).collect(),
+        }
+    }
+}
+
+/// Où une connexion mène, valeurs résolues, sans le mot de passe : de quoi relire la cible.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbTargetDto {
+    pub host: String,
+    pub port: u16,
+    pub database: Option<String>,
+    pub user: Option<String>,
+    pub ssl_mode: Option<String>,
+}
+
+impl From<&Target> for DbTargetDto {
+    fn from(t: &Target) -> Self {
+        Self {
+            host: t.host.clone(),
+            port: t.port,
+            database: t.database.clone(),
+            user: t.user.clone(),
+            ssl_mode: t.ssl_mode.clone(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbProbeDto {
+    pub target: DbTargetDto,
+    pub server_version: String,
+    pub user: String,
+    pub database: String,
+    pub read_only: bool,
+}
+
+impl DbProbeDto {
+    pub fn new(target: &Target, p: Probe) -> Self {
+        Self { target: target.into(), server_version: p.server_version, user: p.user, database: p.database, read_only: p.read_only }
+    }
 }
 
 #[cfg(test)]

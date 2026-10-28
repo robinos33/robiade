@@ -15,12 +15,16 @@ use robiade_adapters::docker::DockerEngine;
 use robiade_adapters::git::GitCli;
 use robiade_adapters::gitlab::GitLab;
 use robiade_adapters::sqlite_agents::SqliteAgentJournal;
+use robiade_adapters::postgres::Postgres;
 use robiade_adapters::sqlite_audit::SqliteAuditLog;
+use robiade_adapters::sqlite_connections::SqliteConnectionRepository;
 use robiade_adapters::sqlite_search::SearchIndex;
+use robiade_adapters::vault::VaultKv;
 use robiade_adapters::workspace::WorkspaceResolver;
 use robiade_adapters::sqlite_tasks::SqliteTaskRepository;
 use robiade_adapters::{backup, hooks, shell_env};
 use robiade_core::containers::Containers;
+use robiade_core::databases::{DatabaseProbe, Vault};
 use robiade_core::forge::Forge;
 use robiade_core::merge_actions::AuditLog;
 use robiade_core::vcs::{WorkingTree, Worktrees};
@@ -39,6 +43,9 @@ pub struct AppState {
     pub audit: Arc<dyn AuditLog>,
     pub docker: Arc<dyn Containers>,
     pub log_streams: containers::LogStreams,
+    pub connections: SqliteConnectionRepository,
+    pub vault: Arc<dyn Vault>,
+    pub databases: Arc<dyn DatabaseProbe>,
     /// Fermeture confirmée dans l'interface malgré des agents au travail.
     pub quit_confirmed: AtomicBool,
 }
@@ -144,6 +151,9 @@ fn main() {
                 audit: Arc::new(SqliteAuditLog::open(&data_dir.join("robiade.db"))?),
                 log_streams: containers::LogStreams::new(app.handle().clone(), docker.clone()),
                 docker,
+                connections: SqliteConnectionRepository::open(&data_dir.join("robiade.db"))?,
+                vault: Arc::new(VaultKv::new(home.clone())),
+                databases: Arc::new(Postgres),
                 quit_confirmed: AtomicBool::new(false),
             });
             Ok(())
@@ -198,6 +208,13 @@ fn main() {
             commands::run_container_action,
             commands::follow_container_logs,
             commands::stop_container_logs,
+            commands::db_connections,
+            commands::save_db_connection,
+            commands::delete_db_connection,
+            commands::vault_paths,
+            commands::vault_keys,
+            commands::resolve_db_target,
+            commands::test_db_connection,
             commands::merge_request_outcomes,
             commands::merge_request_states,
             commands::quit,

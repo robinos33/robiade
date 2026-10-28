@@ -3,17 +3,21 @@
 use std::path::{Path, PathBuf};
 
 use robiade_core::agents::AgentId;
+use robiade_adapters::keychain;
 use robiade_core::containers::{Container, ContainerAction, ContainerId};
+use robiade_core::databases::{Connection, ConnectionId, ConnectionRepository, Source, Target};
 use robiade_core::merge_actions::AuditEntry;
 use robiade_core::forge::{IssueRef, MrRef};
 use robiade_core::issue_start;
 use robiade_core::history::{SessionSearch, TranscriptReader};
 use robiade_core::stats;
 use robiade_core::tasks::{Task, TaskId, TaskRepository};
+use secrecy::ExposeSecret;
 use tauri::{Manager, State};
 
 use crate::dto::{
-    ActionPreviewDto, AgentDto, AssetContentDto, AuditEntryDto, ContainerActionPreviewDto, ContainerDto, EntryDto,
+    ActionPreviewDto, AgentDto, AssetContentDto, AuditEntryDto, ContainerActionPreviewDto, ContainerDto, DbConnectionDto,
+    DbConnectionInputDto, DbProbeDto, DbTargetDto, EntryDto,
     EnvironmentDto, FileChangeDto, ForgeDto, IssueActionDto, IssueActionPreviewDto, IssueDto, IssueRefDto,
     IssueStartDto, IssueStartedDto, MergeRequestDto, MrActionDto, MrOutcomesDto, MrRefDto, NewIssueDto, OverviewDto,
     SearchHitDto, SessionDto, TaskDto, TaskStatusDto, WorktreeCreationDto, WorktreeDto, WorktreeRemovalDto,
@@ -762,4 +766,107 @@ pub fn quit(app: tauri::AppHandle, state: State<AppState>) {
     state.quit_confirmed.store(true, std::sync::atomic::Ordering::SeqCst);
     state.agents.kill_all();
     app.exit(0);
+}
+
+#[tauri::command]
+pub fn db_connections(state: State<AppState>) -> CmdResult<Vec<DbConnectionDto>> {
+    Ok(state.connections.all().map_err(|e| e.to_string())?.iter().map(DbConnectionDto::from).collect())
+}
+
+/// Crée ou remplace une connexion. Les règles (production en lecture seule, aucun secret en
+/// clair) sont celles du domaine : le formulaire ne fait que les afficher.
+#[tauri::command]
+pub fn save_db_connection(state: State<AppState>, connection: DbConnectionInputDto) -> CmdResult<DbConnectionDto> {
+    let id = match connection.id {
+        Some(id) => state.connections.get(&ConnectionId(id)).map_err(|e| e.to_string())?.id().clone(),
+        None => ConnectionId(uuid::Uuid::new_v4().to_string()),
+    };
+    let fields = connection.fields.into_iter().map(|f| (f.part.into(), f.source.into())).collect();
+    let saved = Connection::create(
+        id,
+        &connection.name,
+        connection.engine.into(),
+        connection.stage.into(),
+        connection.project_path,
+        connection.read_only,
+        fields,
+    )
+    .map_err(|e| e.to_string())?;
+    state.connections.save(&saved).map_err(|e| e.to_string())?;
+    Ok((&saved).into())
+}
+
+#[tauri::command]
+pub fn delete_db_connection(state: State<AppState>, id: String) -> CmdResult<()> {
+    state.connections.delete(&ConnectionId(id)).map_err(|e| e.to_string())
+}
+
+/// Chemins des secrets d'un montage KV, sous un préfixe. Des noms seulement.
+#[tauri::command]
+pub async fn vault_paths(state: State<'_, AppState>, mount: String, prefix: String) -> CmdResult<Vec<String>> {
+    let vault = state.vault.clone();
+    tauri::async_runtime::spawn_blocking(move || vault.paths(mount.trim(), prefix.trim()))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+/// Clés d'un secret, sans leurs valeurs.
+#[tauri::command]
+pub async fn vault_keys(state: State<'_, AppState>, mount: String, path: String) -> CmdResult<Vec<String>> {
+    let vault = state.vault.clone();
+    tauri::async_runtime::spawn_blocking(move || vault.keys(mount.trim(), path.trim()))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+/// Résout chaque champ (trousseau, Vault) et assemble la cible. Les valeurs ne quittent pas Rust.
+fn resolve_target(state: &AppState, connection: &Connection) -> CmdResult<Target> {
+    let mut values = Vec::with_capacity(connection.fields().len());
+    for (part, source) in connection.fields() {
+        let value = match source {
+            Source::Literal(value) => value.clone(),
+            Source::Keychain(service) => keychain::generic_password(service)
+                .ok_or_else(|| format!("« {service} » est absent du trousseau"))?
+                .expose_secret()
+                .to_owned(),
+            Source::Vault(reference) => state.vault.read(reference).map_err(|e| e.to_string())?,
+        };
+        values.push((*part, value));
+    }
+    Target::assemble(connection.engine(), &values).map_err(|e| e.to_string())
+}
+
+/// Où mène une connexion, sans s'y connecter : la cible relue avant de tester une production.
+#[tauri::command]
+pub async fn resolve_db_target(app: tauri::AppHandle, id: String) -> CmdResult<DbTargetDto> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let connection = state.connections.get(&ConnectionId(id)).map_err(|e| e.to_string())?;
+        Ok((&resolve_target(&state, &connection)?).into())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Ouvre une session, la referme, et rapporte ce que le serveur a dit, cible comprise.
+#[tauri::command]
+pub async fn test_db_connection(app: tauri::AppHandle, id: String) -> CmdResult<DbProbeDto> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let connection = state.connections.get(&ConnectionId(id)).map_err(|e| e.to_string())?;
+        let target = resolve_target(&state, &connection)?;
+        let probe = state
+            .databases
+            .probe(connection.engine(), &target, connection.read_only())
+            .map_err(|e| e.to_string())?;
+        // Une production qui ne serait pas en lecture seule côté serveur est un échec, pas un succès.
+        if connection.read_only() && !probe.read_only {
+            return Err("le serveur n'a pas appliqué la lecture seule demandée".into());
+        }
+        Ok(DbProbeDto::new(&target, probe))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
