@@ -4,17 +4,20 @@
 mod agents;
 mod commands;
 mod dto;
+mod forge;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use robiade_adapters::claude_code::TranscriptStore;
 use robiade_adapters::git::GitCli;
+use robiade_adapters::gitlab::GitLab;
 use robiade_adapters::sqlite_agents::SqliteAgentJournal;
 use robiade_adapters::sqlite_search::SearchIndex;
 use robiade_adapters::workspace::WorkspaceResolver;
 use robiade_adapters::sqlite_tasks::SqliteTaskRepository;
 use robiade_adapters::{backup, hooks, shell_env};
+use robiade_core::forge::Forge;
 use robiade_core::vcs::WorkingTree;
 use tauri::{Emitter, Manager};
 
@@ -25,6 +28,8 @@ pub struct AppState {
     pub tasks: SqliteTaskRepository,
     pub agents: Arc<agents::AgentRegistry>,
     pub vcs: Arc<dyn WorkingTree>,
+    pub forge: Arc<dyn Forge>,
+    pub mr_states: Arc<forge::MrStates>,
     /// Fermeture confirmée dans l'interface malgré des agents au travail.
     pub quit_confirmed: AtomicBool,
 }
@@ -113,6 +118,7 @@ fn main() {
             let (warm_store, warm_index) = (transcripts.clone(), search.clone());
             std::thread::spawn(move || warm_index.sync(&warm_store.transcript_files()));
 
+            let gitlab: Arc<dyn Forge> = Arc::new(GitLab::default());
             app.manage(AppState {
                 transcripts,
                 search,
@@ -120,6 +126,8 @@ fn main() {
                 tasks: SqliteTaskRepository::open(&data_dir.join("robiade.db"))?,
                 agents: registry,
                 vcs: Arc::new(GitCli::default()),
+                forge: gitlab.clone(),
+                mr_states: Arc::new(forge::MrStates::new(gitlab)),
                 quit_confirmed: AtomicBool::new(false),
             });
             Ok(())
@@ -152,6 +160,8 @@ fn main() {
             commands::read_asset,
             commands::working_changes,
             commands::working_diff,
+            commands::merge_requests,
+            commands::merge_request_outcomes,
             commands::quit,
         ])
         .build(tauri::generate_context!())

@@ -8,7 +8,10 @@ use robiade_core::stats;
 use robiade_core::tasks::{Task, TaskId, TaskRepository};
 use tauri::{Manager, State};
 
-use crate::dto::{AgentDto, AssetContentDto, EntryDto, FileChangeDto, EnvironmentDto, OverviewDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto};
+use crate::dto::{
+    AgentDto, AssetContentDto, EntryDto, EnvironmentDto, FileChangeDto, ForgeDto, MergeRequestDto, MrOutcomesDto, MrRefDto,
+    OverviewDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto,
+};
 use crate::{now, AppState};
 
 type CmdResult<T> = Result<T, String>;
@@ -238,6 +241,38 @@ pub async fn working_diff(state: State<'_, AppState>, id: String, path: String) 
     tauri::async_runtime::spawn_blocking(move || vcs.diff(&dir, &path))
         .await
         .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+/// Mes MR ouvertes et celles qui attendent ma review, lues ensemble sur GitLab.
+#[tauri::command]
+pub async fn merge_requests(state: State<'_, AppState>) -> CmdResult<ForgeDto> {
+    let forge = state.forge.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let (mine, reviews) = std::thread::scope(|s| {
+            let reviews = s.spawn(|| forge.review_requests());
+            (forge.my_merge_requests(), reviews.join().unwrap_or_else(|_| Ok(vec![])))
+        });
+        let dto = |mrs: Vec<_>| mrs.into_iter().map(MergeRequestDto::from).collect();
+        Ok(ForgeDto { mine: dto(mine?), reviews: dto(reviews?) })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e: robiade_core::forge::ForgeError| e.to_string())
+}
+
+/// Au-delà, la page de stats ne relit pas les MR une à une.
+const MAX_OUTCOME_LOOKUPS: usize = 300;
+
+/// Part des MR produites par des sessions qui ont été mergées.
+#[tauri::command]
+pub async fn merge_request_outcomes(state: State<'_, AppState>, refs: Vec<MrRefDto>) -> CmdResult<MrOutcomesDto> {
+    let refs: Vec<_> = refs.iter().take(MAX_OUTCOME_LOOKUPS).filter_map(MrRefDto::validate).collect();
+    let states = state.mr_states.clone();
+    tauri::async_runtime::spawn_blocking(move || states.outcomes(&refs, now()))
+        .await
+        .map_err(|e| e.to_string())?
+        .map(MrOutcomesDto::from)
         .map_err(|e| e.to_string())
 }
 

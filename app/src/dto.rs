@@ -2,6 +2,7 @@
 
 use robiade_core::agents::{Agent, AgentStatus, Gauges, Level};
 use robiade_core::assets::{Asset, AssetKind};
+use robiade_core::forge::{MergeRequest, MrOutcomes, MrRef, MrState, PipelineStatus, GITLAB_HOST};
 use robiade_core::project::{self, Workspace};
 use robiade_core::history::{EntryKind, SearchHit, SessionSummary, TokenUsage, TranscriptEntry, HIT_END, HIT_START};
 use robiade_core::pricing::{Estimate, PRICES_AS_OF};
@@ -371,6 +372,8 @@ pub struct OverviewDto {
     pub prices_as_of: &'static str,
     pub tool_calls: u64,
     pub merge_requests: u32,
+    /// MR des sessions de la période, dont l'interface demande ensuite l'état (`merge_request_outcomes`).
+    pub merge_request_refs: Vec<MrRefDto>,
     pub median_duration_ms: Option<i64>,
     pub days: Vec<DayDto>,
     pub projects: Vec<ProjectStatDto>,
@@ -389,6 +392,7 @@ impl OverviewDto {
             tool_calls: o.tool_calls,
             median_duration_ms: o.median_duration_ms,
             merge_requests: o.merge_requests,
+            merge_request_refs: o.merge_request_refs.into_iter().map(MrRefDto::from).collect(),
             days: o.days.into_iter().map(|d| DayDto { day: d.day, sessions: d.sessions, tokens: d.tokens }).collect(),
             projects: o
                 .projects
@@ -486,6 +490,102 @@ impl From<&Task> for TaskDto {
             created_at: t.created_at(),
             done_at: t.done_at(),
         }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MrRefDto {
+    pub project: String,
+    pub iid: u64,
+}
+
+impl From<MrRef> for MrRefDto {
+    fn from(r: MrRef) -> Self {
+        Self { project: r.project, iid: r.iid }
+    }
+}
+
+impl MrRefDto {
+    /// Revalidée comme une URL de MR de l'instance : le front ne peut désigner rien d'autre.
+    pub fn validate(&self) -> Option<MrRef> {
+        MrRef::from_url(&format!("https://{GITLAB_HOST}/{}/-/merge_requests/{}", self.project, self.iid))
+            .filter(|r| r.project == self.project)
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MergeRequestDto {
+    pub project: String,
+    pub iid: u64,
+    pub title: String,
+    pub author: String,
+    pub state: &'static str,
+    pub source_branch: String,
+    pub target_branch: String,
+    pub web_url: String,
+    pub updated_at: i64,
+    pub has_conflicts: bool,
+    pub unresolved_discussions: bool,
+    pub merge_status: String,
+    pub pipeline: Option<&'static str>,
+    pub wagon: bool,
+}
+
+impl From<MergeRequest> for MergeRequestDto {
+    fn from(m: MergeRequest) -> Self {
+        let wagon = m.is_intermediate_wagon();
+        Self {
+            project: m.mr.project,
+            iid: m.mr.iid,
+            title: m.title,
+            author: m.author,
+            state: match m.state {
+                MrState::Draft => "draft",
+                MrState::Opened => "opened",
+                MrState::Merged => "merged",
+                MrState::Closed => "closed",
+            },
+            source_branch: m.source_branch,
+            target_branch: m.target_branch,
+            web_url: m.web_url,
+            updated_at: m.updated_at,
+            has_conflicts: m.has_conflicts,
+            unresolved_discussions: m.unresolved_discussions,
+            merge_status: m.merge_status,
+            pipeline: m.pipeline.map(|p| match p {
+                PipelineStatus::Running => "running",
+                PipelineStatus::Success => "success",
+                PipelineStatus::Failed => "failed",
+                PipelineStatus::Manual => "manual",
+                PipelineStatus::Canceled => "canceled",
+            }),
+            wagon,
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForgeDto {
+    pub mine: Vec<MergeRequestDto>,
+    pub reviews: Vec<MergeRequestDto>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MrOutcomesDto {
+    pub total: usize,
+    pub merged: usize,
+    pub opened: usize,
+    pub closed: usize,
+    pub unknown: usize,
+}
+
+impl From<MrOutcomes> for MrOutcomesDto {
+    fn from(o: MrOutcomes) -> Self {
+        Self { total: o.total, merged: o.merged, opened: o.opened, closed: o.closed, unknown: o.unknown }
     }
 }
 
