@@ -162,6 +162,7 @@ fn main() {
             commands::working_diff,
             commands::merge_requests,
             commands::merge_request_outcomes,
+            commands::merge_request_states,
             commands::quit,
         ])
         .build(tauri::generate_context!())

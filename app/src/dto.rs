@@ -543,12 +543,7 @@ impl From<MergeRequest> for MergeRequestDto {
             iid: m.mr.iid,
             title: m.title,
             author: m.author,
-            state: match m.state {
-                MrState::Draft => "draft",
-                MrState::Opened => "opened",
-                MrState::Merged => "merged",
-                MrState::Closed => "closed",
-            },
+            state: mr_state(m.state),
             source_branch: m.source_branch,
             target_branch: m.target_branch,
             web_url: m.web_url,
@@ -565,6 +560,15 @@ impl From<MergeRequest> for MergeRequestDto {
             }),
             wagon,
         }
+    }
+}
+
+pub fn mr_state(state: MrState) -> &'static str {
+    match state {
+        MrState::Draft => "draft",
+        MrState::Opened => "opened",
+        MrState::Merged => "merged",
+        MrState::Closed => "closed",
     }
 }
 

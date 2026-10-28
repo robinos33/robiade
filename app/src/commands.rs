@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 
 use robiade_core::agents::AgentId;
+use robiade_core::forge::MrRef;
 use robiade_core::history::{SessionSearch, TranscriptReader};
 use robiade_core::stats;
 use robiade_core::tasks::{Task, TaskId, TaskRepository};
@@ -274,6 +275,27 @@ pub async fn merge_request_outcomes(state: State<'_, AppState>, refs: Vec<MrRefD
         .map_err(|e| e.to_string())?
         .map(MrOutcomesDto::from)
         .map_err(|e| e.to_string())
+}
+
+/// État des MR désignées par leur URL (`pr-link` des sessions), pour colorer leurs badges.
+/// Les URL hors de l'instance configurée et les MR illisibles sont absentes de la réponse.
+#[tauri::command]
+pub async fn merge_request_states(
+    state: State<'_, AppState>,
+    urls: Vec<String>,
+) -> CmdResult<std::collections::HashMap<String, &'static str>> {
+    let known: Vec<(String, MrRef)> = urls
+        .into_iter()
+        .take(MAX_OUTCOME_LOOKUPS)
+        .filter_map(|url| MrRef::from_url(&url).map(|r| (url, r)))
+        .collect();
+    let refs: Vec<MrRef> = known.iter().map(|(_, r)| r.clone()).collect();
+    let states = state.mr_states.clone();
+    let found = tauri::async_runtime::spawn_blocking(move || states.states(&refs, now()))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+    Ok(known.into_iter().zip(found).filter_map(|((url, _), s)| Some((url, crate::dto::mr_state(s?)))).collect())
 }
 
 /// Fermeture confirmée : les agents sont arrêtés, leurs sessions restent reprenables.

@@ -14,11 +14,13 @@ const PARALLEL_READS: usize = 8;
 pub struct MrStates {
     forge: Arc<dyn Forge>,
     known: Mutex<HashMap<MrRef, (MrState, Millis)>>,
+    /// MR illisibles (supprimées, sans droit, réseau), pas relues avant `OPEN_TTL_MS`.
+    unreadable: Mutex<HashMap<MrRef, Millis>>,
 }
 
 impl MrStates {
     pub fn new(forge: Arc<dyn Forge>) -> Self {
-        Self { forge, known: Mutex::default() }
+        Self { forge, known: Mutex::default(), unreadable: Mutex::default() }
     }
 
     fn cached(&self, mr: &MrRef, now: Millis) -> Option<MrState> {
@@ -28,10 +30,21 @@ impl MrStates {
         (settled || now - read_at < OPEN_TTL_MS).then_some(state)
     }
 
-    /// Bilan des MR données. Une MR illisible compte comme inconnue ; un token absent ou refusé
-    /// fait échouer le tout, pour que l'interface le dise au lieu d'afficher 100 % d'inconnues.
+    /// Bilan des MR données. Une MR illisible compte comme inconnue.
     pub fn outcomes(&self, mrs: &[MrRef], now: Millis) -> Result<MrOutcomes, ForgeError> {
-        let missing: Vec<&MrRef> = mrs.iter().filter(|mr| self.cached(mr, now).is_none()).collect();
+        let states = self.states(mrs, now)?;
+        Ok(MrOutcomes::of(states.iter().map(Option::as_ref)))
+    }
+
+    /// État de chaque MR, `None` si elle est illisible ; un token absent ou refusé fait échouer
+    /// le tout, pour que l'interface le dise au lieu d'afficher des MR toutes inconnues.
+    pub fn states(&self, mrs: &[MrRef], now: Millis) -> Result<Vec<Option<MrState>>, ForgeError> {
+        let recently_unreadable = |mr: &MrRef| {
+            let unreadable = self.unreadable.lock().unwrap_or_else(|e| e.into_inner());
+            unreadable.get(mr).is_some_and(|at| now - at < OPEN_TTL_MS)
+        };
+        let missing: Vec<&MrRef> =
+            mrs.iter().filter(|mr| self.cached(mr, now).is_none() && !recently_unreadable(mr)).collect();
         for chunk in missing.chunks(PARALLEL_READS) {
             let read: Vec<_> = std::thread::scope(|s| {
                 let handles: Vec<_> = chunk.iter().map(|mr| s.spawn(|| self.forge.merge_request(mr))).collect();
@@ -44,11 +57,12 @@ impl MrStates {
                         known.insert((*mr).clone(), (found.state, now));
                     }
                     Err(e @ (ForgeError::NoToken | ForgeError::Unauthorized)) => return Err(e),
-                    Err(_) => {}
+                    Err(_) => {
+                        self.unreadable.lock().unwrap_or_else(|e| e.into_inner()).insert((*mr).clone(), now);
+                    }
                 }
             }
         }
-        let states: Vec<Option<MrState>> = mrs.iter().map(|mr| self.cached(mr, now)).collect();
-        Ok(MrOutcomes::of(states.iter().map(Option::as_ref)))
+        Ok(mrs.iter().map(|mr| self.cached(mr, now)).collect())
     }
 }
