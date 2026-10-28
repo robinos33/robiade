@@ -103,7 +103,7 @@ impl Forge for GitLab {
                 to_domain(detailed.unwrap_or(m))
             })
             .collect();
-        mrs.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        mrs.sort_by_key(|m| std::cmp::Reverse(m.updated_at));
         Ok(mrs)
     }
 
@@ -111,7 +111,7 @@ impl Forge for GitLab {
         let me = self.username()?;
         let listed = self.list(&format!("scope=all&wip=no&reviewer_username={me}"))?;
         let mut mrs: Vec<MergeRequest> = listed.into_iter().filter_map(to_domain).filter(|m| m.author != me).collect();
-        mrs.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        mrs.sort_by_key(|m| std::cmp::Reverse(m.updated_at));
         Ok(mrs)
     }
 
