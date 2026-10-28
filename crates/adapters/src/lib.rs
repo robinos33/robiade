@@ -3,6 +3,7 @@
 pub mod backup;
 pub mod claude_code;
 pub mod docker;
+pub mod engines;
 pub mod git;
 pub mod gitlab;
 pub mod hooks;

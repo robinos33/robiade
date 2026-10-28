@@ -16,7 +16,7 @@ use robiade_adapters::docker::DockerEngine;
 use robiade_adapters::git::GitCli;
 use robiade_adapters::gitlab::GitLab;
 use robiade_adapters::sqlite_agents::SqliteAgentJournal;
-use robiade_adapters::postgres::Postgres;
+use robiade_adapters::engines::Engines;
 use robiade_adapters::sqlite_audit::SqliteAuditLog;
 use robiade_adapters::sqlite_connections::SqliteConnectionRepository;
 use robiade_adapters::sqlite_console_history::SqliteConsoleHistory;
@@ -165,8 +165,8 @@ fn main() {
                 docker,
                 connections: SqliteConnectionRepository::open(&data_dir.join("robiade.db"))?,
                 vault: Arc::new(VaultKv::new(home.clone())),
-                databases: Arc::new(Postgres),
-                browser: Arc::new(Postgres),
+                databases: Arc::new(Engines),
+                browser: Arc::new(Engines),
                 db_sessions: db_sessions::DbSessions::default(),
                 console_history: SqliteConsoleHistory::open(&data_dir.join("robiade.db"))?,
                 quit_confirmed: AtomicBool::new(false),
