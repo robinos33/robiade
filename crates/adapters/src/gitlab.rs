@@ -123,6 +123,19 @@ impl GitLab {
         self.get(&format!("/projects/{}/merge_requests/{iid}", project.replace('/', "%2F")))
     }
 
+    /// Identifiant d'un utilisateur, que GitLab exige pour assigner.
+    fn user_id(&self, username: &str) -> Result<u64, ForgeError> {
+        if !is_username(username) {
+            return Err(ForgeError::NotFound);
+        }
+        let found: Vec<ApiUserId> = self.get(&format!("/users?username={username}"))?;
+        found
+            .into_iter()
+            .find(|u| u.username.eq_ignore_ascii_case(username))
+            .map(|u| u.id)
+            .ok_or_else(|| ForgeError::Api(format!("utilisateur GitLab inconnu : {username}")))
+    }
+
     fn approvals(&self, project: &str, iid: u64) -> Result<Approvals, ForgeError> {
         let path = format!("/projects/{}/merge_requests/{iid}/approvals", project.replace('/', "%2F"));
         let a: ApiApprovals = self.get(&path)?;
@@ -167,6 +180,14 @@ impl Forge for GitLab {
         let body = match planned {
             IssuePlanned::Close => json!({ "state_event": "close" }),
             IssuePlanned::Reopen => json!({ "state_event": "reopen" }),
+            IssuePlanned::Assign { assignees, .. } => {
+                let ids = assignees.iter().map(|a| self.user_id(a)).collect::<Result<Vec<_>, _>>()?;
+                // `0` est la forme documentée pour retirer tous les assignés.
+                json!({ "assignee_ids": if ids.is_empty() { vec![0] } else { ids } })
+            }
+            IssuePlanned::Relabel { add, remove } => {
+                json!({ "add_labels": add.join(","), "remove_labels": remove.join(",") })
+            }
         };
         self.send(true, &this, body)
     }
@@ -285,6 +306,12 @@ fn gitlab_message(raw: &str) -> String {
 
 #[derive(Deserialize)]
 struct ApiUser {
+    username: String,
+}
+
+#[derive(Deserialize)]
+struct ApiUserId {
+    id: u64,
     username: String,
 }
 
