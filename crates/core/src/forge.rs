@@ -1,6 +1,7 @@
 //! Forge : MR et issues GitLab, lues sur l'instance configurée. Couche anti-corruption : le domaine ne
 //! garde que ce qu'il affiche ou ce sur quoi il raisonne, GitLab reste la source.
 
+use crate::issue_actions::IssuePlanned;
 use crate::merge_actions::Planned;
 use crate::Millis;
 
@@ -175,7 +176,8 @@ pub enum ForgeError {
     Api(String),
 }
 
-/// MR et issues sur GitLab : lecture, et exécution des actions déjà validées par `merge_actions::plan`.
+/// MR et issues sur GitLab : lecture, et exécution des actions déjà validées par `merge_actions::plan`
+/// et `issue_actions::plan`.
 pub trait Forge: Send + Sync {
     /// Mon nom d'utilisateur GitLab.
     fn me(&self) -> Result<String, ForgeError>;
@@ -191,8 +193,10 @@ pub trait Forge: Send + Sync {
     fn issue(&self, issue: &IssueRef) -> Result<Issue, ForgeError>;
     /// Issues ouvertes d'un projet (chemin complet, validé par `is_project_path`).
     fn project_issues(&self, project: &str) -> Result<Vec<Issue>, ForgeError>;
-    /// Envoie une action planifiée ; seul appel qui écrit sur GitLab.
+    /// Envoie une action planifiée sur une MR.
     fn execute(&self, mr: &MrRef, planned: &Planned) -> Result<(), ForgeError>;
+    /// Envoie une action planifiée sur une issue.
+    fn execute_on_issue(&self, issue: &IssueRef, planned: &IssuePlanned) -> Result<(), ForgeError>;
 }
 
 /// MR produites par des sessions : combien, et combien ont été mergées.

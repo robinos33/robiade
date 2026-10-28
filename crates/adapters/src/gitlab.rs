@@ -1,5 +1,6 @@
 //! MR et issues sur l'API REST de GitLab, instance configurée uniquement, avec le token du trousseau.
-//! Les écritures passent toutes par `execute`, avec une action déjà validée par le domaine.
+//! Les écritures passent toutes par `execute` et `execute_on_issue`, avec une action déjà validée par
+//! le domaine.
 
 use std::sync::Mutex;
 use std::time::Duration;
@@ -9,6 +10,7 @@ use robiade_core::forge::{
     is_project_path, Approvals, Forge, ForgeError, Issue, IssueRef, IssueState, MergeRequest, MrRef, MrState, PipelineStatus,
     GITLAB_HOST,
 };
+use robiade_core::issue_actions::IssuePlanned;
 use robiade_core::merge_actions::Planned;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
@@ -155,6 +157,18 @@ impl Forge for GitLab {
                 self.send(true, &format!("{this}/merge"), json!({ "sha": sha, "squash": squash }))
             }
         }
+    }
+
+    fn execute_on_issue(&self, issue: &IssueRef, planned: &IssuePlanned) -> Result<(), ForgeError> {
+        if !is_project_path(&issue.project) {
+            return Err(ForgeError::NotFound);
+        }
+        let this = format!("/projects/{}/issues/{}", issue.project.replace('/', "%2F"), issue.iid);
+        let body = match planned {
+            IssuePlanned::Close => json!({ "state_event": "close" }),
+            IssuePlanned::Reopen => json!({ "state_event": "reopen" }),
+        };
+        self.send(true, &this, body)
     }
 
     fn my_merge_requests(&self) -> Result<Vec<MergeRequest>, ForgeError> {
