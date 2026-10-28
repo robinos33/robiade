@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
-  Agent, AssetContent, Container, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, SearchHit, Session, Task, TaskStatus, WorktreeRemoval,
+  Agent, AssetContent, Container, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, SearchHit, Session, Task, TaskStatus, GitWorktree, WorktreeCreation, WorktreeRemoval,
 } from './types';
 
 export const api = {
@@ -46,6 +46,11 @@ export const api = {
     invoke<{ agentId: string; fetched: boolean }>('start_issue_agent', {
       projectRoot, issue, branch, base, prompt, cols: 120, rows: 36,
     }),
+  worktrees: (repository: string) => invoke<GitWorktree[]>('worktrees', { repository }),
+  prepareWorktreeCreation: (repository: string, branch: string) =>
+    invoke<WorktreeCreation>('prepare_worktree_creation', { repository, branch }),
+  createWorktree: (repository: string, branch: string, base: string) =>
+    invoke<boolean>('create_worktree', { repository, branch, base }),
   prepareWorktreeRemoval: (path: string) => invoke<WorktreeRemoval>('prepare_worktree_removal', { path }),
   removeWorktree: (path: string) => invoke<void>('remove_worktree', { path }),
   issues: (project: string | null) => invoke<Issue[]>('issues', { project }),

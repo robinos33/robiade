@@ -235,7 +235,22 @@ export interface MrOutcomes { total: number; merged: number; opened: number; clo
 export interface Environment { claudePath: string | null; home: string }
 
 export interface Project { root: string; name: string; lastActivityAt: number; sessions: number; gitlabProject: string | null }
-export interface Worktree { path: string; name: string; root: string; projectName: string; lastActivityAt: number }
+/** Un worktree, connu par les sessions qui y ont tourné ou par git ; `git` est absent tant qu'il n'est pas relu. */
+export interface Worktree { path: string; name: string; root: string; projectName: string; lastActivityAt: number; git: GitWorktree | null }
+
+/** Un worktree lié, lu par git ; `changes` est `null` si le dossier est illisible ou disparu. */
+export interface GitWorktree {
+  path: string;
+  name: string;
+  repository: string;
+  branch: string | null;
+  changes: number | null;
+  locked: boolean;
+  prunable: boolean;
+}
+
+/** Ce que « créer un worktree » ferait ; `blocker` dit pourquoi c'est refusé. */
+export interface WorktreeCreation { repository: string; dir: string; bases: string[]; blocker: string | null }
 
 /** Ce que « supprimer le worktree » ferait ; `blocker` dit pourquoi c'est refusé. */
 export interface WorktreeRemoval { path: string; repository: string; branch: string | null; blocker: string | null }
