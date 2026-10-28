@@ -1,15 +1,18 @@
 //! Actions sur une issue GitLab. Comme pour les MR, ce qui part est validé ici sur l'état courant de
 //! l'issue, relu juste avant d'agir, puis décrit pour la confirmation et le journal d'audit.
 
-use crate::forge::{is_username, Issue, IssueRef, IssueState};
+use crate::forge::{is_project_path, is_username, Issue, IssueRef, IssueState};
 use crate::merge_actions::AuditEntry;
 use crate::Millis;
 
 /// Au-delà, ce n'est plus une assignation ni un étiquetage qu'on relit d'un coup d'œil.
 pub const MAX_ASSIGNEES: usize = 20;
 pub const MAX_LABELS: usize = 50;
-/// Limite de GitLab sur le nom d'un label.
+/// Limite de GitLab sur le nom d'un label et sur le titre d'une issue.
 pub const LABEL_MAX_CHARS: usize = 255;
+pub const TITLE_MAX_CHARS: usize = 255;
+/// Une description plus longue ne se relit pas dans une confirmation.
+pub const DESCRIPTION_MAX_CHARS: usize = 50_000;
 
 /// Ce que je demande.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,6 +51,64 @@ pub enum IssueRefused {
     TooMany,
     #[error("rien ne change")]
     NoChange,
+    #[error("projet GitLab invalide")]
+    InvalidProject,
+    #[error("titre vide, trop long ou sur plusieurs lignes")]
+    InvalidTitle,
+    #[error("description trop longue")]
+    DescriptionTooLong,
+}
+
+/// Une issue à créer, validée : rien d'autre ne part vers GitLab.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewIssue {
+    pub project: String,
+    pub title: String,
+    /// Markdown, envoyé tel quel.
+    pub description: String,
+    pub labels: Vec<String>,
+    pub assignees: Vec<String>,
+}
+
+impl NewIssue {
+    pub fn new(
+        project: &str,
+        title: &str,
+        description: &str,
+        labels: &[String],
+        assignees: &[String],
+    ) -> Result<Self, IssueRefused> {
+        if !is_project_path(project) {
+            return Err(IssueRefused::InvalidProject);
+        }
+        let title = title.trim();
+        if title.is_empty() || title.chars().count() > TITLE_MAX_CHARS || title.contains(['\n', '\r']) {
+            return Err(IssueRefused::InvalidTitle);
+        }
+        let description = description.trim();
+        if description.chars().count() > DESCRIPTION_MAX_CHARS {
+            return Err(IssueRefused::DescriptionTooLong);
+        }
+        Ok(Self {
+            project: project.to_owned(),
+            title: title.to_owned(),
+            description: description.to_owned(),
+            labels: self::labels(labels)?,
+            assignees: usernames(assignees)?,
+        })
+    }
+
+    /// Description lisible, pour la confirmation et le journal d'audit (sans la description).
+    pub fn describe(&self) -> String {
+        let mut out = format!("créer l'issue « {} »", self.title);
+        if !self.labels.is_empty() {
+            out += &format!(", labels {}", self.labels.join(", "));
+        }
+        if !self.assignees.is_empty() {
+            out += &format!(", assignée à {}", self.assignees.join(", "));
+        }
+        out
+    }
 }
 
 /// Applique les règles à l'état **courant** de l'issue, relu juste avant d'agir.
@@ -141,6 +202,19 @@ fn both(a: Option<String>, b: Option<String>) -> String {
 }
 
 impl AuditEntry {
+    /// La cible porte le numéro attribué par GitLab, ou le seul projet si la création a échoué.
+    pub fn on_new_issue(at: Millis, new: &NewIssue, outcome: &Result<IssueRef, String>) -> Self {
+        Self {
+            at,
+            target: match outcome {
+                Ok(created) => format!("{}#{}", created.project, created.iid),
+                Err(_) => new.project.clone(),
+            },
+            action: new.describe(),
+            outcome: outcome.as_ref().err().cloned().unwrap_or_else(|| "ok".into()),
+        }
+    }
+
     pub fn on_issue(at: Millis, issue: &IssueRef, planned: &IssuePlanned, outcome: Result<(), String>) -> Self {
         Self {
             at,
@@ -209,6 +283,20 @@ mod tests {
         let comma = plan(&current, &IssueAction::Label(strings(&["a,b"])));
         assert_eq!(comma, Err(IssueRefused::InvalidLabel("a,b".into())));
         assert_eq!(plan(&current, &IssueAction::Label(strings(&[""]))), Err(IssueRefused::InvalidLabel(String::new())));
+    }
+
+    #[test]
+    fn a_new_issue_is_validated_before_leaving() {
+        let new = NewIssue::new("a/b", "  Cache  ", "", &strings(&["bug", "bug"]), &strings(&["@moi"])).unwrap();
+        assert_eq!((new.title.as_str(), new.labels.len()), ("Cache", 1));
+        assert_eq!(new.describe(), "créer l'issue « Cache », labels bug, assignée à moi");
+        assert_eq!(NewIssue::new("a/b", " ", "", &[], &[]), Err(IssueRefused::InvalidTitle));
+        assert_eq!(NewIssue::new("a/b", "x\ny", "", &[], &[]), Err(IssueRefused::InvalidTitle));
+        assert_eq!(NewIssue::new("../b", "x", "", &[], &[]), Err(IssueRefused::InvalidProject));
+        let failed = AuditEntry::on_new_issue(1, &new, &Err("statut HTTP 403".into()));
+        assert_eq!((failed.target.as_str(), failed.outcome.as_str()), ("a/b", "statut HTTP 403"));
+        let created = AuditEntry::on_new_issue(1, &new, &Ok(IssueRef { project: "a/b".into(), iid: 12 }));
+        assert_eq!((created.target.as_str(), created.outcome.as_str()), ("a/b#12", "ok"));
     }
 
     #[test]

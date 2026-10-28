@@ -1,6 +1,6 @@
 //! MR et issues sur l'API REST de GitLab, instance configurée uniquement, avec le token du trousseau.
-//! Les écritures passent toutes par `execute` et `execute_on_issue`, avec une action déjà validée par
-//! le domaine.
+//! Les écritures passent toutes par `execute`, `execute_on_issue` et `create_issue`, avec une action
+//! déjà validée par le domaine.
 
 use std::sync::Mutex;
 use std::time::Duration;
@@ -10,7 +10,7 @@ use robiade_core::forge::{
     is_project_path, is_username, Approvals, Forge, ForgeError, Issue, IssueRef, IssueState, MergeRequest, MrRef, MrState, PipelineStatus,
     GITLAB_HOST,
 };
-use robiade_core::issue_actions::IssuePlanned;
+use robiade_core::issue_actions::{IssuePlanned, NewIssue};
 use robiade_core::merge_actions::Planned;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
@@ -80,6 +80,11 @@ impl GitLab {
 
     /// `POST` ou `PUT` d'un corps JSON. Le message d'erreur de GitLab est remonté, tronqué.
     fn send(&self, put: bool, path: &str, body: serde_json::Value) -> Result<(), ForgeError> {
+        self.request(put, path, body).map(drop)
+    }
+
+    /// Comme `send`, en gardant le corps de la réponse.
+    fn request(&self, put: bool, path: &str, body: serde_json::Value) -> Result<String, ForgeError> {
         let token = self.token()?;
         let url = format!("{}{path}", self.api);
         let request = if put { self.http.put(url) } else { self.http.post(url) };
@@ -91,7 +96,12 @@ impl GitLab {
             .send_json(&body)
             .map_err(|e| ForgeError::Network(e.to_string()))?;
         match response.status().as_u16() {
-            200..=299 => Ok(()),
+            200..=299 => response
+                .body_mut()
+                .with_config()
+                .limit(1024 * 1024)
+                .read_to_string()
+                .map_err(|e| ForgeError::Api(e.to_string())),
             401 => {
                 *self.token.lock().unwrap_or_else(|e| e.into_inner()) = None;
                 Err(ForgeError::Unauthorized)
@@ -190,6 +200,22 @@ impl Forge for GitLab {
             }
         };
         self.send(true, &this, body)
+    }
+
+    fn create_issue(&self, new: &NewIssue) -> Result<IssueRef, ForgeError> {
+        if !is_project_path(&new.project) {
+            return Err(ForgeError::NotFound);
+        }
+        let assignee_ids = new.assignees.iter().map(|a| self.user_id(a)).collect::<Result<Vec<_>, _>>()?;
+        let body = json!({
+            "title": new.title,
+            "description": new.description,
+            "labels": new.labels.join(","),
+            "assignee_ids": assignee_ids,
+        });
+        let raw = self.request(false, &format!("/projects/{}/issues", new.project.replace('/', "%2F")), body)?;
+        let created: ApiIssue = serde_json::from_str(&raw).map_err(|e| ForgeError::Api(e.to_string()))?;
+        IssueRef::from_url(&created.web_url).ok_or_else(|| ForgeError::Api("issue hors de l'instance configurée".into()))
     }
 
     fn my_merge_requests(&self) -> Result<Vec<MergeRequest>, ForgeError> {

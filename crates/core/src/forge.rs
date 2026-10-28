@@ -1,7 +1,7 @@
 //! Forge : MR et issues GitLab, lues sur l'instance configurée. Couche anti-corruption : le domaine ne
 //! garde que ce qu'il affiche ou ce sur quoi il raisonne, GitLab reste la source.
 
-use crate::issue_actions::IssuePlanned;
+use crate::issue_actions::{IssuePlanned, NewIssue};
 use crate::merge_actions::Planned;
 use crate::Millis;
 
@@ -202,6 +202,8 @@ pub trait Forge: Send + Sync {
     fn execute(&self, mr: &MrRef, planned: &Planned) -> Result<(), ForgeError>;
     /// Envoie une action planifiée sur une issue.
     fn execute_on_issue(&self, issue: &IssueRef, planned: &IssuePlanned) -> Result<(), ForgeError>;
+    /// Crée une issue validée par `NewIssue::new` ; renvoie la référence attribuée par GitLab.
+    fn create_issue(&self, new: &NewIssue) -> Result<IssueRef, ForgeError>;
 }
 
 /// MR produites par des sessions : combien, et combien ont été mergées.
