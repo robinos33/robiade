@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
 
-use robiade_core::project::{repository_of_gitdir, Workspace};
+use robiade_core::project::{gitlab_project_of_remote, repository_of_gitdir, Workspace};
 
 #[derive(Default)]
 pub struct WorkspaceResolver {
@@ -32,7 +32,8 @@ fn locate(path: &Path) -> Option<Workspace> {
     let dot_git = top.join(".git");
     let top_str = top.to_string_lossy().into_owned();
     if dot_git.is_dir() {
-        return Some(Workspace { project_root: top_str, worktree: None, is_repository: true });
+        let gitlab_project = gitlab_project_of(top);
+        return Some(Workspace { project_root: top_str, worktree: None, is_repository: true, gitlab_project });
     }
     let content = std::fs::read_to_string(&dot_git).ok()?;
     let gitdir = content.strip_prefix("gitdir:")?.trim();
@@ -41,7 +42,35 @@ fn locate(path: &Path) -> Option<Workspace> {
         project_root: repository.to_owned(),
         worktree: Some(top_str),
         is_repository: Path::new(repository).join(".git").is_dir(),
+        gitlab_project: gitlab_project_of(Path::new(repository)),
     })
+}
+
+/// Projet GitLab du dépôt, lu dans `.git/config` sans lancer git : rien de ce que la config déclare
+/// ne s'exécute. Les `include` ne sont pas suivis ; un `origin` déclaré là n'est pas vu.
+fn gitlab_project_of(repository: &Path) -> Option<String> {
+    let config = std::fs::read_to_string(repository.join(".git").join("config")).ok()?;
+    gitlab_project_of_remote(&origin_url(&config)?)
+}
+
+/// `url` de la section `[remote "origin"]` d'une config Git.
+fn origin_url(config: &str) -> Option<String> {
+    let mut in_origin = false;
+    for line in config.lines().map(str::trim) {
+        if line.starts_with('[') {
+            in_origin = line.split_whitespace().collect::<Vec<_>>() == ["[remote", "\"origin\"]"];
+            continue;
+        }
+        if !in_origin {
+            continue;
+        }
+        if let Some((key, value)) = line.split_once('=') {
+            if key.trim().eq_ignore_ascii_case("url") {
+                return Some(value.trim().trim_matches('"').to_owned());
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -54,6 +83,12 @@ mod tests {
         let repo = base.join("repo");
         let wt = base.join("repo-wt-fix");
         std::fs::create_dir_all(repo.join(".git/worktrees/repo-wt-fix")).unwrap();
+        std::fs::write(
+            repo.join(".git/config"),
+            "[core]\n\tbare = false\n[remote \"upstream\"]\n\turl = git@gitlab.example.com:autre/x.git\n\
+             [remote \"origin\"]\n\turl = git@gitlab.example.com:shop/boutique.git\n",
+        )
+        .unwrap();
         std::fs::create_dir_all(repo.join("sub")).unwrap();
         std::fs::create_dir_all(&wt).unwrap();
         std::fs::write(wt.join(".git"), format!("gitdir: {}\n", repo.join(".git/worktrees/repo-wt-fix").display()))
@@ -68,6 +103,8 @@ mod tests {
         assert_eq!(linked.project_root, repo_str);
         assert_eq!(linked.worktree_name(), Some("repo-wt-fix"));
         assert!(linked.is_repository);
+        assert_eq!(main.gitlab_project.as_deref(), Some("shop/boutique"));
+        assert_eq!(linked.gitlab_project.as_deref(), Some("shop/boutique"));
 
         let gone = resolver.resolve(&base.join("disparu").to_string_lossy());
         assert!(!gone.is_repository);

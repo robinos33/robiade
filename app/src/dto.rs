@@ -151,6 +151,7 @@ pub struct WorkspaceDto {
     pub in_repository: bool,
     pub worktree_path: Option<String>,
     pub worktree_name: Option<String>,
+    pub gitlab_project: Option<String>,
 }
 
 impl From<&Workspace> for WorkspaceDto {
@@ -161,6 +162,7 @@ impl From<&Workspace> for WorkspaceDto {
             in_repository: w.is_repository,
             worktree_path: w.worktree.clone(),
             worktree_name: w.worktree_name().map(str::to_owned),
+            gitlab_project: w.gitlab_project.clone(),
         }
     }
 }
