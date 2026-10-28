@@ -302,20 +302,16 @@ pub fn page(shape: &TableShape, query: &PageQuery, mut rows: Vec<Vec<Option<Stri
         (Some(_), None) => None,
         (None, _) => Some(Cursor::Offset(query.offset + rows.len() as u64)),
     };
-    let rows = rows
-        .into_iter()
-        .map(|row| {
-            row.into_iter()
-                .map(|value| {
-                    value.map(|text| match text.char_indices().nth(CELL_MAX_CHARS) {
-                        Some((cut, _)) => Cell { text: text[..cut].to_owned(), truncated: true },
-                        None => Cell { text, truncated: false },
-                    })
-                })
-                .collect()
-        })
-        .collect();
+    let rows = rows.into_iter().map(|row| row.into_iter().map(|value| value.map(cell)).collect()).collect();
     Page { columns: shape.columns.clone(), rows, next }
+}
+
+/// Une valeur telle qu'affichée : bornée à `CELL_MAX_CHARS`.
+pub(crate) fn cell(text: String) -> Cell {
+    match text.char_indices().nth(CELL_MAX_CHARS) {
+        Some((cut, _)) => Cell { text: text[..cut].to_owned(), truncated: true },
+        None => Cell { text, truncated: false },
+    }
 }
 
 /// Une session ouverte sur une base, en lecture seule si demandé.
