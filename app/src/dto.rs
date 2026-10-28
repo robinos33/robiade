@@ -5,7 +5,7 @@ use robiade_core::assets::{Asset, AssetKind};
 use robiade_core::forge::{
     Issue, IssueRef, IssueState, MergeRequest, MrOutcomes, MrRef, MrState, PipelineStatus, GITLAB_HOST,
 };
-use robiade_core::issue_actions::IssueAction;
+use robiade_core::issue_actions::{IssueAction, NewIssue};
 use robiade_core::project::{self, Workspace};
 use robiade_core::merge_actions::{AuditEntry, MrAction};
 use robiade_core::history::{EntryKind, SearchHit, SessionSummary, TokenUsage, TranscriptEntry, HIT_END, HIT_START};
@@ -501,7 +501,7 @@ impl From<&Task> for TaskDto {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IssueRefDto {
     pub project: String,
@@ -724,6 +724,24 @@ impl From<IssueActionDto> for IssueAction {
             IssueActionDto::Assign { assignees } => IssueAction::Assign(assignees),
             IssueActionDto::Label { labels } => IssueAction::Label(labels),
         }
+    }
+}
+
+/// Issue à créer, telle que saisie ; validée ensuite par le domaine.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewIssueDto {
+    pub project: String,
+    pub title: String,
+    pub description: String,
+    pub labels: Vec<String>,
+    pub assignees: Vec<String>,
+}
+
+impl NewIssueDto {
+    pub fn validate(&self) -> Result<NewIssue, String> {
+        NewIssue::new(&self.project, &self.title, &self.description, &self.labels, &self.assignees)
+            .map_err(|e| e.to_string())
     }
 }
 

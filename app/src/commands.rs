@@ -13,7 +13,7 @@ use tauri::{Manager, State};
 use crate::dto::{
     ActionPreviewDto, AgentDto, AssetContentDto, AuditEntryDto, EntryDto, EnvironmentDto, FileChangeDto, ForgeDto,
     IssueActionDto, IssueActionPreviewDto, IssueDto, IssueRefDto, IssueStartDto, IssueStartedDto, MergeRequestDto,
-    MrActionDto, MrOutcomesDto, MrRefDto, OverviewDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto,
+    MrActionDto, MrOutcomesDto, MrRefDto, NewIssueDto, OverviewDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto,
     WorktreeRemovalDto,
 };
 use crate::{now, AppState};
@@ -397,6 +397,29 @@ pub async fn run_issue_action(app: tauri::AppHandle, target: IssueRefDto, action
             eprintln!("{e}");
         }
         outcome.map(|()| planned.describe())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Ce que la création enverrait, pour la confirmation. N'écrit rien.
+#[tauri::command]
+pub fn preview_issue_creation(issue: NewIssueDto) -> CmdResult<String> {
+    Ok(issue.validate()?.describe())
+}
+
+/// Création confirmée : revalidée, envoyée, puis inscrite au journal d'audit avec son numéro.
+#[tauri::command]
+pub async fn create_issue(app: tauri::AppHandle, issue: NewIssueDto) -> CmdResult<IssueRefDto> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let new = issue.validate()?;
+        let outcome = state.forge.create_issue(&new).map_err(|e| e.to_string());
+        let entry = robiade_core::merge_actions::AuditEntry::on_new_issue(now(), &new, &outcome);
+        if let Err(e) = state.audit.record(&entry) {
+            eprintln!("{e}");
+        }
+        outcome.map(|r| IssueRefDto { project: r.project, iid: r.iid })
     })
     .await
     .map_err(|e| e.to_string())?
