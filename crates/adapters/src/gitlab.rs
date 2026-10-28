@@ -192,6 +192,15 @@ impl Forge for GitLab {
         Ok(sorted_issues(self.get(&format!("/issues?scope=assigned_to_me&state=opened&per_page={PER_PAGE}"))?))
     }
 
+    fn issue(&self, issue: &IssueRef) -> Result<Issue, ForgeError> {
+        if !is_project_path(&issue.project) {
+            return Err(ForgeError::NotFound);
+        }
+        let path = format!("/projects/{}/issues/{}", issue.project.replace('/', "%2F"), issue.iid);
+        let found: ApiIssue = self.get(&path)?;
+        issue_to_domain(found).ok_or_else(|| ForgeError::Api("issue hors de l'instance configurée".into()))
+    }
+
     fn project_issues(&self, project: &str) -> Result<Vec<Issue>, ForgeError> {
         if !is_project_path(project) {
             return Err(ForgeError::NotFound);
@@ -210,6 +219,8 @@ fn sorted_issues(listed: Vec<ApiIssue>) -> Vec<Issue> {
 #[derive(Deserialize)]
 struct ApiIssue {
     title: String,
+    #[serde(default)]
+    description: Option<String>,
     web_url: String,
     updated_at: String,
     #[serde(default)]
@@ -226,6 +237,7 @@ fn issue_to_domain(i: ApiIssue) -> Option<Issue> {
     Some(Issue {
         issue: IssueRef::from_url(&i.web_url)?,
         title: i.title,
+        description: i.description.unwrap_or_default(),
         labels: i.labels,
         assignees: i.assignees.into_iter().map(|a| a.username).collect(),
         updated_at: chrono::DateTime::parse_from_rfc3339(&i.updated_at).ok()?.timestamp_millis(),
