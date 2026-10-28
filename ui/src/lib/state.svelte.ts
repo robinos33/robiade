@@ -179,6 +179,13 @@ class AppState {
     this.tasks = await api.listTasks();
   }
 
+  /** Dans le worktree ou le projet sélectionné ; sans sélection, on demande où. */
+  newAgent() {
+    const target = this.worktree ?? this.project;
+    if (target === null) this.newAgentOpen = true;
+    else void this.spawn(target);
+  }
+
   async spawn(projectPath: string, resumeSessionId: string | null = null) {
     try {
       const agent = await api.spawnAgent(projectPath, resumeSessionId, 120, 36);

@@ -38,7 +38,7 @@
     </button>
   </div>
 
-  <button class="new" onclick={() => (app.newAgentOpen = true)}>
+  <button class="new" onclick={() => app.newAgent()} title={app.project === null ? 'Choisir un projet' : '⇧⌘N pour choisir un autre projet'}>
     <Icon name="plus" size={14} /> Nouvel agent <kbd>⌘N</kbd>
   </button>
 

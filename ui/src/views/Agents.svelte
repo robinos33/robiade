@@ -112,7 +112,7 @@
     <button class="btn" onclick={() => (app.resumeOpen = true)} title="Toutes les sessions, comme /resume">
       <Icon name="resume" size={12} /> Reprendre… <kbd>⌘O</kbd>
     </button>
-    <button class="btn primary" onclick={() => (app.newAgentOpen = true)}><Icon name="plus" size={14} /> Nouvel agent</button>
+    <button class="btn primary" onclick={() => app.newAgent()}><Icon name="plus" size={14} /> Nouvel agent</button>
   </header>
 
   {#if app.visibleAgents.length === 0 && recent.length === 0}
