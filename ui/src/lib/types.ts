@@ -169,7 +169,12 @@ export interface Issue {
 
 export type IssueState = 'opened' | 'closed';
 
-export type IssueAction = { kind: 'close' } | { kind: 'reopen' };
+export type IssueAction =
+  | { kind: 'close' }
+  | { kind: 'reopen' }
+  /** Listes complètes voulues ; le domaine en déduit l'écart. */
+  | { kind: 'assign'; assignees: string[] }
+  | { kind: 'label'; labels: string[] };
 
 /** Issue relue sur GitLab et description de ce qui partira, produite par le domaine. */
 export interface IssueActionPreview {

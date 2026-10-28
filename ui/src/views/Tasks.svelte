@@ -138,6 +138,12 @@
               {#if i.dueDate}
                 <span class="due num" class:late={i.dueDate < today} title="Échéance">{i.dueDate}</span>
               {/if}
+              <button class="btn ghost act" title="Modifier les assignés, après confirmation" onclick={() => (acting = { issue: i, action: { kind: 'assign', assignees: i.assignees } })}>
+                Assignés…
+              </button>
+              <button class="btn ghost act" title="Modifier les labels, après confirmation" onclick={() => (acting = { issue: i, action: { kind: 'label', labels: i.labels } })}>
+                Labels…
+              </button>
               {#if i.state === 'opened'}
                 <button class="btn ghost act" title="Fermer l'issue sur GitLab, après confirmation" onclick={() => (acting = { issue: i, action: { kind: 'close' } })}>
                   Fermer
