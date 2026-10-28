@@ -2,7 +2,9 @@
  * Faux backend Tauri pour les captures du README : l'interface réelle, des données inventées.
  * Rien de ce fichier n'entre dans le build (seul `index.html` est une entrée Vite).
  */
-import type { Agent, Container, DbConnection, Forge, GitWorktree, Issue, MergeRequest, Overview, Session, Task, Tokens } from '../src/lib/types';
+import type {
+  Agent, Container, DbConnection, FileChange, Forge, GitWorktree, Issue, MergeRequest, Overview, Session, Task, Tokens, WorktreeRemoval,
+} from '../src/lib/types';
 
 const NOW = Date.now();
 const MIN = 60_000;
@@ -253,6 +255,25 @@ const worktrees: GitWorktree[] = [
   worktree(2, 'pagination', 'ticket-77-pagination-par-curseur', 0),
 ];
 
+/** Ce qui bloque la suppression d'un worktree de démo : ses fichiers modifiés, s'il en a. */
+const BLOCKING: FileChange[] = [
+  { path: 'src/Cart/PromoCode.php', kind: 'modified', added: null, removed: null },
+  { path: 'tests/Cart/PromoCodePolicyTest.php', kind: 'untracked', added: null, removed: null },
+  { path: 'node_modules', kind: 'untracked', added: null, removed: null },
+];
+const worktreeRemoval = (path: string): WorktreeRemoval => {
+  const found = worktrees.find((w) => w.path === path)!;
+  const changes = BLOCKING.slice(0, found.changes ?? 0);
+  return {
+    path,
+    repository: found.repository,
+    branch: found.branch,
+    blocker: changes.length > 0 ? `${changes.length} fichier(s) modifié(s) ou non suivi(s) : commite-les ou annule-les d'abord` : null,
+    changes,
+    changeCount: changes.length,
+  };
+};
+
 /** Connexions de démo : une locale, une staging et une production lue dans Vault. */
 const dbConnections: DbConnection[] = [
   {
@@ -309,6 +330,8 @@ const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
     bases: ['origin/staging', 'origin/main'],
     blocker: null,
   }),
+  prepare_worktree_removal: (args) => worktreeRemoval(String(args.path)),
+  reveal_in_finder: () => null,
   prepare_container_action: (args) => {
     const found = containers.find((c) => c.id === args.id)!;
     return { container: found, action: args.action, blocker: null };
