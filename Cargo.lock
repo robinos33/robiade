@@ -3406,6 +3406,7 @@ dependencies = [
  "base64 0.22.1",
  "robiade-adapters",
  "robiade-core",
+ "secrecy",
  "serde",
  "serde_json",
  "tauri",
