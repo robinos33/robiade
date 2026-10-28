@@ -3,6 +3,8 @@
 use std::path::{Path, PathBuf};
 
 use robiade_core::agents::AgentId;
+use robiade_core::containers::{Container, ContainerAction, ContainerId};
+use robiade_core::merge_actions::AuditEntry;
 use robiade_core::forge::{IssueRef, MrRef};
 use robiade_core::issue_start;
 use robiade_core::history::{SessionSearch, TranscriptReader};
@@ -11,10 +13,10 @@ use robiade_core::tasks::{Task, TaskId, TaskRepository};
 use tauri::{Manager, State};
 
 use crate::dto::{
-    ActionPreviewDto, AgentDto, AssetContentDto, AuditEntryDto, EntryDto, EnvironmentDto, FileChangeDto, ForgeDto,
-    IssueActionDto, IssueActionPreviewDto, IssueDto, IssueRefDto, IssueStartDto, IssueStartedDto, MergeRequestDto,
-    MrActionDto, MrOutcomesDto, MrRefDto, NewIssueDto, OverviewDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto,
-    WorktreeRemovalDto,
+    ActionPreviewDto, AgentDto, AssetContentDto, AuditEntryDto, ContainerActionPreviewDto, ContainerDto, EntryDto,
+    EnvironmentDto, FileChangeDto, ForgeDto, IssueActionDto, IssueActionPreviewDto, IssueDto, IssueRefDto,
+    IssueStartDto, IssueStartedDto, MergeRequestDto, MrActionDto, MrOutcomesDto, MrRefDto, NewIssueDto, OverviewDto,
+    SearchHitDto, SessionDto, TaskDto, TaskStatusDto, WorktreeRemovalDto,
 };
 use crate::{now, AppState};
 
@@ -556,6 +558,90 @@ pub async fn remove_worktree(app: tauri::AppHandle, path: String) -> CmdResult<(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Le conteneur tel que Docker le voit maintenant : une action ne part jamais sur un état périmé.
+fn current_container(state: &AppState, id: &ContainerId) -> CmdResult<Container> {
+    let found = state.docker.list().map_err(|e| e.to_string())?.into_iter().find(|c| c.id.matches(id));
+    found.ok_or_else(|| "conteneur introuvable".into())
+}
+
+/// Rattache le conteneur au dépôt d'où son projet Compose a été lancé.
+fn with_workspace(state: &AppState, c: Container) -> ContainerDto {
+    let workspace = c.working_dir.as_deref().filter(|d| Path::new(d).is_absolute()).map(|d| state.workspaces.resolve(d));
+    ContainerDto::new(c, workspace.as_ref())
+}
+
+fn container_action(raw: &str) -> CmdResult<ContainerAction> {
+    ContainerAction::parse(raw).ok_or_else(|| "action inconnue".into())
+}
+
+/// Tous les conteneurs du démon local ; l'interface les range par projet.
+#[tauri::command]
+pub async fn containers(app: tauri::AppHandle) -> CmdResult<Vec<ContainerDto>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let found = state.docker.list().map_err(|e| e.to_string())?;
+        Ok(found.into_iter().map(|c| with_workspace(&state, c)).collect())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Ce que l'action ferait, sur le conteneur relu : cible exacte et raison d'un refus. N'écrit rien.
+#[tauri::command]
+pub async fn prepare_container_action(
+    app: tauri::AppHandle,
+    id: String,
+    action: String,
+) -> CmdResult<ContainerActionPreviewDto> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let (id, action) = (ContainerId::parse(&id).map_err(|e| e.to_string())?, container_action(&action)?);
+        let current = current_container(&state, &id)?;
+        let blocker = action.refused_in(current.state).map(str::to_owned);
+        Ok(ContainerActionPreviewDto { container: with_workspace(&state, current), action: action.as_str(), blocker })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Action confirmée : l'état est revérifié, puis l'action part et s'inscrit au journal d'audit.
+#[tauri::command]
+pub async fn run_container_action(app: tauri::AppHandle, id: String, action: String) -> CmdResult<()> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let (id, action) = (ContainerId::parse(&id).map_err(|e| e.to_string())?, container_action(&action)?);
+        let current = current_container(&state, &id)?;
+        if let Some(refused) = action.refused_in(current.state) {
+            return Err(refused.into());
+        }
+        let outcome = state.docker.run(&current.id, action).map_err(|e| e.to_string());
+        let target = match &current.compose_project {
+            Some(project) => format!("conteneur {} ({project})", current.name),
+            None => format!("conteneur {}", current.name),
+        };
+        let result = outcome.clone().err().unwrap_or_else(|| "ok".into());
+        let entry = AuditEntry { at: now(), target, action: action.as_str().into(), outcome: result };
+        if let Err(e) = state.audit.record(&entry) {
+            eprintln!("{e}");
+        }
+        outcome
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Suit les logs d'un conteneur, depuis ses dernières lignes ; renvoie l'identifiant du suivi.
+#[tauri::command]
+pub fn follow_container_logs(state: State<AppState>, id: String) -> CmdResult<u64> {
+    let id = ContainerId::parse(&id).map_err(|e| e.to_string())?;
+    state.log_streams.follow(&id, 500).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn stop_container_logs(state: State<AppState>, stream: u64) {
+    state.log_streams.stop(stream);
 }
 
 /// Au-delà, la page de stats ne relit pas les MR une à une.

@@ -3,6 +3,7 @@
 
 mod agents;
 mod commands;
+mod containers;
 mod dto;
 mod forge;
 
@@ -10,6 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use robiade_adapters::claude_code::TranscriptStore;
+use robiade_adapters::docker::DockerEngine;
 use robiade_adapters::git::GitCli;
 use robiade_adapters::gitlab::GitLab;
 use robiade_adapters::sqlite_agents::SqliteAgentJournal;
@@ -18,6 +20,7 @@ use robiade_adapters::sqlite_search::SearchIndex;
 use robiade_adapters::workspace::WorkspaceResolver;
 use robiade_adapters::sqlite_tasks::SqliteTaskRepository;
 use robiade_adapters::{backup, hooks, shell_env};
+use robiade_core::containers::Containers;
 use robiade_core::forge::Forge;
 use robiade_core::merge_actions::AuditLog;
 use robiade_core::vcs::{WorkingTree, Worktrees};
@@ -34,6 +37,8 @@ pub struct AppState {
     pub forge: Arc<dyn Forge>,
     pub mr_states: Arc<forge::MrStates>,
     pub audit: Arc<dyn AuditLog>,
+    pub docker: Arc<dyn Containers>,
+    pub log_streams: containers::LogStreams,
     /// Fermeture confirmée dans l'interface malgré des agents au travail.
     pub quit_confirmed: AtomicBool,
 }
@@ -125,6 +130,7 @@ fn main() {
             std::thread::spawn(move || warm_index.sync(&warm_store.transcript_files()));
 
             let gitlab: Arc<dyn Forge> = Arc::new(GitLab::default());
+            let docker: Arc<dyn Containers> = Arc::new(DockerEngine::new(home.clone())?);
             app.manage(AppState {
                 transcripts,
                 search,
@@ -136,6 +142,8 @@ fn main() {
                 forge: gitlab.clone(),
                 mr_states: Arc::new(forge::MrStates::new(gitlab)),
                 audit: Arc::new(SqliteAuditLog::open(&data_dir.join("robiade.db"))?),
+                log_streams: containers::LogStreams::new(app.handle().clone(), docker.clone()),
+                docker,
                 quit_confirmed: AtomicBool::new(false),
             });
             Ok(())
@@ -182,6 +190,11 @@ fn main() {
             commands::prepare_worktree_removal,
             commands::remove_worktree,
             commands::audit_log,
+            commands::containers,
+            commands::prepare_container_action,
+            commands::run_container_action,
+            commands::follow_container_logs,
+            commands::stop_container_logs,
             commands::merge_request_outcomes,
             commands::merge_request_states,
             commands::quit,

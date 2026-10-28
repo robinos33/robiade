@@ -2,6 +2,7 @@
 
 use robiade_core::agents::{Agent, AgentStatus, Gauges, Level};
 use robiade_core::assets::{Asset, AssetKind};
+use robiade_core::containers::{Container, ContainerState};
 use robiade_core::forge::{
     Issue, IssueRef, IssueState, MergeRequest, MrOutcomes, MrRef, MrState, PipelineStatus, GITLAB_HOST,
 };
@@ -814,6 +815,77 @@ impl From<MrOutcomes> for MrOutcomesDto {
 pub struct EnvironmentDto {
     pub claude_path: Option<String>,
     pub home: String,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ContainerLogs {
+    pub stream: u64,
+    /// Octets en base64 ; `None` quand le flux est terminé.
+    pub data: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortDto {
+    pub private: u16,
+    pub public: Option<u16>,
+    pub protocol: String,
+}
+
+/// Un conteneur, et le dépôt d'où son projet Compose a été lancé (`None` hors Compose).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContainerDto {
+    pub id: String,
+    pub name: String,
+    pub image: String,
+    pub state: &'static str,
+    pub status: String,
+    pub ports: Vec<PortDto>,
+    pub compose_project: Option<String>,
+    pub service: Option<String>,
+    pub working_dir: Option<String>,
+    pub workspace: Option<WorkspaceDto>,
+}
+
+pub fn container_state(state: ContainerState) -> &'static str {
+    match state {
+        ContainerState::Created => "created",
+        ContainerState::Running => "running",
+        ContainerState::Paused => "paused",
+        ContainerState::Restarting => "restarting",
+        ContainerState::Exited => "exited",
+        ContainerState::Dead => "dead",
+        ContainerState::Other => "other",
+    }
+}
+
+impl ContainerDto {
+    pub fn new(c: Container, workspace: Option<&Workspace>) -> Self {
+        Self {
+            id: c.id.as_str().to_owned(),
+            name: c.name,
+            image: c.image,
+            state: container_state(c.state),
+            status: c.status,
+            ports: c.ports.into_iter().map(|p| PortDto { private: p.private, public: p.public, protocol: p.protocol }).collect(),
+            compose_project: c.compose_project,
+            service: c.service,
+            working_dir: c.working_dir,
+            workspace: workspace.map(WorkspaceDto::from),
+        }
+    }
+}
+
+/// Ce que la confirmation d'une action sur un conteneur montre, relu sur Docker juste avant.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContainerActionPreviewDto {
+    pub container: ContainerDto,
+    pub action: &'static str,
+    /// Raison du refus ; `None` si l'action est possible.
+    pub blocker: Option<String>,
 }
 
 #[cfg(test)]
