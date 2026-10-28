@@ -1,5 +1,6 @@
-//! Connexions aux bases dans `robiade.db`. Rien de secret n'y est écrit : les champs ne portent
-//! que des valeurs non sensibles ou des références (trousseau, Vault).
+//! Connexions aux bases dans `robiade.db`. Les champs portent des valeurs non sensibles ou des
+//! références (trousseau, Vault) ; seule exception, le mot de passe en clair d'une connexion dev vers
+//! la machine locale, déjà en clair dans le `.env` du projet.
 
 use std::path::Path;
 use std::sync::Mutex;
