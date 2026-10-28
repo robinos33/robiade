@@ -275,3 +275,34 @@ export interface Container {
 
 /** Ce que l'action ferait, sur le conteneur relu ; `blocker` dit pourquoi c'est refusé. */
 export interface ContainerActionPreview { container: Container; action: ContainerAction; blocker: string | null }
+
+export type DbEngine = 'postgres' | 'mariadb' | 'mongo' | 'elasticsearch';
+export type DbStage = 'dev' | 'staging' | 'prod';
+export type DbPart = 'url' | 'host' | 'port' | 'database' | 'user' | 'password';
+
+/** D'où vient la valeur d'un champ. Une valeur n'est portée qu'en `literal`, jamais pour un secret. */
+export type DbSource =
+  | { kind: 'literal'; value: string }
+  | { kind: 'keychain'; service: string }
+  | { kind: 'vault'; mount: string; path: string; key: string };
+
+export interface DbField { part: DbPart; source: DbSource }
+
+/** Une connexion ; une production est toujours en lecture seule (règle tenue côté Rust). */
+export interface DbConnection {
+  id: string;
+  name: string;
+  engine: DbEngine;
+  stage: DbStage;
+  projectPath: string | null;
+  readOnly: boolean;
+  fields: DbField[];
+}
+
+export type DbConnectionInput = Omit<DbConnection, 'id'> & { id: string | null };
+
+/** Où mène une connexion, valeurs résolues, sans le mot de passe. */
+export interface DbTarget { host: string; port: number; database: string | null; user: string | null; sslMode: string | null }
+
+/** Ce que le serveur a dit à la connexion d'essai ; `readOnly` est lu sur le serveur. */
+export interface DbProbe { target: DbTarget; serverVersion: string; user: string; database: string; readOnly: boolean }

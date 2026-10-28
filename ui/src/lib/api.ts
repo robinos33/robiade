@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
-  Agent, AssetContent, Container, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, SearchHit, Session, Task, TaskStatus, GitWorktree, WorktreeCreation, WorktreeRemoval,
+  Agent, AssetContent, Container, DbConnection, DbConnectionInput, DbProbe, DbTarget, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, SearchHit, Session, Task, TaskStatus, GitWorktree, WorktreeCreation, WorktreeRemoval,
 } from './types';
 
 export const api = {
@@ -62,6 +62,13 @@ export const api = {
   runContainerAction: (id: string, action: ContainerAction) => invoke<void>('run_container_action', { id, action }),
   followContainerLogs: (id: string) => invoke<number>('follow_container_logs', { id }),
   stopContainerLogs: (stream: number) => invoke<void>('stop_container_logs', { stream }),
+  dbConnections: () => invoke<DbConnection[]>('db_connections'),
+  saveDbConnection: (connection: DbConnectionInput) => invoke<DbConnection>('save_db_connection', { connection }),
+  deleteDbConnection: (id: string) => invoke<void>('delete_db_connection', { id }),
+  vaultPaths: (mount: string, prefix: string) => invoke<string[]>('vault_paths', { mount, prefix }),
+  vaultKeys: (mount: string, path: string) => invoke<string[]>('vault_keys', { mount, path }),
+  resolveDbTarget: (id: string) => invoke<DbTarget>('resolve_db_target', { id }),
+  testDbConnection: (id: string) => invoke<DbProbe>('test_db_connection', { id }),
   readAsset: (id: string, path: string) => invoke<AssetContent>('read_asset', { id, path }),
   quit: () => invoke<void>('quit'),
 };
