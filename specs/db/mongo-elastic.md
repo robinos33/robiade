@@ -27,3 +27,16 @@ prod, le reste part après confirmation. Une page d'index avance par `from`, dan
 10 000 documents. Une recherche dont des shards ont échoué, ou qui a dépassé son délai, est une
 erreur, pas un résultat vide. L'annulation retrouve les tâches par `X-Opaque-Id` ; Elasticsearch
 ne la constate qu'entre deux étapes de la recherche.
+
+Décidé le 2026-10-28 : **Mongo, commandes JSON et liste blanche de lectures, jamais d'écriture en
+prod.** La console prend un objet JSON au format de `runCommand`, valeurs typées en JSON étendu.
+Le domaine l'analyse (serde_json, sans I/O) et c'est ce document, pas le texte, qui part : l'analyse
+ne peut pas diverger de ce que reçoit le serveur. Une connexion en lecture seule et la prod
+n'envoient que find, aggregate sans `$out` ni `$merge`, count, distinct, les listes, les
+statistiques et explain d'une lecture ; jamais de champ de session ou de transaction, ni de champ
+`$…` de premier niveau ; en prod, ni `$where`, ni `$function`, ni `$accumulator`. Une collection
+n'ayant pas de schéma, ses colonnes sont celles d'un échantillon de 100 documents. Pages par `_id`
+(keyset) ou par `skip`. URL `mongodb://` avec graines et paramètres sur liste blanche ; ceux qui
+affaibliraient la vérification du certificat rendent l'URL invalide ; `mongodb+srv://` n'est pas
+pris en charge. Le client vérifie les certificats contre les autorités publiques (webpki) : un
+Mongo signé par une autorité interne ne se joindra pas en TLS tant que ce n'est pas réglé.
