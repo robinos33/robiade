@@ -1,5 +1,8 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { app } from '../lib/state.svelte';
+  import { api } from '../lib/api';
+  import type { Container } from '../lib/types';
   import { ago, duration } from '../lib/format';
   import StatusBadge from '../components/StatusBadge.svelte';
   import MrBadge from '../components/MrBadge.svelte';
@@ -13,6 +16,27 @@
   const running = $derived(app.visibleAgents.filter((a) => a.status === 'running' || a.status === 'starting'));
   const doing = $derived(app.visibleTasks.filter((t) => t.status === 'doing'));
   const recent = $derived(app.visibleHistory.slice(0, 6));
+
+  let containers = $state<Container[]>([]);
+
+  // Docker éteint ou illisible : rien à signaler ici, la vue Environnements dit pourquoi.
+  $effect(() => {
+    const read = () => api.containers().then((c) => (containers = c), () => (containers = []));
+    untrack(() => void read());
+    const timer = setInterval(() => void read(), 30_000);
+    return () => clearInterval(timer);
+  });
+
+  /** En échec : redémarre en boucle, mort, malade, ou arrêté sur un code d'erreur. */
+  const failing = (c: Container) =>
+    c.state === 'restarting' ||
+    c.state === 'dead' ||
+    c.status.includes('(unhealthy)') ||
+    (c.state === 'exited' && !c.status.startsWith('Exited (0)'));
+
+  const brokenContainers = $derived(
+    containers.filter((c) => failing(c) && (app.project === null || c.workspace?.projectRoot === app.project)),
+  );
 </script>
 
 <section class="page">
@@ -79,6 +103,25 @@
       </div>
     {/if}
 
+    {#if brokenContainers.length > 0}
+      <div class="block">
+        <h2 class="section-title">Conteneurs en échec</h2>
+        <ul class="cards">
+          {#each brokenContainers as c (c.id)}
+            <li>
+              <button class="card failed" onclick={() => (app.view = 'env')}>
+                <span class="what">
+                  <strong>{c.name}</strong>
+                  <span class="muted">{c.workspace?.projectName ?? c.composeProject ?? ''}</span>
+                </span>
+                <span class="muted num">{c.status}</span>
+              </button>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
+
     <div class="grid">
       <div class="block">
         <h2 class="section-title">Agents au travail</h2>
@@ -132,7 +175,6 @@
       </ul>
     </div>
 
-    <p class="later muted">Arrive ensuite : état des conteneurs (v3).</p>
   </div>
 </section>
 
@@ -166,5 +208,4 @@
   .grow { flex: 1; min-width: 0; }
   .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .proj { width: 130px; flex: none; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .later { font-size: 12px; margin: 0; }
 </style>
