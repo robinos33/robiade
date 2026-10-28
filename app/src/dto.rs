@@ -529,6 +529,8 @@ pub struct MergeRequestDto {
     pub target_branch: String,
     pub web_url: String,
     pub updated_at: i64,
+    /// Commit de tête vu à l'affichage : le merge n'est accepté que sur lui.
+    pub sha: String,
     pub has_conflicts: bool,
     pub unresolved_discussions: bool,
     pub merge_status: String,
@@ -558,6 +560,7 @@ impl From<MergeRequest> for MergeRequestDto {
             target_branch: m.target_branch,
             web_url: m.web_url,
             updated_at: m.updated_at,
+            sha: m.sha,
             has_conflicts: m.has_conflicts,
             unresolved_discussions: m.unresolved_discussions,
             merge_status: m.merge_status,
