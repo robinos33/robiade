@@ -236,6 +236,7 @@ fn main() {
             commands::db_page,
             commands::run_db_statement,
             commands::cancel_db_statement,
+            commands::finish_db_write,
             commands::db_console_history,
             commands::merge_request_outcomes,
             commands::merge_request_states,

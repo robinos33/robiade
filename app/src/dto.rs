@@ -1349,10 +1349,23 @@ impl ConsoleResultDto {
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ConsoleReplyDto {
+    /// `prod` : la confirmation exige de taper le nom de la connexion.
     #[serde(rename_all = "camelCase")]
-    Confirm { statement: String, connection: String, stage: StageDto, target: String },
+    Confirm { statement: String, connection: String, prod: bool, target: String },
     #[serde(rename_all = "camelCase")]
     Done { statement: String, result: ConsoleResultDto },
+    /// Modification de prod exécutée dans sa transaction, à valider ou annuler avant `delay_ms`.
+    #[serde(rename_all = "camelCase")]
+    Pending { statement: String, affected: u64, delay_ms: u64 },
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FinishedWriteDto {
+    pub committed: bool,
+    pub affected: u64,
+    /// La session n'était plus en lecture seule après coup : elle est fermée.
+    pub session_closed: bool,
 }
 
 #[derive(Serialize)]

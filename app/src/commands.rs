@@ -7,6 +7,7 @@ use robiade_adapters::keychain;
 use robiade_core::containers::{Container, ContainerAction, ContainerId};
 use robiade_core::databases::{Connection, ConnectionId, ConnectionRepository, Part, Source, Target};
 use robiade_core::db_browse::{page, page_query, PageRequest, TableRef};
+use robiade_core::databases::DbError;
 use robiade_core::db_console::{self, Admission, ConsoleHistory, Policy, StatementKind};
 use robiade_core::merge_actions::AuditEntry;
 use robiade_core::forge::{IssueRef, MrRef};
@@ -19,7 +20,7 @@ use secrecy::ExposeSecret;
 use tauri::{Manager, State};
 
 use crate::dto::{
-    ActionPreviewDto, AgentDto, AssetContentDto, AuditEntryDto, ConsoleHistoryDto, ConsoleReplyDto, ConsoleResultDto,
+    ActionPreviewDto, AgentDto, AssetContentDto, AuditEntryDto, ConsoleHistoryDto, ConsoleReplyDto, ConsoleResultDto, FinishedWriteDto,
     ContainerActionPreviewDto, ContainerDto, DbConnectionDto, DbConnectionInputDto, DbOverviewDto, DbProbeDto, DbTargetDto, EntryDto, EnvironmentDto,
     FileChangeDto, ForgeDto, IssueActionDto, IssueActionPreviewDto, IssueDto, IssueRefDto, IssueStartDto,
     IssueStartedDto, MergeRequestDto, MrActionDto, MrOutcomesDto, MrRefDto, NewIssueDto, OverviewDto, PageDto,
@@ -866,7 +867,7 @@ pub fn save_db_connection(state: State<AppState>, connection: DbConnectionInputD
     .map_err(|e| e.to_string())?;
     state.connections.save(&saved).map_err(|e| e.to_string())?;
     // Une session ouverte garderait l'ancienne cible et l'ancienne règle de lecture seule.
-    state.db_sessions.close(&saved.id().0);
+    close_session(&state, &saved.id().0, "connexion modifiée");
     Ok((&saved).into())
 }
 
@@ -874,7 +875,7 @@ pub fn save_db_connection(state: State<AppState>, connection: DbConnectionInputD
 pub fn delete_db_connection(state: State<AppState>, id: String) -> CmdResult<()> {
     let deleted = state.connections.delete(&ConnectionId(id.clone())).map_err(|e| e.to_string());
     // Après la suppression : une ouverture qui relirait encore la connexion verrait sa génération périmée.
-    state.db_sessions.close(&id);
+    close_session(&state, &id, "connexion supprimée");
     if deleted.is_ok() {
         state.console_history.forget(&id).map_err(|e| e.to_string())?;
     }
@@ -959,6 +960,10 @@ pub async fn test_db_connection(app: tauri::AppHandle, id: String) -> CmdResult<
 pub async fn open_db(app: tauri::AppHandle, id: String, database: Option<String>) -> CmdResult<DbOverviewDto> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
+        // Changer de base remplacerait la session, et sa transaction : on règle d'abord celle-ci.
+        if state.db_sessions.get(&id).is_ok_and(|s| s.pending().is_some()) {
+            return Err(DbError::ProdWritePending.to_string());
+        }
         // Relevée avant de lire la connexion : une modification pendant l'ouverture l'invalide.
         let generation = state.db_sessions.generation(&id);
         let connection = state.connections.get(&ConnectionId(id.clone())).map_err(|e| e.to_string())?;
@@ -986,7 +991,9 @@ pub async fn open_db(app: tauri::AppHandle, id: String, database: Option<String>
             relations: session.relations().map_err(|e| e.to_string())?.into_iter().map(RelationDto::from).collect(),
             read_only,
         };
-        state.db_sessions.insert(&id, generation, OpenSession::new(session, read_only, label))?;
+        let policy = Policy::of(connection.stage(), connection.read_only());
+        let session = OpenSession::new(session, policy, read_only, connection.name().to_owned(), label);
+        state.db_sessions.insert(&id, generation, session)?;
         Ok(overview)
     })
     .await
@@ -995,7 +1002,7 @@ pub async fn open_db(app: tauri::AppHandle, id: String, database: Option<String>
 
 #[tauri::command]
 pub fn close_db(state: State<AppState>, id: String) {
-    state.db_sessions.close(&id);
+    close_session(&state, &id, "explorateur quitté");
 }
 
 /// Une page d'une table. La table est relue au catalogue à chaque page : ses colonnes sont la
@@ -1011,11 +1018,12 @@ pub async fn db_page(
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
         let shared = state.db_sessions.get(&id)?;
-        let mut session = shared.lock();
-        let shape = session.describe(&TableRef { schema, name }).map_err(|e| e.to_string())?;
-        let query = page_query(&shape, &PageRequest::from(request)).map_err(|e| e.to_string())?;
-        let rows = session.fetch(&query).map_err(|e| e.to_string())?;
-        Ok(page(&shape, &query, rows).into())
+        shared.run(|session| {
+            let shape = session.describe(&TableRef { schema, name }).map_err(|e| e.to_string())?;
+            let query = page_query(&shape, &PageRequest::from(request)).map_err(|e| e.to_string())?;
+            let rows = session.fetch(&query).map_err(|e| e.to_string())?;
+            Ok(page(&shape, &query, rows).into())
+        })?
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1027,17 +1035,36 @@ fn target_label(t: &Target) -> String {
     format!("{user}{}:{}{database}", t.host, t.port)
 }
 
+/// Ferme la session d'une connexion. Une modification de prod qui attendait est annulée, et
+/// l'annulation inscrite au journal.
+fn close_session(state: &AppState, id: &str, why: &str) {
+    if let Some((session, finished)) = state.db_sessions.close(id) {
+        let outcome = finished.outcome.err().unwrap_or_else(|| format!("rollback ({why})"));
+        audit_prod_write(state, &session.audit_target(), &finished.write.statement, Some(finished.write.affected), &outcome);
+    }
+}
+
+fn audit_prod_write(state: &AppState, target: &str, statement: &str, affected: Option<u64>, outcome: &str) {
+    if let Err(e) = state.audit.record(&AuditEntry::on_prod_write(now(), target, statement, affected, outcome)) {
+        eprintln!("{e}");
+    }
+}
+
 /// Exécute l'instruction sous le curseur (position de l'éditeur, en unités UTF-16), ou à défaut le
 /// texte entier, qui doit alors tenir en une instruction : c'est ce qu'envoie une sélection, et ce
-/// que renvoie une confirmation. Une écriture sur une connexion qui le permet revient d'abord à
-/// confirmer, avec l'instruction exacte.
+/// que renvoie une confirmation.
+///
+/// Une écriture revient d'abord à confirmer, avec l'instruction exacte. `confirmation` porte la
+/// réponse : en prod, le nom de la connexion tapé à la main, sans quoi rien ne part ; une
+/// modification de prod reste ensuite en attente dans sa transaction, à valider par
+/// `finish_db_write`.
 #[tauri::command]
 pub async fn run_db_statement(
     app: tauri::AppHandle,
     id: String,
     text: String,
     cursor: Option<usize>,
-    confirmed: bool,
+    confirmation: Option<String>,
 ) -> CmdResult<ConsoleReplyDto> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
@@ -1048,37 +1075,99 @@ pub async fn run_db_statement(
         .map_err(|e| e.to_string())?
         .to_owned();
         let shared = state.db_sessions.get(&id)?;
-        let policy = if shared.read_only { Policy::ReadOnly } else { Policy::Writable };
-        let kind = match db_console::admit(&statement, policy).map_err(|e| e.to_string())? {
-            Admission::Run(kind) => kind,
-            Admission::Confirm => StatementKind::Write,
-            Admission::ProdWrite => return Err("modification de production pas encore prise en charge".into()),
+        let admission = db_console::admit(&statement, shared.policy).map_err(|e| e.to_string())?;
+        let confirm = |prod: bool| ConsoleReplyDto::Confirm {
+            statement: statement.clone(),
+            connection: shared.connection.clone(),
+            prod,
+            target: shared.target.clone(),
         };
-        if kind == StatementKind::Write && !shared.read_only && !confirmed {
-            let connection = state.connections.get(&ConnectionId(id)).map_err(|e| e.to_string())?;
-            return Ok(ConsoleReplyDto::Confirm {
-                statement,
-                connection: connection.name().to_owned(),
-                stage: connection.stage().into(),
-                target: shared.target.clone(),
-            });
-        }
+        let kind = match admission {
+            Admission::Run(kind) => kind,
+            Admission::Confirm if confirmation.is_none() => return Ok(confirm(false)),
+            Admission::Confirm => StatementKind::Write,
+            Admission::ProdWrite => match confirmation.as_deref() {
+                None => return Ok(confirm(true)),
+                Some(typed) if typed != shared.connection => {
+                    return Err("le nom tapé n'est pas celui de la connexion : rien n'est parti".into())
+                }
+                Some(_) => return begin_prod_write(&app, &state, &id, &shared, statement),
+            },
+        };
         if let Err(e) = state.console_history.record(&id, &statement, now()) {
             eprintln!("historique de la console non enregistré : {e}");
         }
-        let mut session = shared.lock();
-        let started = std::time::Instant::now();
-        let executed = session.execute(&statement, kind, db_console::ROWS_MAX);
-        let elapsed_ms = started.elapsed().as_millis() as u64;
+        let (executed, elapsed_ms, still_read_only) = shared.run(|session| {
+            let started = std::time::Instant::now();
+            let executed = session.execute(&statement, kind, db_console::ROWS_MAX);
+            let elapsed_ms = started.elapsed().as_millis() as u64;
+            (executed, elapsed_ms, session.read_only().unwrap_or(false))
+        })?;
         // Le serveur accepte qu'une instruction lève la lecture seule de la session : le domaine
         // refuse ce qu'il reconnaît, et ceci rattrape le reste en relisant l'état.
-        if shared.read_only && !session.read_only().unwrap_or(false) {
-            drop(session);
-            state.db_sessions.close(&id);
+        if shared.read_only && !still_read_only {
+            close_session(&state, &id, "lecture seule perdue");
             return Err("la session n'était plus en lecture seule : elle est fermée, rouvre la connexion".into());
         }
         let result = ConsoleResultDto::new(db_console::outcome(executed.map_err(|e| e.to_string())?), elapsed_ms);
         Ok(ConsoleReplyDto::Done { statement, result })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Exécute une modification de prod dans sa transaction et la laisse en attente : annulée au bout
+/// du délai si personne ne la valide.
+fn begin_prod_write(
+    app: &tauri::AppHandle,
+    state: &AppState,
+    id: &str,
+    shared: &std::sync::Arc<OpenSession>,
+    statement: String,
+) -> CmdResult<ConsoleReplyDto> {
+    if let Err(e) = state.console_history.record(id, &statement, now()) {
+        eprintln!("historique de la console non enregistré : {e}");
+    }
+    let target = shared.audit_target();
+    let delay = std::time::Duration::from_secs(db_console::PROD_WRITE_DELAY_SECS);
+    let (app, expired_id, expired_target) = (app.clone(), id.to_owned(), target.clone());
+    let begun = shared.begin_write(&statement, delay, move |finished| {
+        let state = app.state::<AppState>();
+        let outcome = finished.outcome.err().unwrap_or_else(|| format!("rollback auto ({delay:?} sans réponse)"));
+        audit_prod_write(&state, &expired_target, &finished.write.statement, Some(finished.write.affected), &outcome);
+        if !finished.read_only {
+            close_session(&state, &expired_id, "lecture seule perdue");
+        }
+    });
+    match begun {
+        Ok(write) => Ok(ConsoleReplyDto::Pending { statement, affected: write.affected, delay_ms: delay.as_millis() as u64 }),
+        Err(e) => {
+            audit_prod_write(state, &target, &statement, None, &e);
+            Err(e)
+        }
+    }
+}
+
+/// Valide (`commit`) ou annule la modification de prod en attente, puis vérifie que la session
+/// est revenue en lecture seule : sinon, elle est fermée.
+#[tauri::command]
+pub async fn finish_db_write(app: tauri::AppHandle, id: String, commit: bool) -> CmdResult<FinishedWriteDto> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let shared = state.db_sessions.get(&id)?;
+        let finished = shared.finish(commit)?;
+        let outcome = match &finished.outcome {
+            Ok(()) if commit => "commit".to_owned(),
+            Ok(()) => "rollback".to_owned(),
+            Err(e) => format!("échec du {} : {e}", if commit { "commit" } else { "rollback" }),
+        };
+        audit_prod_write(&state, &shared.audit_target(), &finished.write.statement, Some(finished.write.affected), &outcome);
+        let session_closed = !finished.read_only;
+        if session_closed {
+            close_session(&state, &id, "lecture seule perdue");
+        }
+        finished.outcome?;
+        Ok(FinishedWriteDto { committed: finished.committed, affected: finished.write.affected, session_closed })
     })
     .await
     .map_err(|e| e.to_string())?
