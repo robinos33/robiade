@@ -9,7 +9,8 @@ use robiade_core::project::{gitlab_project_of_remote, repository_of_gitdir, Work
 
 #[derive(Default)]
 pub struct WorkspaceResolver {
-    /// La nature d'un dossier ne change pas pendant une session : on ne lit le disque qu'une fois.
+    /// La nature d'un dossier ne change pas pendant une session, sauf quand Robiade supprime un
+    /// worktree (`forget`) : on ne lit le disque qu'une fois.
     cache: Mutex<HashMap<String, Workspace>>,
 }
 
@@ -23,6 +24,14 @@ impl WorkspaceResolver {
             cache.insert(path.to_owned(), found.clone());
         }
         found
+    }
+
+    /// Oublie `dir` et ses sous-dossiers : ils seront relus sur le disque.
+    pub fn forget(&self, dir: &str) {
+        let prefix = format!("{}/", dir.trim_end_matches('/'));
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.retain(|path, _| path != dir && !path.starts_with(&prefix));
+        }
     }
 }
 
@@ -108,6 +117,12 @@ mod tests {
 
         let gone = resolver.resolve(&base.join("disparu").to_string_lossy());
         assert!(!gone.is_repository);
+
+        // Worktree supprimé : relu sur le disque une fois oublié, il n'est plus un worktree.
+        std::fs::remove_dir_all(&wt).unwrap();
+        assert!(resolver.resolve(&wt.to_string_lossy()).worktree.is_some(), "encore en cache");
+        resolver.forget(&wt.to_string_lossy());
+        assert_eq!(resolver.resolve(&wt.to_string_lossy()).worktree, None);
         std::fs::remove_dir_all(base).unwrap();
     }
 }

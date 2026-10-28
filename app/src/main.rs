@@ -175,6 +175,8 @@ fn main() {
             commands::run_mr_action,
             commands::prepare_issue_start,
             commands::start_issue_agent,
+            commands::prepare_worktree_removal,
+            commands::remove_worktree,
             commands::audit_log,
             commands::merge_request_outcomes,
             commands::merge_request_states,

@@ -13,7 +13,7 @@ use tauri::{Manager, State};
 use crate::dto::{
     ActionPreviewDto, AgentDto, AssetContentDto, AuditEntryDto, EntryDto, EnvironmentDto, FileChangeDto, ForgeDto,
     IssueDto, IssueRefDto, IssueStartDto, IssueStartedDto, MergeRequestDto, MrActionDto, MrOutcomesDto, MrRefDto,
-    OverviewDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto,
+    OverviewDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto, WorktreeRemovalDto,
 };
 use crate::{now, AppState};
 
@@ -420,6 +420,62 @@ pub async fn start_issue_agent(
             state.agents.spawn(Path::new(&dir), None, Some(prompt), cols.clamp(20, 500), rows.clamp(5, 200))?;
         state.agents.rename(&agent_id(&agent.id)?, &issue_start::tab_name(&found))?;
         Ok(IssueStartedDto { agent_id: agent.id, fetched })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Racine d'un worktree lié, désignée par l'interface, et le dépôt principal auquel il appartient.
+fn linked_worktree(state: &AppState, raw: &str) -> CmdResult<(String, String)> {
+    let dir = project_dir(raw)?.to_string_lossy().into_owned();
+    let workspace = state.workspaces.resolve(&dir);
+    if workspace.worktree.as_deref() != Some(dir.as_str()) || !workspace.is_repository {
+        return Err("ce dossier n'est pas un worktree lié à un dépôt".into());
+    }
+    Ok((dir, workspace.project_root))
+}
+
+/// Ce qui empêche de supprimer le worktree : un agent dedans, ou des modifications non commitées.
+fn removal_blocker(state: &AppState, dir: &str) -> CmdResult<Option<String>> {
+    if state.agents.running_in(dir) {
+        return Ok(Some("un agent tourne encore dans ce worktree : arrête-le d'abord".into()));
+    }
+    let changes = state.vcs.changes(dir).map_err(|e| e.to_string())?;
+    Ok((!changes.is_empty()).then(|| {
+        format!("{} fichier(s) modifié(s) ou non suivi(s) : commite-les ou annule-les d'abord", changes.len())
+    }))
+}
+
+/// Ce que « supprimer le worktree » ferait : cible exacte, branche, et raison d'un refus.
+#[tauri::command]
+pub async fn prepare_worktree_removal(app: tauri::AppHandle, path: String) -> CmdResult<WorktreeRemovalDto> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let (dir, repository) = linked_worktree(&state, &path)?;
+        Ok(WorktreeRemovalDto {
+            branch: state.worktrees.branch(&dir).map_err(|e| e.to_string())?,
+            blocker: removal_blocker(&state, &dir)?,
+            path: dir,
+            repository,
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Supprime le worktree, sans force ; sa branche reste. Les vérifications sont refaites ici.
+#[tauri::command]
+pub async fn remove_worktree(app: tauri::AppHandle, path: String) -> CmdResult<()> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let (dir, repository) = linked_worktree(&state, &path)?;
+        if let Some(blocker) = removal_blocker(&state, &dir)? {
+            return Err(blocker);
+        }
+        state.worktrees.remove(&repository, &dir).map_err(|e| e.to_string())?;
+        state.workspaces.forget(&dir);
+        state.agents.reattach(&dir);
+        Ok(())
     })
     .await
     .map_err(|e| e.to_string())?

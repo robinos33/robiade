@@ -322,6 +322,22 @@ impl AgentRegistry {
         }
     }
 
+    /// Vrai si un agent tourne encore dans ce worktree.
+    pub fn running_in(&self, worktree: &str) -> bool {
+        let Ok(live) = self.live.lock() else { return true };
+        live.values().any(|l| l.process.is_some() && l.workspace.worktree.as_deref() == Some(worktree))
+    }
+
+    /// Après la suppression d'un worktree, ses onglets terminés se rattachent à ce qui reste sur le disque.
+    pub fn reattach(&self, worktree: &str) {
+        if let Ok(mut live) = self.live.lock() {
+            for l in live.values_mut().filter(|l| l.workspace.worktree.as_deref() == Some(worktree)) {
+                l.workspace = self.workspaces.resolve(l.agent.project_path());
+            }
+        }
+        self.publish();
+    }
+
     /// Agents actifs depuis `since`, ceux de cette exécution comme ceux des précédentes.
     pub fn activity_since(&self, since: i64) -> Vec<Agent> {
         let mut agents: HashMap<AgentId, Agent> =

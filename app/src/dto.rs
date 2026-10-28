@@ -532,6 +532,18 @@ pub struct IssueStartedDto {
     pub fetched: bool,
 }
 
+/// Ce que « supprimer le worktree » ferait, montré avant de confirmer.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeRemovalDto {
+    pub path: String,
+    pub repository: String,
+    /// `None` : tête détachée.
+    pub branch: Option<String>,
+    /// Raison du refus ; `None` si la suppression est possible.
+    pub blocker: Option<String>,
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MrRefDto {

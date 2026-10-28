@@ -257,6 +257,30 @@ impl Worktrees for GitCli {
         }
         Ok(fetched)
     }
+
+    fn branch(&self, dir: &str) -> Result<Option<String>, VcsError> {
+        match self.run(dir, &["symbolic-ref", "--quiet", "--short", "HEAD"]) {
+            Ok(out) => Ok(Some(String::from_utf8_lossy(&out).trim().to_owned())),
+            Err(VcsError::NotARepository) => Err(VcsError::NotARepository),
+            Err(_) => Ok(None), // tête détachée
+        }
+    }
+
+    fn remove(&self, repository: &str, dir: &str) -> Result<(), VcsError> {
+        if !dir.starts_with('/') {
+            return Err(VcsError::Git("dossier refusé".into()));
+        }
+        let out = self
+            .write_command(repository)
+            .args(["worktree", "remove", "--", dir])
+            .output()
+            .map_err(|e| VcsError::Git(e.to_string()))?;
+        if !out.status.success() {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            return Err(VcsError::Git(stderr.lines().last().unwrap_or_default().to_owned()));
+        }
+        Ok(())
+    }
 }
 
 impl GitCli {
@@ -383,6 +407,14 @@ mod tests {
         assert!(git_cli.create(r, "ticket-1-x", "origin/staging", d).is_err(), "dossier existant");
         assert!(git_cli.create(r, "-x", "origin/staging", &format!("{d}2")).is_err());
         assert!(git_cli.create(r, "y", "HEAD", &format!("{d}3")).is_err());
+
+        assert_eq!(git_cli.branch(d), Ok(Some("ticket-1-x".to_owned())));
+        std::fs::write(dir.join("c.txt"), "trois\n").unwrap();
+        assert!(git_cli.remove(r, d).is_err(), "un arbre modifié n'est pas supprimé");
+        std::fs::remove_file(dir.join("c.txt")).unwrap();
+        assert_eq!(git_cli.remove(r, d), Ok(()));
+        assert!(!dir.exists());
+        git(&repo, &["rev-parse", "--verify", "--quiet", "refs/heads/ticket-1-x"]); // branche conservée
         std::fs::remove_dir_all(base).unwrap();
     }
 }
