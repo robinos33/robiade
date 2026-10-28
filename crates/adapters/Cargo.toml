@@ -13,3 +13,5 @@ libc = "0.2"
 portable-pty = "0.9"
 rayon = "1"
 rusqlite = { version = "0.37", features = ["bundled"] }
+ureq = { version = "3.5.0", features = ["json"] }
+secrecy = "0.10.3"
