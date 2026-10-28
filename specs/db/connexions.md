@@ -22,7 +22,7 @@ base dev locale), affiche la prod en rouge, et n'est en lecture seule que si le 
 | PostgreSQL | `tokio-postgres` | utilisateur en lecture seule **et** `default_transaction_read_only = on` |
 | MariaDB | `mysql_async` | utilisateur en lecture seule **et** `SET SESSION TRANSACTION READ ONLY` |
 | MongoDB | `mongodb` (officiel) | rôle `read` côté serveur, et c'est tout : le protocole n'a pas de mode lecture seule par session |
-| Elasticsearch | `reqwest` (API REST) | clé d'API à privilèges `read` ; et côté adapter, une liste blanche d'endpoints, pas de méthodes (`_search` se fait aussi en `POST`) |
+| Elasticsearch | `ureq` (API REST) | clé d'API à privilèges `read` ; et côté adapter, une liste blanche d'endpoints, pas de méthodes (`_search` se fait aussi en `POST`) |
 
 ## Décisions
 
@@ -39,6 +39,11 @@ sans bascule possible en prod : seule la console y écrit, par INSERT, UPDATE ou
 certificat et nom d'hôte vérifiés ; en dev, clair accepté seulement vers localhost. **Risque
 résiduel assumé** : ces protections tiennent contre une fausse manipulation, pas contre un bug de
 Robiade ; un compte en lecture seule côté serveur reste la cible quand il sera disponible.
+
+Décidé le 2026-10-28 : **en dev, repli en clair seulement vers la machine locale.** Sans `sslmode`,
+une connexion dev vers un autre hôte exige TLS : le repli « si le serveur ne propose pas TLS » se
+provoque depuis le réseau et livrerait le mot de passe. Un serveur dev distant sans TLS ne se
+joint donc plus.
 
 Seule exception au « rien en clair » : une base **dev locale**, dont le mot de passe est déjà en
 clair dans le `.env` du projet, se saisit en clair et reste dans `robiade.db` ; staging, prod et dev
