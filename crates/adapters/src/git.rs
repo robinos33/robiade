@@ -5,9 +5,11 @@ use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
-use robiade_core::vcs::{ChangeKind, FileChange, VcsError, WorkingTree};
+use robiade_core::issue_start::is_valid_branch;
+use robiade_core::vcs::{ChangeKind, FileChange, VcsError, WorkingTree, Worktrees};
 
 /// Arbre vide de Git : base de comparaison d'un dépôt sans commit.
 const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
@@ -23,17 +25,44 @@ const HARDENING: &[&str] = &["-c", "core.fsmonitor=false", "-c", "core.quotepath
 /// Options de `git diff` qui n'exécutent rien de déclaré par le dépôt.
 const SAFE_DIFF: &[&str] = &["--no-color", "--no-ext-diff", "--no-textconv", "--ignore-submodules=all", "-M"];
 
+/// Bases proposées pour une branche de ticket, par ordre de préférence.
+const BASES: &[&str] = &["origin/staging", "origin/main", "origin/master"];
+/// Un fetch plus long est abandonné : la base locale sert.
+const FETCH_TIMEOUT: Duration = Duration::from_secs(30);
+
 pub struct GitCli {
     git: String,
+    /// PATH du shell de login, pour les filtres (git-lfs) lors de la création d'un worktree.
+    path: Option<String>,
 }
 
 impl Default for GitCli {
     fn default() -> Self {
-        Self { git: "/usr/bin/git".to_owned() }
+        Self { git: "/usr/bin/git".to_owned(), path: None }
     }
 }
 
 impl GitCli {
+    pub fn with_path(path: String) -> Self {
+        Self { path: Some(path), ..Self::default() }
+    }
+
+    /// Écriture que j'ai demandée (créer un worktree). Aucun hook ne tourne ; les filtres, eux,
+    /// restent actifs : sans le `smudge` de git-lfs, le worktree contiendrait des pointeurs au lieu
+    /// des fichiers. C'est ce que ferait la même commande lancée dans mon terminal.
+    fn write_command(&self, dir: &str) -> Command {
+        let mut cmd = self.command(dir);
+        cmd.args(["-c", "core.hooksPath=/dev/null"])
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
+        if let Some(path) = &self.path {
+            cmd.env("PATH", path);
+        }
+        cmd
+    }
+
     fn command(&self, dir: &str) -> Command {
         let mut cmd = Command::new(&self.git);
         cmd.arg("-C").arg(dir).args(HARDENING).arg("--no-pager").env("GIT_OPTIONAL_LOCKS", "0").env("LC_ALL", "C");
@@ -202,6 +231,55 @@ impl WorkingTree for GitCli {
     }
 }
 
+impl Worktrees for GitCli {
+    fn bases(&self, repository: &str) -> Result<Vec<String>, VcsError> {
+        let mut args = vec!["for-each-ref", "--format=%(refname:short)"];
+        let refs: Vec<String> = BASES.iter().map(|b| format!("refs/remotes/{b}")).collect();
+        args.extend(refs.iter().map(String::as_str));
+        let found = String::from_utf8_lossy(&self.run(repository, &args)?).into_owned();
+        Ok(BASES.iter().filter(|b| found.lines().any(|l| l == **b)).map(|b| (*b).to_owned()).collect())
+    }
+
+    fn create(&self, repository: &str, branch: &str, base: &str, dir: &str) -> Result<bool, VcsError> {
+        if !BASES.contains(&base) || !is_valid_branch(branch) || !dir.starts_with('/') || Path::new(dir).exists() {
+            return Err(VcsError::Git("branche, base ou dossier refusé".into()));
+        }
+        let remote_branch = base.trim_start_matches("origin/");
+        let fetched = self.fetch(repository, remote_branch);
+        let out = self
+            .write_command(repository)
+            .args(["worktree", "add", "--no-track", "-b", branch, dir, base])
+            .output()
+            .map_err(|e| VcsError::Git(e.to_string()))?;
+        if !out.status.success() {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            return Err(VcsError::Git(stderr.lines().last().unwrap_or_default().to_owned()));
+        }
+        Ok(fetched)
+    }
+}
+
+impl GitCli {
+    /// `git fetch origin <branche>`, abandonné au-delà de `FETCH_TIMEOUT`.
+    fn fetch(&self, repository: &str, branch: &str) -> bool {
+        let Ok(mut child) = self.write_command(repository).args(["fetch", "--no-tags", "origin", branch]).spawn() else {
+            return false;
+        };
+        let started = Instant::now();
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => return status.success(),
+                Ok(None) if started.elapsed() < FETCH_TIMEOUT => std::thread::sleep(Duration::from_millis(100)),
+                _ => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return false;
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -270,5 +348,41 @@ mod tests {
         assert!(repo.diff(d, "a.txt").unwrap().contains("+deux"));
         assert!(!witness.exists(), "une commande du dépôt a été exécutée");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn creates_a_worktree_from_an_updated_base_without_running_hooks() {
+        let base = std::env::temp_dir().join(format!("robiade-wt-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (origin, repo) = (base.join("origin"), base.join("repo"));
+        std::fs::create_dir_all(&origin).unwrap();
+        git(&origin, &["init", "-q", "-b", "staging"]);
+        std::fs::write(origin.join("a.txt"), "un\n").unwrap();
+        git(&origin, &["add", "a.txt"]);
+        git(&origin, &["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init"]);
+        git(&base, &["clone", "-q", origin.to_str().unwrap(), "repo"]);
+        // Commit arrivé sur origin après le clone : le fetch doit le ramener.
+        std::fs::write(origin.join("b.txt"), "deux\n").unwrap();
+        git(&origin, &["add", "b.txt"]);
+        git(&origin, &["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "b"]);
+        let witness = base.join("hook-ran");
+        let hook = repo.join(".git/hooks/post-checkout");
+        std::fs::write(&hook, format!("#!/bin/sh\ntouch '{}'\n", witness.display())).unwrap();
+        let mut perms = std::fs::metadata(&hook).unwrap().permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
+        std::fs::set_permissions(&hook, perms).unwrap();
+
+        let git_cli = GitCli::default();
+        let r = repo.to_str().unwrap();
+        assert_eq!(git_cli.bases(r).unwrap(), ["origin/staging"]);
+        let dir = repo.join(".claude/worktrees/ticket-1-x");
+        let d = dir.to_str().unwrap();
+        assert_eq!(git_cli.create(r, "ticket-1-x", "origin/staging", d), Ok(true));
+        assert!(dir.join("b.txt").exists(), "base mise à jour avant la création");
+        assert!(!witness.exists(), "aucun hook ne doit tourner");
+        assert!(git_cli.create(r, "ticket-1-x", "origin/staging", d).is_err(), "dossier existant");
+        assert!(git_cli.create(r, "-x", "origin/staging", &format!("{d}2")).is_err());
+        assert!(git_cli.create(r, "y", "HEAD", &format!("{d}3")).is_err());
+        std::fs::remove_dir_all(base).unwrap();
     }
 }
