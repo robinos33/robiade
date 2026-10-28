@@ -46,7 +46,8 @@ impl Engine {
         match self {
             Self::Postgres => &["postgresql://", "postgres://"],
             Self::MariaDb => &["mysql://", "mariadb://"],
-            Self::Mongo | Self::Elasticsearch => &[],
+            Self::Elasticsearch => &["https://", "http://"],
+            Self::Mongo => &[],
         }
     }
 }
@@ -405,11 +406,12 @@ fn literal_host(engine: Engine, fields: &[(Part, Source)]) -> Option<String> {
     }
 }
 
-/// `postgres[ql]://user:pass@host:port/base?sslmode=…`, ou `mysql://…` pour MariaDB, identifiants
-/// décodés.
+/// `postgres[ql]://user:pass@host:port/base?sslmode=…`, `mysql://…` pour MariaDB, `http[s]://…` pour
+/// Elasticsearch, identifiants décodés. Pour Elasticsearch, c'est le schéma qui dit le chiffrement,
+/// et le chemin ne désigne pas de base.
 fn parse_url(engine: Engine, url: &str) -> Option<Target> {
     let url = url.trim();
-    let rest = engine.schemes().iter().find_map(|scheme| url.strip_prefix(scheme))?;
+    let (scheme, rest) = engine.schemes().iter().find_map(|scheme| Some((*scheme, url.strip_prefix(scheme)?)))?;
     let (rest, query) = rest.split_once('?').unwrap_or((rest, ""));
     // Le dernier `@` : un mot de passe mal encodé peut en contenir un.
     let (userinfo, rest) = match rest.rfind('@') {
@@ -439,7 +441,12 @@ fn parse_url(engine: Engine, url: &str) -> Option<Target> {
         },
         None => (None, None),
     };
-    let ssl_mode = query.split('&').find_map(|kv| kv.strip_prefix("sslmode=")).map(str::to_owned);
+    let ssl_mode = match (engine, scheme) {
+        (Engine::Elasticsearch, "http://") => Some("disable".to_owned()),
+        (Engine::Elasticsearch, _) => Some("verify-full".to_owned()),
+        _ => query.split('&').find_map(|kv| kv.strip_prefix("sslmode=")).map(str::to_owned),
+    };
+    let database = if engine == Engine::Elasticsearch { "" } else { database };
     Some(Target {
         host: percent_decode(host)?,
         port,
@@ -611,6 +618,19 @@ mod tests {
         let v6 = Target::assemble(Engine::Postgres, &[(Part::Url, "postgres://[::1]/db".into())]).unwrap();
         assert_eq!((v6.host.as_str(), v6.port), ("::1", 5432));
         assert_eq!(Target::assemble(Engine::Postgres, &[(Part::Url, "mysql://h/db".into())]), Err(DbError::Invalid(Part::Url)));
+    }
+
+    #[test]
+    fn an_elasticsearch_url_says_whether_it_is_encrypted() {
+        let t = Target::assemble(Engine::Elasticsearch, &[(Part::Url, "https://elastic:p%40ss@es.local/prefixe".into())]).unwrap();
+        assert_eq!((t.host.as_str(), t.port, t.database.as_deref()), ("es.local", 9200, None));
+        assert_eq!((t.user.as_deref(), t.password.as_deref()), (Some("elastic"), Some("p@ss")));
+        assert_eq!(t.tls(Stage::Prod), Ok(Tls::Required));
+        let clear = Target::assemble(Engine::Elasticsearch, &[(Part::Url, "http://localhost:9201".into())]).unwrap();
+        assert_eq!(clear.tls(Stage::Dev), Ok(Tls::Disabled));
+        assert_eq!(clear.tls(Stage::Staging), Err(DbError::TlsRequired));
+        let remote = Target::assemble(Engine::Elasticsearch, &[(Part::Url, "http://es.dev.local:9200".into())]).unwrap();
+        assert_eq!(remote.tls(Stage::Dev), Err(DbError::ClearTextOffLocalhost));
     }
 
     #[test]
