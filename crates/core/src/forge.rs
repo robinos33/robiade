@@ -1,4 +1,4 @@
-//! Forge : les MR GitLab, lues sur l'instance configurée. Couche anti-corruption : le domaine ne
+//! Forge : MR et issues GitLab, lues sur l'instance configurée. Couche anti-corruption : le domaine ne
 //! garde que ce qu'il affiche ou ce sur quoi il raisonne, GitLab reste la source.
 
 use crate::Millis;
@@ -17,14 +17,52 @@ impl MrRef {
     /// `https://gitlab.example.com/<projet>/-/merge_requests/<iid>`, tel que Claude Code
     /// l'écrit dans le `pr-link` d'un transcript. Tout autre hôte ou forme renvoie `None`.
     pub fn from_url(url: &str) -> Option<Self> {
-        let rest = url.strip_prefix("https://")?.strip_prefix(GITLAB_HOST)?.strip_prefix('/')?;
-        let (project, tail) = rest.split_once("/-/merge_requests/")?;
-        let iid = tail.split(['/', '?', '#']).next()?;
-        if !is_project_path(project) || iid.is_empty() || !iid.bytes().all(|b| b.is_ascii_digit()) {
-            return None;
-        }
-        Some(Self { project: project.to_owned(), iid: iid.parse().ok()? })
+        let (project, iid) = parse_item_url(url, &["merge_requests"])?;
+        Some(Self { project, iid })
     }
+}
+
+/// `https://<instance>/<projet>/-/<genre>/<iid>[/…]` → projet et numéro, pour l'un des genres donnés.
+fn parse_item_url(url: &str, kinds: &[&str]) -> Option<(String, u64)> {
+    let rest = url.strip_prefix("https://")?.strip_prefix(GITLAB_HOST)?.strip_prefix('/')?;
+    let (project, tail) = rest.split_once("/-/")?;
+    let (kind, tail) = tail.split_once('/')?;
+    let iid = tail.split(['/', '?', '#']).next()?;
+    if !kinds.contains(&kind) || !is_project_path(project) || iid.is_empty() || !iid.bytes().all(|b| b.is_ascii_digit())
+    {
+        return None;
+    }
+    Some((project.to_owned(), iid.parse().ok()?))
+}
+
+/// Une issue désignée sans ambiguïté. GitLab 19 la publie en `/-/work_items/<iid>`, les liens plus
+/// anciens en `/-/issues/<iid>` : les deux désignent la même issue.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct IssueRef {
+    pub project: String,
+    pub iid: u64,
+}
+
+impl IssueRef {
+    pub fn from_url(url: &str) -> Option<Self> {
+        let (project, iid) = parse_item_url(url, &["issues", "work_items"])?;
+        Some(Self { project, iid })
+    }
+}
+
+/// Une tâche d'équipe : GitLab en est la source, Robiade la montre sans rien en garder.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Issue {
+    pub issue: IssueRef,
+    pub title: String,
+    pub labels: Vec<String>,
+    pub assignees: Vec<String>,
+    pub web_url: String,
+    pub updated_at: Millis,
+    /// Échéance `AAAA-MM-JJ`, telle que GitLab la donne.
+    pub due_date: Option<String>,
+    /// MR liées à l'issue.
+    pub merge_requests: u32,
 }
 
 /// Chemin complet d'un projet GitLab (`groupe/sous-groupe/projet`) : segments non vides, sans
@@ -131,6 +169,10 @@ pub trait Forge: Send + Sync {
     fn review_requests(&self) -> Result<Vec<MergeRequest>, ForgeError>;
     /// Une MR précise, quel que soit son état.
     fn merge_request(&self, mr: &MrRef) -> Result<MergeRequest, ForgeError>;
+    /// Issues ouvertes qui me sont assignées, tous projets confondus.
+    fn my_issues(&self) -> Result<Vec<Issue>, ForgeError>;
+    /// Issues ouvertes d'un projet (chemin complet, validé par `is_project_path`).
+    fn project_issues(&self, project: &str) -> Result<Vec<Issue>, ForgeError>;
 }
 
 /// MR produites par des sessions : combien, et combien ont été mergées.
@@ -175,6 +217,16 @@ mod tests {
         assert_eq!(MrRef::from_url("https://gitlab.example.com/a/../b/-/merge_requests/1"), None);
         assert_eq!(MrRef::from_url("https://gitlab.example.com/a%2Fb/-/merge_requests/1"), None);
         assert_eq!(MrRef::from_url("https://gitlab.example.com/a/b/-/merge_requests/1x"), None);
+        assert_eq!(MrRef::from_url("https://gitlab.example.com/a/b/-/issues/1"), None);
+    }
+
+    #[test]
+    fn an_issue_is_recognised_under_both_of_its_urls() {
+        let expected = Some(IssueRef { project: "shop/boutique".into(), iid: 5021 });
+        let base = "https://gitlab.example.com/shop/boutique/-";
+        assert_eq!(IssueRef::from_url(&format!("{base}/work_items/5021")), expected);
+        assert_eq!(IssueRef::from_url(&format!("{base}/issues/5021")), expected);
+        assert_eq!(IssueRef::from_url(&format!("{base}/merge_requests/1")), None);
     }
 
     #[test]
