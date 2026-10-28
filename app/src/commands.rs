@@ -1320,7 +1320,9 @@ pub async fn test_db_connection(app: tauri::AppHandle, id: String) -> CmdResult<
             .probe(connection.engine(), &target, tls, connection.read_only())
             .map_err(|e| e.to_string())?;
         // Une production qui ne serait pas en lecture seule côté serveur est un échec, pas un succès.
-        if connection.read_only() && !probe.read_only {
+        // Sans lecture seule de session (Elasticsearch), c'est la console qui la tient : le test dit
+        // seulement si le compte pourrait écrire.
+        if connection.read_only() && connection.engine().session_read_only() && !probe.read_only {
             return Err("le serveur n'a pas appliqué la lecture seule demandée".into());
         }
         Ok(DbProbeDto::new(&target, probe))
