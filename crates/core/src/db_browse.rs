@@ -5,6 +5,7 @@
 //! les valeurs en paramètres. Une page est bornée : on ne charge jamais une table entière.
 
 use crate::databases::{DbError, Engine, Target, Tls};
+use crate::db_console::{Executed, StatementKind};
 
 /// Lignes par page. Une de plus est demandée pour savoir s'il en reste.
 pub const PAGE_SIZE: usize = 200;
@@ -326,7 +327,15 @@ pub trait DbSession: Send {
     fn describe(&mut self, table: &TableRef) -> Result<TableShape, DbError>;
     /// Exécute une requête de page ; chaque valeur arrive en texte, `None` pour NULL.
     fn fetch(&mut self, query: &PageQuery) -> Result<Vec<Vec<Option<String>>>, DbError>;
+    /// Exécute une instruction de la console, déjà passée par `db_console::check`, en lisant au
+    /// plus `max_rows` lignes.
+    fn execute(&mut self, statement: &str, kind: StatementKind, max_rows: usize) -> Result<Executed, DbError>;
+    /// De quoi annuler la requête en cours depuis un autre fil, pendant que la session est occupée.
+    fn canceller(&self) -> Canceller;
 }
+
+/// Demande au serveur d'interrompre la requête en cours de la session.
+pub type Canceller = Box<dyn Fn() -> Result<(), DbError> + Send + Sync>;
 
 pub trait DatabaseBrowser: Send + Sync {
     fn open(&self, engine: Engine, target: &Target, tls: Tls, read_only: bool) -> Result<Box<dyn DbSession>, DbError>;

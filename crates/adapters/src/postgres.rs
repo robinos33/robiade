@@ -8,7 +8,11 @@ use postgres_native_tls::MakeTlsConnector;
 use postgres::types::ToSql;
 use postgres::Client;
 use robiade_core::databases::{DatabaseProbe, DbError, Engine, Probe, Target, Tls};
-use robiade_core::db_browse::{Column, DatabaseBrowser, DbSession, PageQuery, Relation, RelationKind, TableRef, TableShape};
+use postgres::SimpleQueryMessage;
+use robiade_core::db_browse::{
+    Canceller, Column, DatabaseBrowser, DbSession, PageQuery, Relation, RelationKind, TableRef, TableShape,
+};
+use robiade_core::db_console::{Executed, StatementKind};
 
 pub struct Postgres;
 
@@ -195,6 +199,66 @@ impl DbSession for PgSession {
         let rows = self.0.query(query.sql.as_str(), &params).map_err(unreachable)?;
         Ok(rows.iter().map(|r| (0..r.len()).map(|i| r.get::<_, Option<String>>(i)).collect()).collect())
     }
+
+    fn execute(&mut self, statement: &str, kind: StatementKind, max_rows: usize) -> Result<Executed, DbError> {
+        // Analysée sans être exécutée : le serveur refuse plusieurs instructions dans une requête
+        // préparée, ce qui double le découpage du domaine. Donne aussi le type de chaque colonne.
+        let prepared = self.0.prepare(statement).map_err(unreachable)?;
+        let types: Vec<String> = prepared.columns().iter().map(|c| c.type_().name().to_owned()).collect();
+        let messages = if kind == StatementKind::Query {
+            // Un curseur borne ce qui est lu : un SELECT sur une grosse table ne charge que
+            // `max_rows` lignes. Le texte est celui que `prepare` vient d'accepter, seul.
+            self.0.batch_execute("BEGIN").map_err(unreachable)?;
+            let fetched = self
+                .0
+                .batch_execute(&format!("DECLARE robiade_console NO SCROLL CURSOR FOR {statement}"))
+                .and_then(|()| self.0.simple_query(&format!("FETCH {} FROM robiade_console", max_rows + 1)));
+            let end = if fetched.is_ok() { "COMMIT" } else { "ROLLBACK" };
+            let ended = self.0.batch_execute(end);
+            let messages = fetched.map_err(unreachable)?;
+            ended.map_err(unreachable)?;
+            messages
+        } else {
+            self.0.simple_query(statement).map_err(unreachable)?
+        };
+        Ok(executed(messages, &types, kind, max_rows))
+    }
+
+    fn canceller(&self) -> Canceller {
+        let token = self.0.cancel_token();
+        Box::new(move || {
+            // Même chiffrement que la session : le jeton garde son `sslmode`.
+            let tls = native_tls::TlsConnector::new().map_err(|e| DbError::Unreachable(e.to_string()))?;
+            token.cancel_query(MakeTlsConnector::new(tls)).map_err(unreachable)
+        })
+    }
+}
+
+/// Réponse du protocole simple, en texte : NULL reste `None`, distinct de la chaîne vide.
+fn executed(messages: Vec<SimpleQueryMessage>, types: &[String], kind: StatementKind, max_rows: usize) -> Executed {
+    let mut out = Executed::default();
+    for message in messages {
+        match message {
+            SimpleQueryMessage::RowDescription(columns) => {
+                out.columns = columns
+                    .iter()
+                    .enumerate()
+                    .map(|(i, c)| Column {
+                        name: c.name().to_owned(),
+                        data_type: types.get(i).cloned().unwrap_or_default(),
+                        primary_key: None,
+                    })
+                    .collect();
+            }
+            SimpleQueryMessage::Row(row) if out.rows.len() <= max_rows => {
+                out.rows.push((0..row.len()).map(|i| row.get(i).map(str::to_owned)).collect());
+            }
+            // Pour un curseur, c'est le nombre de lignes lues, pas touchées.
+            SimpleQueryMessage::CommandComplete(n) if kind != StatementKind::Query => out.affected = Some(n),
+            _ => {}
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -271,6 +335,59 @@ mod tests {
         let mut client = connect(Engine::Postgres, &target, Tls::Disabled, true, BROWSE_TIMEOUT).unwrap();
         let refused = client.execute("INSERT INTO app.event VALUES (current_date, 99, 'x')", &[]).unwrap_err();
         assert!(refused.to_string().contains("read-only") || format!("{refused:?}").contains("25006"));
+    }
+
+    /// Contre le même Postgres jetable que `browses_a_real_server_read_only`, sans schéma requis.
+    #[test]
+    #[ignore = "demande un Postgres local jetable"]
+    fn runs_console_statements_and_cancels_a_long_one() {
+        let target = Target {
+            host: "127.0.0.1".into(),
+            port: std::env::var("ROBIADE_PG_TEST_PORT").unwrap().parse().unwrap(),
+            database: None,
+            user: Some("postgres".into()),
+            password: Some(std::env::var("ROBIADE_PG_TEST_PASSWORD").unwrap()),
+            ssl_mode: None,
+        };
+        let mut session = Postgres.open(Engine::Postgres, &target, Tls::Disabled, true).unwrap();
+
+        // Un SELECT ne lit pas plus que demandé, une de plus pour savoir qu'il y a une suite.
+        let read = session.execute("SELECT g, NULL::text AS n, '' AS e FROM generate_series(1, 5000) g", StatementKind::Query, 1000).unwrap();
+        assert_eq!(read.rows.len(), 1001);
+        assert_eq!((read.columns[0].name.as_str(), read.columns[0].data_type.as_str()), ("g", "int4"));
+        assert_eq!((read.rows[0][1].clone(), read.rows[0][2].clone()), (None, Some(String::new())));
+        let show = session.execute("SHOW transaction_read_only", StatementKind::Read, 1000).unwrap();
+        assert_eq!(show.rows[0][0].as_deref(), Some("on"));
+
+        // Deux instructions dans un même envoi : refusé par le serveur avant toute exécution.
+        assert!(session.execute("SELECT 1; SELECT 2", StatementKind::Query, 10).is_err());
+        // Une écriture, ou une tentative de lever le verrou, se heurte au serveur.
+        let refused = session.execute("CREATE TABLE robiade_x (a int)", StatementKind::Write, 10).unwrap_err();
+        assert!(refused.to_string().contains("read-only"), "{refused}");
+        // Le serveur accepte qu'on lève la lecture seule de la session : c'est pourquoi le domaine
+        // le refuse avant envoi, et l'application relit `read_only()` après chaque instruction.
+        session.execute("SET default_transaction_read_only = off", StatementKind::Write, 10).unwrap();
+        assert!(!session.read_only().unwrap());
+        let mut session = Postgres.open(Engine::Postgres, &target, Tls::Disabled, true).unwrap();
+
+        // Annulée depuis un autre fil, la requête s'arrête et la session reste utilisable.
+        let cancel = session.canceller();
+        let canceller = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(500));
+            cancel().unwrap();
+        });
+        let started = std::time::Instant::now();
+        let cancelled = session.execute("SELECT pg_sleep(20)", StatementKind::Query, 10).unwrap_err();
+        canceller.join().unwrap();
+        assert!(started.elapsed() < Duration::from_secs(10));
+        assert!(cancelled.to_string().contains("cancel"), "{cancelled}");
+        assert_eq!(session.execute("SELECT 1", StatementKind::Query, 10).unwrap().rows.len(), 1);
+
+        // Sur une session qui peut écrire : le nombre de lignes touchées.
+        let mut writable = Postgres.open(Engine::Postgres, &target, Tls::Disabled, false).unwrap();
+        writable.execute("CREATE TEMP TABLE t (a int)", StatementKind::Write, 10).unwrap();
+        let inserted = writable.execute("INSERT INTO t VALUES (1), (2)", StatementKind::Write, 10).unwrap();
+        assert_eq!(inserted.affected, Some(2));
     }
 
     #[test]

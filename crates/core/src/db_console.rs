@@ -2,9 +2,14 @@
 //!
 //! Ce module découpe le texte de l'éditeur en instructions, choisit celle sous le curseur, la
 //! classe (lecture ou écriture) et refuse sur une connexion en lecture seule celles qui pourraient
-//! lever ce verrou. Ce refus est un garde-fou contre la fausse manipulation, pas une protection :
-//! le vrai verrou est le serveur (`default_transaction_read_only`, posé à l'ouverture), et une
-//! analyse lexicale ne connaît ni les fonctions ni les droits du compte.
+//! lever ce verrou.
+//!
+//! Limite à connaître : `default_transaction_read_only`, posé à l'ouverture, arrête une écriture
+//! accidentelle, mais le serveur accepte qu'une instruction de la session le désactive. Le refus
+//! ci-dessous, puis la relecture de l'état après chaque instruction (côté application), sont donc
+//! ce qui tient la lecture seule d'une console ouverte avec un compte qui peut écrire. Une analyse
+//! lexicale ne voit pas l'intérieur d'une fonction : seul un compte en lecture seule côté serveur
+//! est un vrai verrou.
 
 use crate::databases::DbError;
 use crate::db_browse::{cell, Cell, Column};
@@ -291,8 +296,7 @@ fn transaction_control(top: &[&str]) -> bool {
 
 /// Ce qu'une connexion en lecture seule refuse avant même d'envoyer : de quoi lever le verrou
 /// (`SET`/`RESET` de la lecture seule, changement de rôle, `set_config`), ou exécuter du code côté
-/// serveur (`DO`, `CALL`, `COPY … PROGRAM`). Le serveur reste le verrou : ceci évite seulement
-/// qu'une fausse manipulation le teste.
+/// serveur (`DO`, `CALL`, `COPY … PROGRAM`).
 fn lifts_read_only(tokens: &[Token]) -> Option<&'static str> {
     let all: Vec<&str> = words(tokens).collect();
     let top = top_words(tokens);

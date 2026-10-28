@@ -57,7 +57,8 @@ impl DbSessions {
 mod tests {
     use super::*;
     use robiade_core::databases::DbError;
-    use robiade_core::db_browse::{PageQuery, Relation, TableRef, TableShape};
+    use robiade_core::db_browse::{Canceller, PageQuery, Relation, TableRef, TableShape};
+    use robiade_core::db_console::{Executed, StatementKind};
 
     struct Idle;
 
@@ -79,6 +80,12 @@ mod tests {
         }
         fn fetch(&mut self, _: &PageQuery) -> Result<Vec<Vec<Option<String>>>, DbError> {
             Ok(vec![])
+        }
+        fn execute(&mut self, _: &str, _: StatementKind, _: usize) -> Result<Executed, DbError> {
+            Ok(Executed::default())
+        }
+        fn canceller(&self) -> Canceller {
+            Box::new(|| Ok(()))
         }
     }
 
