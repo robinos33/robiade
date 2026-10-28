@@ -181,6 +181,7 @@ mod tests {
             tools: tools.iter().map(|(n, c)| ((*n).into(), *c)).collect(),
             models: vec![],
             merge_request_url: None,
+            headless: false,
         }
     }
 

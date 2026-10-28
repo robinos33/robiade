@@ -84,6 +84,8 @@ export interface Session extends Workspace {
   toolCalls: number;
   models: string[];
   mergeRequestUrl: string | null;
+  /** Lancée par un script (`claude -p`, Agent SDK) : comptée dans les stats, pas proposée à la reprise. */
+  headless: boolean;
 }
 
 /** Extrait d'une session trouvée : segments `[texte, trouvé]`, rendus comme texte. */

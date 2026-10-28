@@ -45,6 +45,8 @@ pub struct SessionSummary {
     pub tools: Vec<(String, u32)>,
     pub models: Vec<String>,
     pub merge_request_url: Option<String>,
+    /// Lancée par un script (`claude -p`, Agent SDK) : pas une conversation à reprendre.
+    pub headless: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

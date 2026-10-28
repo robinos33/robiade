@@ -251,6 +251,7 @@ pub struct SessionDto {
     pub tool_calls: u32,
     pub models: Vec<String>,
     pub merge_request_url: Option<String>,
+    pub headless: bool,
 }
 
 impl SessionDto {
@@ -270,6 +271,7 @@ impl SessionDto {
             tool_calls: s.tools.iter().map(|(_, c)| c).sum(),
             models: s.models.clone(),
             merge_request_url: s.merge_request_url.clone(),
+            headless: s.headless,
         }
     }
 }

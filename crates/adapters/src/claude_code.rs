@@ -107,6 +107,7 @@ fn summarize(path: &Path) -> Option<SessionSummary> {
         tools: vec![],
         models: vec![],
         merge_request_url: None,
+        headless: false,
     };
     let mut custom_title = None;
     let mut first_prompt = None;
@@ -127,6 +128,10 @@ fn summarize(path: &Path) -> Option<SessionSummary> {
         }
         if let Some(branch) = v.get("gitBranch").and_then(Value::as_str).filter(|b| !b.is_empty()) {
             s.git_branch = Some(branch.to_owned());
+        }
+        // `cli` ou `claude-desktop` en interactif ; `sdk-cli` pour `claude -p`, `sdk-py`/`sdk-ts` pour l'Agent SDK.
+        if let Some(entrypoint) = v.get("entrypoint").and_then(Value::as_str) {
+            s.headless = entrypoint.starts_with("sdk-");
         }
         let sidechain = v.get("isSidechain").and_then(Value::as_bool).unwrap_or(false);
         match v.get("type").and_then(Value::as_str) {
@@ -307,8 +312,33 @@ mod tests {
         assert_eq!(s.tokens.output, 5);
         assert_eq!(s.tools, vec![("Bash".to_owned(), 1)]);
         assert!(s.merge_request_url.is_some());
+        assert!(!s.headless);
         let entries = store.entries("abc").unwrap();
         assert_eq!(entries.iter().filter(|e| e.kind == EntryKind::ToolUse).count(), 1);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn flags_sessions_started_by_a_script() {
+        let dir = std::env::temp_dir().join(format!("robiade-headless-{}", std::process::id()));
+        let project = dir.join("-tmp-p");
+        std::fs::create_dir_all(&project).unwrap();
+        let line = |id: &str, entrypoint: &str| {
+            let mut f = File::create(project.join(format!("{id}.jsonl"))).unwrap();
+            writeln!(
+                f,
+                r#"{{"type":"user","entrypoint":"{entrypoint}","cwd":"/tmp/p","timestamp":"2026-10-27T10:00:00Z","message":{{"content":"x"}}}}"#
+            )
+            .unwrap();
+        };
+        line("sdk", "sdk-py");
+        line("print", "sdk-cli");
+        line("tty", "cli");
+        line("desktop", "claude-desktop");
+        let all = TranscriptStore::new(dir.clone()).summaries().unwrap();
+        let headless = |id: &str| all.iter().find(|s| s.session_id == id).unwrap().headless;
+        assert!(headless("sdk") && headless("print"));
+        assert!(!headless("tty") && !headless("desktop"));
         std::fs::remove_dir_all(dir).unwrap();
     }
 }
