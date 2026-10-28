@@ -2,7 +2,7 @@
  * Faux backend Tauri pour les captures du README : l'interface réelle, des données inventées.
  * Rien de ce fichier n'entre dans le build (seul `index.html` est une entrée Vite).
  */
-import type { Agent, Container, Forge, GitWorktree, Issue, MergeRequest, Overview, Session, Task, Tokens } from '../src/lib/types';
+import type { Agent, Container, DbConnection, Forge, GitWorktree, Issue, MergeRequest, Overview, Session, Task, Tokens } from '../src/lib/types';
 
 const NOW = Date.now();
 const MIN = 60_000;
@@ -253,6 +253,35 @@ const worktrees: GitWorktree[] = [
   worktree(2, 'pagination', 'ticket-77-pagination-par-curseur', 0),
 ];
 
+/** Connexions de démo : une locale, une staging et une production lue dans Vault. */
+const dbConnections: DbConnection[] = [
+  {
+    id: 'db-local', name: 'Boutique locale', engine: 'postgres', stage: 'dev', projectPath: `${HOME}/code/${PROJECTS[0]!.name}`, readOnly: true,
+    fields: [
+      { part: 'host', source: { kind: 'literal', value: 'localhost' } },
+      { part: 'port', source: { kind: 'literal', value: '8032' } },
+      { part: 'user', source: { kind: 'literal', value: 'app' } },
+      { part: 'password', source: { kind: 'keychain', service: 'pg-boutique-local' } },
+    ],
+  },
+  {
+    id: 'db-staging', name: 'Boutique staging', engine: 'postgres', stage: 'staging', projectPath: null, readOnly: true,
+    fields: [{ part: 'url', source: { kind: 'vault', mount: 'boutique-kv', path: 'internal/staging/DATABASE', key: 'URL' } }],
+  },
+  {
+    id: 'db-prod', name: 'Boutique prod', engine: 'postgres', stage: 'prod', projectPath: null, readOnly: true,
+    fields: [{ part: 'url', source: { kind: 'vault', mount: 'boutique-kv', path: 'internal/prod/DATABASE', key: 'URL' } }],
+  },
+];
+
+const dbTarget = (id: unknown) => ({
+  host: id === 'db-local' ? 'localhost' : `pg-${id === 'db-prod' ? 'prod' : 'staging'}.boutique.internal`,
+  port: id === 'db-local' ? 8032 : 5432,
+  database: 'boutique',
+  user: 'app',
+  sslMode: id === 'db-local' ? null : 'require',
+});
+
 const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
   environment: () => ({ claudePath: '/usr/local/bin/claude', home: HOME }),
   list_history: () => sessions,
@@ -285,6 +314,13 @@ const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
     return { container: found, action: args.action, blocker: null };
   },
   follow_container_logs: () => 1,
+  db_connections: () => dbConnections,
+  save_db_connection: (args) => ({ ...(args.connection as DbConnection), id: (args.connection as DbConnection).id ?? 'db-new' }),
+  vault_paths: (args) =>
+    ['DATABASE', 'MONGO', 'REDIS', 'SENTRY', 'SUPER_MAIL'].map((n) => `${String(args.prefix).replace(/\/?$/, '/')}${n}`),
+  vault_keys: (args) => (String(args.path).endsWith('DATABASE') ? ['URL'] : ['DSN', 'URL']),
+  resolve_db_target: (args) => dbTarget(args.id),
+  test_db_connection: (args) => ({ target: dbTarget(args.id), serverVersion: '17.2', user: 'app', database: 'boutique', readOnly: true }),
 };
 
 const callbacks = new Map<number, (payload: unknown) => void>();
