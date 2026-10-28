@@ -1,7 +1,7 @@
 <script lang="ts">
   import { api } from '../lib/api';
   import { app } from '../lib/state.svelte';
-  import type { Worktree, WorktreeRemoval } from '../lib/types';
+  import type { FileChange, Worktree, WorktreeRemoval } from '../lib/types';
 
   let { worktree, onclose }: { worktree: Worktree; onclose: () => void } = $props();
 
@@ -18,6 +18,15 @@
       (e) => (error = String(e)),
     );
   });
+
+  const LETTER: Record<FileChange['kind'], string> = {
+    modified: 'M', added: 'A', deleted: 'D', renamed: 'R', untracked: 'U',
+  };
+
+  /** Montre dans le Finder un fichier du worktree, ou le worktree lui-même si `path` est vide. */
+  function reveal(path: string) {
+    api.revealInFinder(worktree.path, path).catch((e) => (error = String(e)));
+  }
 
   async function remove() {
     busy = true;
@@ -52,7 +61,7 @@
     {:else}
       <div class="grid">
         <span class="k">Dossier</span>
-        <span class="mono path">{removal.path}</span>
+        <button class="link mono path" onclick={() => reveal('')} title="Ouvrir dans le Finder">{removal.path}</button>
         <span class="k">Dépôt</span>
         <span class="mono path">{removal.repository}</span>
         <span class="k">Branche</span>
@@ -60,6 +69,21 @@
       </div>
       {#if removal.blocker}
         <p class="error">{removal.blocker}</p>
+        {#if removal.changes.length > 0}
+          <ul class="changes">
+            {#each removal.changes as c (c.path)}
+              <li>
+                <button class="link" onclick={() => reveal(c.path)} title="Montrer dans le Finder">
+                  <span class="letter {c.kind}">{LETTER[c.kind]}</span>
+                  <span class="mono">{c.path}</span>
+                </button>
+              </li>
+            {/each}
+          </ul>
+          {#if removal.changeCount > removal.changes.length}
+            <p class="muted note">… et {removal.changeCount - removal.changes.length} autre(s).</p>
+          {/if}
+        {/if}
       {:else}
         <p class="muted note">
           Le dossier est effacé. {removal.branch ? `La branche ${removal.branch} est conservée` : 'Aucune branche n’est touchée'} ;
@@ -91,6 +115,22 @@
   .k { color: var(--ink-3); font-size: 12.5px; }
   .path { font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
   .note { margin: 0; font-size: 12px; }
+  .link {
+    all: unset; cursor: pointer; text-align: left; overflow-wrap: anywhere;
+    text-decoration: underline dotted var(--ink-3); text-underline-offset: 3px;
+  }
+  .link:hover { color: var(--ink); text-decoration-style: solid; }
+  .link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+  .changes {
+    margin: -4px 0 0; padding: 0; list-style: none; max-height: 180px; overflow: auto;
+    display: flex; flex-direction: column; gap: 3px; font-size: 12px;
+  }
+  .changes .link { display: flex; gap: 8px; align-items: baseline; text-decoration: none; color: var(--ink-2); }
+  .changes .link:hover .mono { text-decoration: underline; }
+  .letter { font: 600 10.5px var(--mono); width: 12px; flex: none; color: var(--ink-3); }
+  .letter.added, .letter.untracked { color: var(--ok); }
+  .letter.deleted { color: var(--danger); }
+  .letter.renamed { color: var(--info); }
   .error { margin: 0; color: var(--danger); }
   footer { display: flex; justify-content: flex-end; gap: 8px; }
   .danger { background: var(--danger); border-color: transparent; color: #fff; font-weight: 550; }
