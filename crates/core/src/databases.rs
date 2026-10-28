@@ -38,7 +38,7 @@ impl Engine {
             Self::Postgres => Some(Language::Sql(Dialect::Postgres)),
             Self::MariaDb => Some(Language::Sql(Dialect::MariaDb)),
             Self::Elasticsearch => Some(Language::Elastic),
-            Self::Mongo => None,
+            Self::Mongo => Some(Language::Mongo),
         }
     }
 
@@ -67,6 +67,8 @@ pub enum Language {
     Sql(Dialect),
     /// Requêtes REST au format de la Dev Tools de Kibana.
     Elastic,
+    /// Commandes JSON au format de `runCommand`.
+    Mongo,
 }
 
 impl From<Dialect> for Language {
@@ -160,6 +162,8 @@ pub enum DbError {
     NotFound,
     #[error("une requête commence par sa méthode et son chemin : GET /index/_search")]
     NotARequest,
+    #[error("une commande est un objet JSON dont la première clé est le nom : {{\"find\": \"collection\", \"filter\": {{}}}}")]
+    NotACommand,
     #[error("aucune instruction à exécuter")]
     NoStatement,
     #[error("une seule instruction à la fois : sélectionne-la, ou place le curseur dedans")]
@@ -170,7 +174,7 @@ pub enum DbError {
     ReadOnlyGuard(&'static str),
     #[error("en production, la console n'accepte que des lectures, et des UPDATE ou DELETE validés")]
     ProdRefused,
-    #[error("en production, la console Elasticsearch n'accepte que des lectures : {0} n'en est pas une")]
+    #[error("en production, cette console n'accepte que des lectures : {0} n'en est pas une")]
     ProdReadsOnly(String),
     #[error("UPDATE ou DELETE sans WHERE refusé en production")]
     ProdWithoutWhere,

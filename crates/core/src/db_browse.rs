@@ -118,6 +118,11 @@ impl PageQuery {
     pub(crate) fn by_offset(text: String, offset: u64) -> Self {
         Self { sql: text, params: Vec::new(), keyset: None, offset }
     }
+
+    /// Requête qui avance par la première colonne, sans paramètres : une commande `find` de Mongo.
+    pub(crate) fn by_key(text: String) -> Self {
+        Self { sql: text, params: Vec::new(), keyset: Some(vec![0]), offset: 0 }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -269,6 +274,7 @@ pub fn page_query(language: impl Into<Language>, shape: &TableShape, request: &P
     let dialect = match language.into() {
         Language::Sql(dialect) => dialect,
         Language::Elastic => return crate::db_elastic::search_query(shape, request),
+        Language::Mongo => return crate::db_mongo::find_query(shape, request),
     };
     let quote = |ident: &str| quote(dialect, ident);
     if shape.columns.is_empty() {

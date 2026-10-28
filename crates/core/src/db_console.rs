@@ -302,6 +302,7 @@ pub fn statement_at(text: &str, language: impl Into<Language>, cursor: usize) ->
     let dialect = match language.into() {
         Language::Sql(dialect) => dialect,
         Language::Elastic => return crate::db_elastic::statement_at(text, cursor),
+        Language::Mongo => return crate::db_mongo::statement_at(text, cursor),
     };
     let spans = spans(text, dialect);
     let found = spans
@@ -318,6 +319,7 @@ pub fn single_statement(text: &str, language: impl Into<Language>) -> Result<&st
     let dialect = match language.into() {
         Language::Sql(dialect) => dialect,
         Language::Elastic => return crate::db_elastic::single_statement(text),
+        Language::Mongo => return crate::db_mongo::single_statement(text),
     };
     match spans(text, dialect).as_slice() {
         [] => Err(DbError::NoStatement),
@@ -502,6 +504,7 @@ pub fn admit(statement: &str, language: impl Into<Language>, policy: Policy) -> 
     let dialect = match language.into() {
         Language::Sql(dialect) => dialect,
         Language::Elastic => return crate::db_elastic::admit(statement, policy),
+        Language::Mongo => return crate::db_mongo::admit(statement, policy),
     };
     let span = spans(statement, dialect).into_iter().next().ok_or(DbError::NoStatement)?;
     let top = top_words(&span.tokens);
