@@ -192,6 +192,8 @@ approbations ; MR des autres en attente de ma review.
 **Actions** (toutes confirmées dans l'UI, voir §6) : commenter, approuver, rebaser, relancer un job,
 passer draft/ready, merger. Règles de domaine portées par le code, pas par l'utilisateur :
 - un wagon intermédiaire (cible ≠ `staging`/`master`) a `squash = false` ;
+- un merge ne part que sur le commit de tête vu à la confirmation (`sha`), relu juste avant ;
+- draft/ready passe par le titre (`Draft: `), seule bascule que l'API expose sans ambiguïté ;
 - jamais de merge du parent dans un wagon ;
 - ces règles ne s'appliquent qu'à mes MR.
 
