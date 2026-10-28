@@ -161,6 +161,7 @@ fn main() {
             commands::working_changes,
             commands::working_diff,
             commands::merge_requests,
+            commands::issues,
             commands::merge_request_outcomes,
             commands::merge_request_states,
             commands::quit,

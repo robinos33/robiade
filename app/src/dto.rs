@@ -2,7 +2,7 @@
 
 use robiade_core::agents::{Agent, AgentStatus, Gauges, Level};
 use robiade_core::assets::{Asset, AssetKind};
-use robiade_core::forge::{MergeRequest, MrOutcomes, MrRef, MrState, PipelineStatus, GITLAB_HOST};
+use robiade_core::forge::{Issue, MergeRequest, MrOutcomes, MrRef, MrState, PipelineStatus, GITLAB_HOST};
 use robiade_core::project::{self, Workspace};
 use robiade_core::history::{EntryKind, SearchHit, SessionSummary, TokenUsage, TranscriptEntry, HIT_END, HIT_START};
 use robiade_core::pricing::{Estimate, PRICES_AS_OF};
@@ -579,6 +579,36 @@ pub fn mr_state(state: MrState) -> &'static str {
         MrState::Opened => "opened",
         MrState::Merged => "merged",
         MrState::Closed => "closed",
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueDto {
+    pub project: String,
+    pub iid: u64,
+    pub title: String,
+    pub labels: Vec<String>,
+    pub assignees: Vec<String>,
+    pub web_url: String,
+    pub updated_at: i64,
+    pub due_date: Option<String>,
+    pub merge_requests: u32,
+}
+
+impl From<Issue> for IssueDto {
+    fn from(i: Issue) -> Self {
+        Self {
+            project: i.issue.project,
+            iid: i.issue.iid,
+            title: i.title,
+            labels: i.labels,
+            assignees: i.assignees,
+            web_url: i.web_url,
+            updated_at: i.updated_at,
+            due_date: i.due_date,
+            merge_requests: i.merge_requests,
+        }
     }
 }
 

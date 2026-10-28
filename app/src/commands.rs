@@ -10,8 +10,8 @@ use robiade_core::tasks::{Task, TaskId, TaskRepository};
 use tauri::{Manager, State};
 
 use crate::dto::{
-    AgentDto, AssetContentDto, EntryDto, EnvironmentDto, FileChangeDto, ForgeDto, MergeRequestDto, MrOutcomesDto,
-    MrRefDto, OverviewDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto,
+    AgentDto, AssetContentDto, EntryDto, EnvironmentDto, FileChangeDto, ForgeDto, IssueDto, MergeRequestDto,
+    MrOutcomesDto, MrRefDto, OverviewDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto,
 };
 use crate::{now, AppState};
 
@@ -260,6 +260,20 @@ pub async fn merge_requests(state: State<'_, AppState>) -> CmdResult<ForgeDto> {
     .await
     .map_err(|e| e.to_string())?
     .map_err(|e: robiade_core::forge::ForgeError| e.to_string())
+}
+
+/// Issues ouvertes d'un projet GitLab, ou celles qui me sont assignées si `project` est absent.
+#[tauri::command]
+pub async fn issues(state: State<'_, AppState>, project: Option<String>) -> CmdResult<Vec<IssueDto>> {
+    let forge = state.forge.clone();
+    let issues = tauri::async_runtime::spawn_blocking(move || match project {
+        Some(p) => forge.project_issues(&p),
+        None => forge.my_issues(),
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+    Ok(issues.into_iter().map(IssueDto::from).collect())
 }
 
 /// Au-delà, la page de stats ne relit pas les MR une à une.
