@@ -299,7 +299,10 @@ pub fn byte_offset(text: &str, utf16: usize) -> usize {
 /// L'instruction sous le curseur (en octets) : celle qui le contient, `;` compris ; entre deux
 /// instructions, la précédente.
 pub fn statement_at(text: &str, language: impl Into<Language>, cursor: usize) -> Result<&str, DbError> {
-    let Language::Sql(dialect) = language.into();
+    let dialect = match language.into() {
+        Language::Sql(dialect) => dialect,
+        Language::Elastic => return crate::db_elastic::statement_at(text, cursor),
+    };
     let spans = spans(text, dialect);
     let found = spans
         .iter()
@@ -312,7 +315,10 @@ pub fn statement_at(text: &str, language: impl Into<Language>, cursor: usize) ->
 
 /// Le texte entier doit tenir en une instruction : c'est le cas d'une sélection.
 pub fn single_statement(text: &str, language: impl Into<Language>) -> Result<&str, DbError> {
-    let Language::Sql(dialect) = language.into();
+    let dialect = match language.into() {
+        Language::Sql(dialect) => dialect,
+        Language::Elastic => return crate::db_elastic::single_statement(text),
+    };
     match spans(text, dialect).as_slice() {
         [] => Err(DbError::NoStatement),
         [one] => Ok(&text[one.start..one.end]),
@@ -493,7 +499,10 @@ fn prod_function(tokens: &[Token], dialect: Dialect) -> Option<String> {
 /// lève le verrou d'une connexion en lecture seule, et en prod, seulement des lectures, des
 /// INSERT, et des UPDATE ou DELETE restreints par un WHERE.
 pub fn admit(statement: &str, language: impl Into<Language>, policy: Policy) -> Result<Admission, DbError> {
-    let Language::Sql(dialect) = language.into();
+    let dialect = match language.into() {
+        Language::Sql(dialect) => dialect,
+        Language::Elastic => return crate::db_elastic::admit(statement, policy),
+    };
     let span = spans(statement, dialect).into_iter().next().ok_or(DbError::NoStatement)?;
     let top = top_words(&span.tokens);
     if transaction_control(&top, dialect) {

@@ -11,6 +11,7 @@ pub mod contributions;
 pub mod databases;
 pub mod db_browse;
 pub mod db_console;
+pub mod db_elastic;
 pub mod forge;
 pub mod history;
 pub mod issue_actions;

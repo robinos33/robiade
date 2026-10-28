@@ -37,8 +37,16 @@ impl Engine {
         match self {
             Self::Postgres => Some(Language::Sql(Dialect::Postgres)),
             Self::MariaDb => Some(Language::Sql(Dialect::MariaDb)),
-            Self::Mongo | Self::Elasticsearch => None,
+            Self::Elasticsearch => Some(Language::Elastic),
+            Self::Mongo => None,
         }
+    }
+
+    /// Le serveur sait tenir une session en lecture seule, et le confirmer. Elasticsearch et Mongo
+    /// ne le savent pas : la lecture seule y est celle du compte, ou à défaut celle que la console
+    /// impose par sa liste blanche.
+    pub fn session_read_only(self) -> bool {
+        matches!(self, Self::Postgres | Self::MariaDb)
     }
 
     /// Préfixes d'URL acceptés : ceux du `DATABASE_URL` de Symfony.
@@ -56,6 +64,8 @@ impl Engine {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Language {
     Sql(Dialect),
+    /// Requêtes REST au format de la Dev Tools de Kibana.
+    Elastic,
 }
 
 impl From<Dialect> for Language {
@@ -147,6 +157,8 @@ pub enum DbError {
     InvalidCursor,
     #[error("connexion introuvable")]
     NotFound,
+    #[error("une requête commence par sa méthode et son chemin : GET /index/_search")]
+    NotARequest,
     #[error("aucune instruction à exécuter")]
     NoStatement,
     #[error("une seule instruction à la fois : sélectionne-la, ou place le curseur dedans")]
@@ -157,6 +169,8 @@ pub enum DbError {
     ReadOnlyGuard(&'static str),
     #[error("en production, la console n'accepte que des lectures, et des UPDATE ou DELETE validés")]
     ProdRefused,
+    #[error("en production, la console Elasticsearch n'accepte que des lectures : {0} n'en est pas une")]
+    ProdReadsOnly(String),
     #[error("UPDATE ou DELETE sans WHERE refusé en production")]
     ProdWithoutWhere,
     #[error("fonction refusée en production : {0}")]
@@ -457,7 +471,7 @@ fn parse_url(engine: Engine, url: &str) -> Option<Target> {
     })
 }
 
-fn percent_decode(s: &str) -> Option<String> {
+pub(crate) fn percent_decode(s: &str) -> Option<String> {
     let bytes = s.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
@@ -631,6 +645,7 @@ mod tests {
         assert_eq!(clear.tls(Stage::Staging), Err(DbError::TlsRequired));
         let remote = Target::assemble(Engine::Elasticsearch, &[(Part::Url, "http://es.dev.local:9200".into())]).unwrap();
         assert_eq!(remote.tls(Stage::Dev), Err(DbError::ClearTextOffLocalhost));
+        assert!(!Engine::Elasticsearch.session_read_only() && Engine::MariaDb.session_read_only());
     }
 
     #[test]

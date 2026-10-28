@@ -53,7 +53,7 @@ pub struct TableShape {
 }
 
 impl TableShape {
-    fn column(&self, name: &str) -> Result<&Column, DbError> {
+    pub(crate) fn column(&self, name: &str) -> Result<&Column, DbError> {
         self.columns.iter().find(|c| c.name == name).ok_or_else(|| DbError::UnknownColumn(name.to_owned()))
     }
 
@@ -111,6 +111,13 @@ pub struct PageQuery {
     /// Colonnes de la clé, par rang dans le résultat, quand la page avance par keyset.
     keyset: Option<Vec<usize>>,
     offset: u64,
+}
+
+impl PageQuery {
+    /// Requête qui avance par décalage, sans paramètres : le corps d'une recherche Elasticsearch.
+    pub(crate) fn by_offset(text: String, offset: u64) -> Self {
+        Self { sql: text, params: Vec::new(), keyset: None, offset }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -259,7 +266,10 @@ fn keyset<'a>(dialect: Dialect, shape: &'a TableShape, sort: Option<&Sort>) -> O
 
 /// Construit la requête d'une page. Toute colonne citée doit exister dans `shape`.
 pub fn page_query(language: impl Into<Language>, shape: &TableShape, request: &PageRequest) -> Result<PageQuery, DbError> {
-    let Language::Sql(dialect) = language.into();
+    let dialect = match language.into() {
+        Language::Sql(dialect) => dialect,
+        Language::Elastic => return crate::db_elastic::search_query(shape, request),
+    };
     let quote = |ident: &str| quote(dialect, ident);
     if shape.columns.is_empty() {
         return Err(DbError::UnknownColumn(shape.table.name.clone()));
