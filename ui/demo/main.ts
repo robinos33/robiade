@@ -1,5 +1,5 @@
 /** Entrée de démo : `/demo/?view=agents&dialog=resume`, pour `screens.sh`. */
-import { emit, install } from './mock';
+import { AGENT_IDS, emit, install } from './mock';
 
 install();
 const { app } = await import('../src/lib/state.svelte');
@@ -10,7 +10,7 @@ await new Promise((r) => setTimeout(r, 300));
 app.view = (params.get('view') ?? 'inbox') as typeof app.view;
 if (params.get('project')) app.selectProject(`/Users/demo/code/${params.get('project')}`);
 if (params.get('dialog') === 'resume') app.resumeOpen = true;
-if (params.get('view') === 'agents') app.openAgent('a1');
+if (params.get('view') === 'agents') app.openAgent(AGENT_IDS[0]!);
 
 const ESC = '\x1b[';
 const c = (code: string, text: string) => `${ESC}${code}m${text}${ESC}0m`;
@@ -45,4 +45,4 @@ const lines = [
 const bytes = new TextEncoder().encode(lines.join('\r\n'));
 let bin = '';
 bytes.forEach((b) => (bin += String.fromCharCode(b)));
-emit('agent:output', { id: 'a1', data: btoa(bin) });
+emit('agent:output', { id: AGENT_IDS[0]!, data: btoa(bin) });

@@ -71,11 +71,13 @@ function agent(id: string, project: number, worktree: string | null, status: Age
   };
 }
 
+export const AGENT_IDS = ["7f3c9e21-4b8a-4d6e-9c1f-2a5b8e0d3f47", "b2e4a7c9-1d3f-4e8b-a6c2-9f0e5d7b1a38", "c9d1f3e5-7a2b-4c8d-b0e6-3f5a9c1d7e24", "e5a7c9b1-3d5f-4a2c-8e0b-6d1f4a9c2b57"];
+
 const agents: Agent[] = [
-  agent('a1', 0, 'panier-promo', 'running', { name: 'Codes promo au panier', lastTool: 'Edit' }),
-  agent('a2', 1, null, 'awaitingPermission', { name: 'Export comptable CSV', lastTool: 'Bash', permissionMs: 3 * MIN }),
-  agent('a3', 2, 'pagination', 'awaitingInput', { name: 'Pagination par curseur', toolCalls: 58 }),
-  agent('a4', 3, null, 'idle', { name: 'Page mentions légales', permissionMode: 'auto', permissive: true }),
+  agent('7f3c9e21-4b8a-4d6e-9c1f-2a5b8e0d3f47', 0, 'panier-promo', 'running', { name: 'Codes promo au panier', lastTool: 'Edit' }),
+  agent('b2e4a7c9-1d3f-4e8b-a6c2-9f0e5d7b1a38', 1, null, 'awaitingPermission', { name: 'Export comptable CSV', lastTool: 'Bash', permissionMs: 3 * MIN }),
+  agent('c9d1f3e5-7a2b-4c8d-b0e6-3f5a9c1d7e24', 2, 'pagination', 'awaitingInput', { name: 'Pagination par curseur', toolCalls: 58 }),
+  agent('e5a7c9b1-3d5f-4a2c-8e0b-6d1f4a9c2b57', 3, null, 'idle', { name: 'Page mentions légales', permissionMode: 'auto', permissive: true }),
 ];
 
 const TITLES: [number, string, string | null, string | null][] = [
@@ -101,7 +103,7 @@ const sessions: Session[] = TITLES.map(([project, title, branch, mr], i) => {
   const last = NOW - (i < 4 ? i * 3 + 1 : i * i * 47) * MIN;
   return {
     ...ws,
-    sessionId: i < 4 ? `a${i + 1}` : `s${i}`,
+    sessionId: i < 4 ? AGENT_IDS[i]! : `s${i}`,
     projectPath: ws.projectRoot,
     title,
     gitBranch: branch,
