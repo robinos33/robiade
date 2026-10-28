@@ -281,7 +281,7 @@ const worktreeRemoval = (path: string): WorktreeRemoval => {
   };
 };
 
-/** Connexions de démo : une locale, une staging et une production lue dans Vault. */
+/** Connexions de démo : une locale par moteur, une staging et une production lue dans Vault. */
 const dbConnections: DbConnection[] = [
   {
     id: 'db-local', name: 'Boutique locale', engine: 'postgres', stage: 'dev', projectPath: `${HOME}/code/${PROJECTS[0]!.name}`, readOnly: false,
@@ -291,6 +291,10 @@ const dbConnections: DbConnection[] = [
       { part: 'user', source: { kind: 'literal', value: 'app' } },
       { part: 'password', source: { kind: 'keychain', service: 'pg-boutique-local' } },
     ],
+  },
+  {
+    id: 'db-catalogue', name: 'Catalogue local', engine: 'mariadb', stage: 'dev', projectPath: `${HOME}/code/${PROJECTS[0]!.name}`, readOnly: true,
+    fields: [{ part: 'url', source: { kind: 'literal', value: 'mysql://app:app@127.0.0.1:3306/catalogue?serverVersion=10.11.2-MariaDB' } }],
   },
   {
     id: 'db-staging', name: 'Boutique staging', engine: 'postgres', stage: 'staging', projectPath: null, readOnly: true,
@@ -303,9 +307,9 @@ const dbConnections: DbConnection[] = [
 ];
 
 const dbTarget = (id: unknown) => ({
-  host: id === 'db-local' ? 'localhost' : `pg-${id === 'db-prod' ? 'prod' : 'staging'}.boutique.internal`,
-  port: id === 'db-local' ? 8032 : 5432,
-  database: 'boutique',
+  host: id === 'db-local' ? 'localhost' : id === 'db-catalogue' ? '127.0.0.1' : `pg-${id === 'db-prod' ? 'prod' : 'staging'}.boutique.internal`,
+  port: id === 'db-local' ? 8032 : id === 'db-catalogue' ? 3306 : 5432,
+  database: id === 'db-catalogue' ? 'catalogue' : 'boutique',
   user: 'app',
   sslMode: id === 'db-local' ? null : 'require',
 });
