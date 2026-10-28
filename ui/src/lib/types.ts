@@ -239,3 +239,24 @@ export interface Worktree { path: string; name: string; root: string; projectNam
 
 /** Ce que « supprimer le worktree » ferait ; `blocker` dit pourquoi c'est refusé. */
 export interface WorktreeRemoval { path: string; repository: string; branch: string | null; blocker: string | null }
+
+export type ContainerState = 'created' | 'running' | 'paused' | 'restarting' | 'exited' | 'dead' | 'other';
+export type ContainerAction = 'start' | 'stop' | 'restart';
+
+/** Un conteneur Docker ; `workspace` est le dépôt d'où son projet Compose a été lancé. */
+export interface Container {
+  id: string;
+  name: string;
+  image: string;
+  state: ContainerState;
+  /** Résumé de Docker (« Up 3 hours »). */
+  status: string;
+  ports: { private: number; public: number | null; protocol: string }[];
+  composeProject: string | null;
+  service: string | null;
+  workingDir: string | null;
+  workspace: Workspace | null;
+}
+
+/** Ce que l'action ferait, sur le conteneur relu ; `blocker` dit pourquoi c'est refusé. */
+export interface ContainerActionPreview { container: Container; action: ContainerAction; blocker: string | null }

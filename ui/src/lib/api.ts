@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
-  Agent, AssetContent, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, SearchHit, Session, Task, TaskStatus, WorktreeRemoval,
+  Agent, AssetContent, Container, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, SearchHit, Session, Task, TaskStatus, WorktreeRemoval,
 } from './types';
 
 export const api = {
@@ -51,6 +51,12 @@ export const api = {
   issues: (project: string | null) => invoke<Issue[]>('issues', { project }),
   mergeRequestStates: (urls: string[]) => invoke<Record<string, MrState>>('merge_request_states', { urls }),
   mergeRequestOutcomes: (refs: MrRef[]) => invoke<MrOutcomes>('merge_request_outcomes', { refs }),
+  containers: () => invoke<Container[]>('containers'),
+  prepareContainerAction: (id: string, action: ContainerAction) =>
+    invoke<ContainerActionPreview>('prepare_container_action', { id, action }),
+  runContainerAction: (id: string, action: ContainerAction) => invoke<void>('run_container_action', { id, action }),
+  followContainerLogs: (id: string) => invoke<number>('follow_container_logs', { id }),
+  stopContainerLogs: (stream: number) => invoke<void>('stop_container_logs', { stream }),
   readAsset: (id: string, path: string) => invoke<AssetContent>('read_asset', { id, path }),
   quit: () => invoke<void>('quit'),
 };
