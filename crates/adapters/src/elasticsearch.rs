@@ -469,6 +469,7 @@ mod tests {
             user: (!user.is_empty()).then(|| user.to_owned()),
             password,
             ssl_mode: None,
+            options: vec![],
         }
     }
 

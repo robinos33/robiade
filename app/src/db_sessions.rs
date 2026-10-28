@@ -375,6 +375,7 @@ mod tests {
             user: Some("postgres".into()),
             password: Some(std::env::var("ROBIADE_PG_TEST_PASSWORD").unwrap()),
             ssl_mode: None,
+            options: vec![],
         };
         let mut setup = Postgres.open(Engine::Postgres, &target, Tls::Disabled, false).unwrap();
         setup.execute("CREATE TABLE IF NOT EXISTS robiade_expiry (a int)", StatementKind::Write, 1).unwrap();

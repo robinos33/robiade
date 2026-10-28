@@ -381,6 +381,7 @@ mod tests {
             user: Some("root".into()),
             password: Some(std::env::var("ROBIADE_MARIA_TEST_PASSWORD").unwrap()),
             ssl_mode: None,
+            options: vec![],
         }
     }
 

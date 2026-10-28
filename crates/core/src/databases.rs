@@ -55,7 +55,8 @@ impl Engine {
             Self::Postgres => &["postgresql://", "postgres://"],
             Self::MariaDb => &["mysql://", "mariadb://"],
             Self::Elasticsearch => &["https://", "http://"],
-            Self::Mongo => &[],
+            // `mongodb+srv://` demanderait de résoudre des enregistrements DNS SRV : pas pris en charge.
+            Self::Mongo => &["mongodb://"],
         }
     }
 }
@@ -336,9 +337,12 @@ pub struct Target {
     pub database: Option<String>,
     pub user: Option<String>,
     pub password: Option<String>,
-    /// `sslmode` de l'URL, seul paramètre de requête repris ; les autres (`serverVersion`,
-    /// `charset`) ne concernent que Doctrine.
+    /// `sslmode` de l'URL (ou ce qu'en dit le schéma ou `tls=` pour Elasticsearch et Mongo) ; les
+    /// autres paramètres (`serverVersion`, `charset`) ne concernent que Doctrine.
     pub ssl_mode: Option<String>,
+    /// Paramètres d'URL repris par l'adapter qui les comprend, sur liste blanche : pour Mongo,
+    /// `authSource`, `authMechanism`, `replicaSet`, `directConnection` et `readPreference`.
+    pub options: Vec<(String, String)>,
 }
 
 impl Target {
@@ -347,7 +351,7 @@ impl Target {
         let url = values.iter().find(|(p, _)| *p == Part::Url).map(|(_, v)| v.as_str());
         let mut target = match url {
             Some(url) => parse_url(engine, url).ok_or(DbError::Invalid(Part::Url))?,
-            None => Self { host: String::new(), port: 0, database: None, user: None, password: None, ssl_mode: None },
+            None => Self { host: String::new(), port: 0, database: None, user: None, password: None, ssl_mode: None, options: vec![] },
         };
         for (part, raw) in values {
             let value = raw.trim();
@@ -436,7 +440,10 @@ fn parse_url(engine: Engine, url: &str) -> Option<Target> {
         None => (None, rest),
     };
     let (authority, database) = rest.split_once('/').unwrap_or((rest, ""));
+    // Mongo : plusieurs graines `h1:p1,h2:p2` restent ensemble dans l'hôte, que l'adapter découpe ;
+    // une telle liste n'est jamais la machine locale.
     let (host, port) = match authority.strip_prefix('[') {
+        _ if engine == Engine::Mongo && authority.contains(',') => (authority, None),
         // IPv6 entre crochets.
         Some(v6) => {
             let (host, after) = v6.split_once(']')?;
@@ -458,9 +465,11 @@ fn parse_url(engine: Engine, url: &str) -> Option<Target> {
         },
         None => (None, None),
     };
+    let mut options = Vec::new();
     let ssl_mode = match (engine, scheme) {
         (Engine::Elasticsearch, "http://") => Some("disable".to_owned()),
         (Engine::Elasticsearch, _) => Some("verify-full".to_owned()),
+        (Engine::Mongo, _) => mongo_options(query, &mut options)?,
         _ => query.split('&').find_map(|kv| kv.strip_prefix("sslmode=")).map(str::to_owned),
     };
     let database = if engine == Engine::Elasticsearch { "" } else { database };
@@ -471,7 +480,37 @@ fn parse_url(engine: Engine, url: &str) -> Option<Target> {
         user: user.filter(|u| !u.is_empty()),
         password,
         ssl_mode,
+        options,
     })
+}
+
+/// Paramètres d'une URL Mongo (noms insensibles à la casse) : `tls` ou `ssl` disent le
+/// chiffrement ; ceux qui affaibliraient la vérification du certificat, ou en désigneraient un
+/// autre, rendent l'URL invalide plutôt que d'être ignorés en silence ; ceux de la liste blanche
+/// passent à l'adapter. `None` : URL invalide.
+fn mongo_options(query: &str, options: &mut Vec<(String, String)>) -> Option<Option<String>> {
+    const KEPT: &[&str] = &["authSource", "authMechanism", "replicaSet", "directConnection", "readPreference"];
+    let mut ssl_mode = None;
+    for pair in query.split('&').filter(|p| !p.is_empty()) {
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        let value = percent_decode(value)?;
+        match key.to_ascii_lowercase().as_str() {
+            "tls" | "ssl" => {
+                ssl_mode = Some(match value.as_str() {
+                    "true" => "require",
+                    "false" => "disable",
+                    _ => return None,
+                });
+            }
+            k if k.starts_with("tls") || k.starts_with("ssl") => return None,
+            k => {
+                if let Some(kept) = KEPT.iter().find(|name| name.to_ascii_lowercase() == k) {
+                    options.push(((*kept).to_owned(), value));
+                }
+            }
+        }
+    }
+    Some(ssl_mode.map(str::to_owned))
 }
 
 pub(crate) fn percent_decode(s: &str) -> Option<String> {
@@ -630,11 +669,31 @@ mod tests {
                 user: Some("app".into()),
                 password: Some("p@ss:word".into()),
                 ssl_mode: Some("require".into()),
+                options: vec![],
             }
         );
         let v6 = Target::assemble(Engine::Postgres, &[(Part::Url, "postgres://[::1]/db".into())]).unwrap();
         assert_eq!((v6.host.as_str(), v6.port), ("::1", 5432));
         assert_eq!(Target::assemble(Engine::Postgres, &[(Part::Url, "mysql://h/db".into())]), Err(DbError::Invalid(Part::Url)));
+    }
+
+    #[test]
+    fn reads_a_mongo_url_its_seeds_and_its_whitelisted_options() {
+        let url = "mongodb://app:p%40ss@m1:27017,m2:27018/boutique?replicaSet=rs0&authSource=admin&tls=true&maxPoolSize=5";
+        let t = Target::assemble(Engine::Mongo, &[(Part::Url, url.into())]).unwrap();
+        assert_eq!((t.host.as_str(), t.port, t.database.as_deref()), ("m1:27017,m2:27018", 27017, Some("boutique")));
+        assert_eq!(t.options, [("replicaSet".to_owned(), "rs0".to_owned()), ("authSource".to_owned(), "admin".to_owned())]);
+        assert_eq!(t.tls(Stage::Prod), Ok(Tls::Required));
+        let local = Target::assemble(Engine::Mongo, &[(Part::Url, "mongodb://localhost/app?TLS=false".into())]).unwrap();
+        assert_eq!((local.port, local.tls(Stage::Dev)), (27017, Ok(Tls::Disabled)));
+        // Une liste de graines n'est jamais locale : pas de clair.
+        let seeds = Target::assemble(Engine::Mongo, &[(Part::Url, "mongodb://localhost:1,localhost:2/?tls=false".into())]).unwrap();
+        assert_eq!(seeds.tls(Stage::Dev), Err(DbError::ClearTextOffLocalhost));
+        for weakened in ["tlsInsecure=true", "tlsAllowInvalidCertificates=true", "tlsCAFile=/tmp/ca.pem", "ssl=maybe"] {
+            let url = format!("mongodb://h/app?{weakened}");
+            assert_eq!(Target::assemble(Engine::Mongo, &[(Part::Url, url)]), Err(DbError::Invalid(Part::Url)), "{weakened}");
+        }
+        assert_eq!(Target::assemble(Engine::Mongo, &[(Part::Url, "mongodb+srv://h/app".into())]), Err(DbError::Invalid(Part::Url)));
     }
 
     #[test]
@@ -674,6 +733,7 @@ mod tests {
             user: None,
             password: None,
             ssl_mode: mode.map(str::to_owned),
+            options: vec![],
         };
         for stage in [Stage::Staging, Stage::Prod] {
             assert_eq!(target("db", None).tls(stage), Ok(Tls::Required));

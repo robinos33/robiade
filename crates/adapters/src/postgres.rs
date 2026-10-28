@@ -312,6 +312,7 @@ mod tests {
             user: Some("postgres".into()),
             password: Some(std::env::var("ROBIADE_PG_TEST_PASSWORD").unwrap()),
             ssl_mode: None,
+            options: vec![],
         };
         let mut session = Postgres.open(Engine::Postgres, &target, Tls::Disabled, true).unwrap();
         assert!(session.read_only().unwrap());
@@ -374,6 +375,7 @@ mod tests {
             user: Some("postgres".into()),
             password: Some(std::env::var("ROBIADE_PG_TEST_PASSWORD").unwrap()),
             ssl_mode: None,
+            options: vec![],
         };
         let mut session = Postgres.open(Engine::Postgres, &target, Tls::Disabled, true).unwrap();
 
@@ -427,6 +429,7 @@ mod tests {
             user: Some("postgres".into()),
             password: Some(std::env::var("ROBIADE_PG_TEST_PASSWORD").unwrap()),
             ssl_mode: None,
+            options: vec![],
         };
         let mut setup = connect(Engine::Postgres, &target, Tls::Disabled, false, TIMEOUT).unwrap();
         setup.batch_execute("DROP TABLE IF EXISTS robiade_w; CREATE TABLE robiade_w (a int); INSERT INTO robiade_w VALUES (1), (2), (5)").unwrap();
