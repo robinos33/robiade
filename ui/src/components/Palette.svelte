@@ -19,7 +19,7 @@
       { label: 'Vue globale', hint: 'projet', run: () => (app.project = null) },
       ...app.projects.map((p) => ({ label: p.name, hint: 'projet', run: () => (app.project = p.root) })),
       ...app.agents.map((a) => ({ label: `Agent · ${a.projectName}`, hint: a.status, run: () => app.openAgent(a.id) })),
-      ...app.history.slice(0, 300).map((s) => ({ label: s.title, hint: s.projectName, run: () => app.openSession(s.sessionId) })),
+      ...app.conversations.slice(0, 300).map((s) => ({ label: s.title, hint: s.projectName, run: () => app.openSession(s.sessionId) })),
     ];
     const q = query.trim().toLowerCase();
     return (q ? all.filter((c) => `${c.label} ${c.hint}`.toLowerCase().includes(q)) : all).slice(0, 40);

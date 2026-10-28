@@ -93,7 +93,9 @@ class AppState {
       .sort((a, b) => (ATTENTION_ORDER[a.status] ?? 9) - (ATTENTION_ORDER[b.status] ?? 9)),
   );
   liveAgents = $derived(this.agents.filter((a) => a.status !== 'ended'));
-  visibleHistory = $derived(this.history.filter((s) => this.inScope(s)));
+  /** Les sessions qu'on a menées soi-même ; les headless ne servent qu'aux stats. */
+  conversations = $derived(this.history.filter((s) => !s.headless));
+  visibleHistory = $derived(this.conversations.filter((s) => this.inScope(s)));
   visibleTasks = $derived(
     this.tasks.filter((t) => this.project === null || t.projectPath === this.project),
   );

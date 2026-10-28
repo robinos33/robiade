@@ -17,7 +17,7 @@
   const liveTab = (s: Session): Agent | undefined =>
     app.liveAgents.find((a) => (a.resumedFrom ?? a.id) === s.sessionId);
 
-  const pool = $derived(app.history.filter((s) => allProjects || app.inProject(s.projectRoot)));
+  const pool = $derived(app.conversations.filter((s) => allProjects || app.inProject(s.projectRoot)));
 
   const sessions = $derived.by(() => {
     const q = query.trim().toLowerCase();
