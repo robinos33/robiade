@@ -6,14 +6,17 @@ version.workspace = true
 [dependencies]
 robiade-core.workspace = true
 serde.workspace = true
-serde_json.workspace = true
+# Clés d'un objet dans l'ordre reçu : celui des colonnes d'une réponse Elasticsearch.
+serde_json = { workspace = true, features = ["preserve_order"] }
 thiserror.workspace = true
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 libc = "0.2"
 portable-pty = "0.9"
 rayon = "1"
 rusqlite = { version = "0.37", features = ["bundled"] }
-ureq = { version = "3.5.0", features = ["json"] }
+# Vérification des certificats par le trousseau système pour Elasticsearch, dont les hôtes
+# internes peuvent avoir une autorité de l'entreprise.
+ureq = { version = "3.5.0", features = ["json", "platform-verifier"] }
 secrecy = "0.10.3"
 # Docker par son socket Unix, sans client HTTP/TCP ni TLS.
 bollard = { version = "0.21.1", default-features = false, features = ["pipe"] }
@@ -25,3 +28,4 @@ postgres-native-tls = "0.5.3"
 native-tls = "0.2.18"
 # Client MariaDB synchrone, TLS du système, compression en Rust pur (sans zlib C).
 mysql = { version = "28.0.4", default-features = false, features = ["minimal-rust", "native-tls"] }
+base64 = "0.22"
