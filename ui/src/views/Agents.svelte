@@ -13,7 +13,7 @@
   import type { Agent, Session } from '../lib/types';
 
   /** Sessions reprenables proposées sous les onglets, comme le fait `/resume`. */
-  const RECENT_SESSIONS = 15;
+  const RECENT_SESSIONS = 8;
 
   let container: HTMLDivElement | undefined = $state();
   /** Chemin de l'asset ouvert en aperçu, pour l'agent actif. */
@@ -146,7 +146,7 @@
       {#snippet tab(a: Agent)}
         <li class="tab">
           <button
-            class="agent"
+            class="agent live"
             class:active={active?.id === a.id}
             onclick={() => app.openAgent(a.id)}
             ondblclick={() => startRename(a.id)}
@@ -175,28 +175,40 @@
         </li>
       {/snippet}
       <ul class="list">
-        {#each running as a (a.id)}{@render tab(a)}{/each}
+        {#if running.length}
+          <li class="group section-title first">En cours <span class="num">{running.length}</span></li>
+          {#each running as a (a.id)}{@render tab(a)}{/each}
+        {/if}
         {#if recent.length}
           <li class="group section-title">Récents · à reprendre</li>
+          <!-- Une ligne par entrée : les agents en cours restent ce qu'on voit d'abord. -->
           {#each recent as r (r.kind === 'tab' ? r.agent.id : r.session.sessionId)}
             {#if r.kind === 'tab'}
-              {@render tab(r.agent)}
+              <li class="tab">
+                <button
+                  class="recent"
+                  class:active={active?.id === r.agent.id}
+                  onclick={() => app.openAgent(r.agent.id)}
+                  title={[r.agent.projectName, r.agent.worktreeName].filter(Boolean).join(' · ')}
+                >
+                  <StatusBadge status={r.agent.status} compact />
+                  <span class="ellipsis">{r.agent.name ?? r.agent.projectName}</span>
+                  <span class="num right">{ago(r.at, app.now)}</span>
+                </button>
+                <button class="close" onclick={() => forget(r.agent.id)} title="Fermer l'onglet (la session reste dans l'historique)">
+                  <Icon name="close" size={12} />
+                </button>
+              </li>
             {:else}
               <li>
                 <button
-                  class="agent"
+                  class="recent"
                   onclick={() => app.spawn(r.session.projectPath, r.session.sessionId)}
-                  title="Reprendre cette session dans un nouvel onglet"
+                  title={`Reprendre dans un nouvel onglet — ${[r.session.projectName, r.session.worktreeName].filter(Boolean).join(' · ')}`}
                 >
-                  <div class="line">
-                    <Icon name="resume" size={11} />
-                    <span class="ellipsis">{r.session.title}</span>
-                    <span class="muted num right">{ago(r.at, app.now)}</span>
-                  </div>
-                  <div class="line sub">
-                    <span class="muted ellipsis">{r.session.projectName}</span>
-                    {#if r.session.worktreeName}<span class="mono muted ellipsis wt">{r.session.worktreeName}</span>{/if}
-                  </div>
+                  <Icon name="resume" size={11} />
+                  <span class="ellipsis">{r.session.title}</span>
+                  <span class="num right">{ago(r.at, app.now)}</span>
                 </button>
               </li>
             {/if}
@@ -356,6 +368,17 @@
   }
   .more:hover { color: var(--ink); background: var(--bg-hover); }
   .group { padding: 14px 10px 4px; }
+  .group.first { padding-top: 4px; }
+  .group .num { margin-left: 4px; color: var(--ink-2); }
+  .agent.live { border-left: 2px solid var(--accent); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+  .recent {
+    display: flex; align-items: center; gap: 6px; width: 100%; padding: 3px 10px;
+    border: 0; border-radius: var(--radius-sm); background: none; text-align: left;
+    color: var(--ink-3); font-size: 12px;
+  }
+  .recent:hover { color: var(--ink); background: var(--bg-hover); }
+  .recent.active { color: var(--ink); background: var(--bg-active); }
+  .tab:has(.recent) .close { top: 2px; }
   .pick { grid-column: 2 / 4; }
   .name {
     display: inline-flex; align-items: center; gap: 6px; max-width: 220px; padding: 2px 6px; margin-left: -6px;
