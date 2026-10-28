@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
-  Agent, AssetContent, Container, DbConnection, DbConnectionInput, DbConsoleHistory, DbConsoleReply, DbOverview, DbPage, DbPageRequest, DbProbe, DbTarget, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, SearchHit, Session, Task, TaskStatus, GitWorktree, WorktreeCreation, WorktreeRemoval,
+  Agent, AssetContent, Container, DbConnection, DbConnectionInput, DbConsoleHistory, DbConsoleReply, DbFinishedWrite, DbOverview, DbPage, DbPageRequest, DbProbe, DbTarget, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, SearchHit, Session, Task, TaskStatus, GitWorktree, WorktreeCreation, WorktreeRemoval,
 } from './types';
 
 export const api = {
@@ -75,9 +75,13 @@ export const api = {
   closeDb: (id: string) => invoke<void>('close_db', { id }),
   dbPage: (id: string, schema: string, name: string, request: DbPageRequest) =>
     invoke<DbPage>('db_page', { id, schema, name, request }),
-  /** `cursor` : position dans `text` (unités UTF-16, comme l'éditeur) ; `null` : `text` est une seule instruction. */
-  runDbStatement: (id: string, text: string, cursor: number | null, confirmed: boolean) =>
-    invoke<DbConsoleReply>('run_db_statement', { id, text, cursor, confirmed }),
+  /**
+   * `cursor` : position dans `text` (unités UTF-16, comme l'éditeur) ; `null` : `text` est une seule instruction.
+   * `confirmation` : réponse à une confirmation ; en prod, le nom de la connexion tapé à la main.
+   */
+  runDbStatement: (id: string, text: string, cursor: number | null, confirmation: string | null) =>
+    invoke<DbConsoleReply>('run_db_statement', { id, text, cursor, confirmation }),
+  finishDbWrite: (id: string, commit: boolean) => invoke<DbFinishedWrite>('finish_db_write', { id, commit }),
   cancelDbStatement: (id: string) => invoke<void>('cancel_db_statement', { id }),
   dbConsoleHistory: (id: string) => invoke<DbConsoleHistory[]>('db_console_history', { id }),
   readAsset: (id: string, path: string) => invoke<AssetContent>('read_asset', { id, path }),

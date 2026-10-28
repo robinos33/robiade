@@ -9,6 +9,7 @@
   import type { DbConnection, DbConsoleHistory, DbConsoleReply, DbConsoleResult } from '../lib/types';
   import DbStatementConfirm from './DbStatementConfirm.svelte';
   import DbTable from './DbTable.svelte';
+  import DbWriteCommit from './DbWriteCommit.svelte';
 
   let { connection, readOnly }: { connection: DbConnection; readOnly: boolean } = $props();
 
@@ -19,6 +20,11 @@
   let error = $state<string | null>(null);
   let result = $state<{ statement: string; result: DbConsoleResult } | null>(null);
   let confirming = $state<Extract<DbConsoleReply, { kind: 'confirm' }> | null>(null);
+  /** Modification de prod exécutée dans sa transaction, en attente de Valider ou Annuler. */
+  let pending = $state<(Extract<DbConsoleReply, { kind: 'pending' }> & { target: string }) | null>(null);
+  let finishing = $state(false);
+  /** Issue de la dernière modification de prod. */
+  let notice = $state<string | null>(null);
   let past = $state<DbConsoleHistory[]>([]);
   let showHistory = $state(false);
 
@@ -108,15 +114,18 @@
     if (!view || running) return;
     const selection = view.state.selection.main;
     const text = selection.empty ? view.state.doc.toString() : view.state.sliceDoc(selection.from, selection.to);
-    await send(text, selection.empty ? selection.head : null, false);
+    await send(text, selection.empty ? selection.head : null, null);
   }
 
-  async function send(text: string, cursor: number | null, confirmed: boolean) {
+  /** `confirmation` : réponse à la confirmation ; en prod, le nom de la connexion tapé. */
+  async function send(text: string, cursor: number | null, confirmation: string | null, target = '') {
     running = true;
     error = null;
+    notice = null;
     try {
-      const reply = await api.runDbStatement(connection.id, text, cursor, confirmed);
+      const reply = await api.runDbStatement(connection.id, text, cursor, confirmation);
       if (reply.kind === 'confirm') confirming = reply;
+      else if (reply.kind === 'pending') pending = { ...reply, target };
       else result = { statement: reply.statement, result: reply.result };
     } catch (e) {
       error = String(e);
@@ -127,10 +136,28 @@
   }
 
   /** Seule l'instruction montrée dans la confirmation repart, telle quelle. */
-  function confirmWrite() {
-    const statement = confirming!.statement;
+  function confirmWrite(confirmation: string) {
+    const { statement, target } = confirming!;
     confirming = null;
-    void send(statement, null, true);
+    void send(statement, null, confirmation, target);
+  }
+
+  async function finish(commit: boolean) {
+    finishing = true;
+    try {
+      const done = await api.finishDbWrite(connection.id, commit);
+      const n = done.affected;
+      notice = done.committed
+        ? `Validé (COMMIT) : ${n} ligne${n > 1 ? 's' : ''} écrite${n > 1 ? 's' : ''} en production.`
+        : `Annulé (ROLLBACK) : rien n'a été écrit.`;
+      if (done.sessionClosed) error = "La session n'était plus en lecture seule : elle est fermée, rouvre la connexion.";
+      result = null;
+    } catch (e) {
+      error = String(e);
+    } finally {
+      pending = null;
+      finishing = false;
+    }
   }
 
   async function cancel() {
@@ -193,7 +220,9 @@
   {#if error}<p class="error-text">{error}</p>{/if}
 
   <div class="result">
-    {#if result}
+    {#if notice}
+      <p class="done notice">{notice}</p>
+    {:else if result}
       {#if result.result.columns.length}
         <DbTable columns={result.result.columns} rows={result.result.rows} empty="Aucune ligne." />
       {:else}
@@ -210,10 +239,24 @@
   <DbStatementConfirm
     statement={c.statement}
     connection={c.connection}
-    stage={c.stage}
+    stage={connection.stage}
+    prod={c.prod}
     target={c.target}
     onconfirm={confirmWrite}
     onclose={() => (confirming = null)}
+  />
+{/if}
+
+{#if pending}
+  {@const p = pending}
+  <DbWriteCommit
+    statement={p.statement}
+    affected={p.affected}
+    delayMs={p.delayMs}
+    connection={connection.name}
+    target={p.target}
+    busy={finishing}
+    onfinish={(commit) => void finish(commit)}
   />
 {/if}
 
@@ -241,4 +284,5 @@
   .error-text { color: var(--danger); margin: 8px 12px; font-size: 12.5px; overflow-wrap: anywhere; white-space: pre-wrap; }
   .result { flex: 1; display: flex; min-height: 0; min-width: 0; }
   .done { padding: 16px; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .notice { font-weight: 550; }
 </style>

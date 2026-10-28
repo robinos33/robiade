@@ -351,9 +351,17 @@ export interface DbConsoleResult {
   elapsedMs: number;
 }
 
-/** Une écriture revient d'abord à confirmer, avec l'instruction exacte qui partira. */
+/**
+ * Une écriture revient d'abord à confirmer, avec l'instruction exacte qui partira ; en prod
+ * (`prod`), en tapant le nom de la connexion. Une modification de prod revient ensuite en
+ * attente, avec son nombre de lignes, à valider ou annuler avant `delayMs`.
+ */
 export type DbConsoleReply =
-  | { kind: 'confirm'; statement: string; connection: string; stage: DbStage; target: string }
-  | { kind: 'done'; statement: string; result: DbConsoleResult };
+  | { kind: 'confirm'; statement: string; connection: string; prod: boolean; target: string }
+  | { kind: 'done'; statement: string; result: DbConsoleResult }
+  | { kind: 'pending'; statement: string; affected: number; delayMs: number };
+
+/** `sessionClosed` : la session n'était plus en lecture seule après coup, elle est fermée. */
+export interface DbFinishedWrite { committed: boolean; affected: number; sessionClosed: boolean }
 
 export interface DbConsoleHistory { sql: string; at: number }
