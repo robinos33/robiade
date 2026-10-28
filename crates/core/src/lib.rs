@@ -5,6 +5,7 @@
 
 pub mod agents;
 pub mod assets;
+pub mod containers;
 pub mod forge;
 pub mod history;
 pub mod issue_actions;
