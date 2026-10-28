@@ -4,6 +4,7 @@
   import Sidebar from './components/Sidebar.svelte';
   import NewAgent from './components/NewAgent.svelte';
   import Palette from './components/Palette.svelte';
+  import ResumePicker from './components/ResumePicker.svelte';
   import QuitConfirm from './components/QuitConfirm.svelte';
   import Inbox from './views/Inbox.svelte';
   import Agents from './views/Agents.svelte';
@@ -24,6 +25,7 @@
     if (view) app.view = view;
     else if (e.key === 'k') app.paletteOpen = !app.paletteOpen;
     else if (e.key === 'n') app.newAgentOpen = true;
+    else if (e.key === 'o') app.resumeOpen = !app.resumeOpen;
     else return;
     e.preventDefault();
   }
@@ -45,6 +47,7 @@
 
 {#if app.newAgentOpen}<NewAgent />{/if}
 {#if app.paletteOpen}<Palette />{/if}
+{#if app.resumeOpen}<ResumePicker />{/if}
 {#if app.quitRequest}<QuitConfirm />{/if}
 {#if app.toast}<div class="toast" role="status">{app.toast}</div>{/if}
 
