@@ -76,7 +76,13 @@ function agent(id: string, project: number, worktree: string | null, status: Age
 export const AGENT_IDS = ["7f3c9e21-4b8a-4d6e-9c1f-2a5b8e0d3f47", "b2e4a7c9-1d3f-4e8b-a6c2-9f0e5d7b1a38", "c9d1f3e5-7a2b-4c8d-b0e6-3f5a9c1d7e24", "e5a7c9b1-3d5f-4a2c-8e0b-6d1f4a9c2b57"];
 
 const agents: Agent[] = [
-  agent('7f3c9e21-4b8a-4d6e-9c1f-2a5b8e0d3f47', 0, 'panier-promo', 'running', { name: 'Codes promo au panier', lastTool: 'Edit' }),
+  agent('7f3c9e21-4b8a-4d6e-9c1f-2a5b8e0d3f47', 0, 'panier-promo', 'running', {
+    name: 'Codes promo au panier',
+    lastTool: 'Edit',
+    assets: ['plan.md', 'regles-promo.md', 'cas-limites.md'].map((name, i) => ({
+      path: `/Users/demo/code/wt-panier-promo/notes/${name}`, name, kind: 'markdown' as const, writtenAt: NOW - (i + 1) * 4 * MIN,
+    })),
+  }),
   agent('b2e4a7c9-1d3f-4e8b-a6c2-9f0e5d7b1a38', 1, null, 'awaitingPermission', { name: 'Export comptable CSV', lastTool: 'Bash', permissionMs: 3 * MIN }),
   agent('c9d1f3e5-7a2b-4c8d-b0e6-3f5a9c1d7e24', 2, 'pagination', 'awaitingInput', { name: 'Pagination par curseur', toolCalls: 58 }),
   agent('e5a7c9b1-3d5f-4a2c-8e0b-6d1f4a9c2b57', 3, null, 'idle', { name: 'Page mentions légales', permissionMode: 'auto', permissive: true }),
@@ -408,6 +414,10 @@ const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
     { path: 'tests/Cart/PromoCodePolicyTest.php', kind: 'added', added: 88, removed: 0 },
   ],
   working_diff: () => '',
+  read_asset: (args) => {
+    const name = String((args as { path: string }).path).split('/').pop();
+    return { kind: 'markdown', text: `# ${name}\n\nNote de démo écrite par l'agent.`, dataUrl: null };
+  },
   containers: () => containers,
   worktrees: (args) => worktrees.filter((w) => w.repository === args.repository),
   prepare_worktree_creation: (args) => ({

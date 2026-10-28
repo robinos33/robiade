@@ -24,6 +24,8 @@ async function find(selector: string, text: string): Promise<HTMLElement | undef
 async function click(selector: string, text: string) {
   (await find(selector, text))?.click();
 }
+// `?view=agents&asset=regles-promo.md` : ouvre un asset de l'agent affiché.
+if (params.get('asset')) await click('.asset', params.get('asset')!);
 if (params.get('explore')) {
   const row = await find('li.row', params.get('explore')!);
   row?.querySelector<HTMLElement>('.actions button')?.click();
