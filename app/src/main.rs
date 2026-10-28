@@ -60,7 +60,7 @@ pub fn now() -> i64 {
 /// un lien dans un transcript ou une description de MR ne peut pas remplacer l'interface.
 fn main_window(app: &tauri::App) -> tauri::Result<()> {
     tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::default())
-        .title("Robiade")
+        .title(if cfg!(debug_assertions) { "Robiade (dev)" } else { "Robiade" })
         .inner_size(1440.0, 900.0)
         .min_inner_size(1024.0, 640.0)
         .title_bar_style(tauri::TitleBarStyle::Overlay)
