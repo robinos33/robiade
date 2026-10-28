@@ -37,9 +37,15 @@ pour le reste), interface en Svelte 5. macOS arm64.
 
 ```sh
 npm install && npm --prefix ui install
-npm run dev        # application en mode développement
+scripts/install.sh # construit et installe /Applications/Robiade.app
+npm run dev        # application en mode développement, données à part (dossier dev/)
 cargo test         # tests du cœur et des adaptateurs
 ui/demo/screens.sh # régénère les captures (données de démo, serveur Vite lancé)
 ```
+
+L'application installée et un `npm run dev` peuvent tourner en même temps : le second range sa
+base, son socket de hooks et son index dans un sous-dossier `dev/`. Modifier le dépôt ne touche
+donc plus l'application de tous les jours ; une nouvelle version se prend en relançant
+`scripts/install.sh`, puis l'application.
 
 La spécification, avec les décisions et les jalons, est dans [SPEC.md](SPEC.md).
