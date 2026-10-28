@@ -79,6 +79,26 @@
     return () => observer.disconnect();
   });
 
+  /** Arrêt puis reprise de la même session : la conversation continue sur le binaire à jour. */
+  let confirmRestart = $state(false);
+  async function restart() {
+    if (!active) return;
+    const busy = active.status === 'running' || active.status === 'starting';
+    if (busy && !confirmRestart) {
+      confirmRestart = true;
+      app.notify('L’agent travaille : son tour sera interrompu. Clique à nouveau sur Redémarrer pour confirmer.');
+      setTimeout(() => (confirmRestart = false), 5000);
+      return;
+    }
+    confirmRestart = false;
+    try {
+      const fresh = await api.restartAgent(active.id, 120, 36);
+      app.openAgent(fresh.id);
+    } catch (e) {
+      app.notify(String(e));
+    }
+  }
+
   async function stop() {
     if (active) await api.killAgent(active.id).catch((e) => app.notify(String(e)));
   }
@@ -89,6 +109,9 @@
     <h1>Agents</h1>
     <span class="muted">Sessions lancées dans Robiade</span>
     <span class="spacer"></span>
+    <button class="btn" onclick={() => (app.resumeOpen = true)} title="Toutes les sessions, comme /resume">
+      <Icon name="resume" size={12} /> Reprendre… <kbd>⌘O</kbd>
+    </button>
     <button class="btn primary" onclick={() => (app.newAgentOpen = true)}><Icon name="plus" size={14} /> Nouvel agent</button>
   </header>
 
@@ -160,6 +183,7 @@
             {/if}
           {/each}
         {/if}
+        <li><button class="more" onclick={() => (app.resumeOpen = true)}>Toutes les sessions… <kbd>⌘O</kbd></button></li>
       </ul>
 
       {#if active}
@@ -190,6 +214,9 @@
             {#if session?.mergeRequestUrl}<MrBadge url={session.mergeRequestUrl} />{/if}
             <span class="spacer"></span>
             {#if active.status !== 'ended'}
+              <button class="btn ghost" onclick={restart} title="Relance claude sur la même session : prend une mise à jour installée (« Restart to update »)">
+                <Icon name="resume" size={12} /> Redémarrer
+              </button>
               <button class="btn ghost" onclick={stop} title="Arrêter le process"><Icon name="stop" size={13} /> Arrêter</button>
             {:else}
               <button class="btn" onclick={() => app.spawn(active.projectPath, active.resumedFrom ?? active.id)}>
@@ -292,6 +319,12 @@
   }
   .tab:hover .close { display: grid; }
   .close:hover { color: var(--ink); background: var(--bg-hover); }
+  .more {
+    display: flex; align-items: center; justify-content: space-between; width: 100%; margin-top: 6px;
+    padding: 6px 10px; border: 1px dashed var(--line-strong); border-radius: var(--radius-sm);
+    background: none; color: var(--ink-2); font-size: 12.5px;
+  }
+  .more:hover { color: var(--ink); background: var(--bg-hover); }
   .group { padding: 14px 10px 4px; }
   .pick { grid-column: 2 / 4; }
   .name {
