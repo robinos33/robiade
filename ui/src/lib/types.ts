@@ -148,6 +148,20 @@ export interface MergeRequest extends MrRef {
   approvals: { required: number; left: number; by: string[] } | null;
 }
 
+/** Tâche d'équipe, lue sur GitLab : titre et labels non fiables, rendus comme texte. */
+export interface Issue {
+  project: string;
+  iid: number;
+  title: string;
+  labels: string[];
+  assignees: string[];
+  webUrl: string;
+  updatedAt: number;
+  /** `AAAA-MM-JJ`. */
+  dueDate: string | null;
+  mergeRequests: number;
+}
+
 export interface Forge { mine: MergeRequest[]; reviews: MergeRequest[] }
 
 export interface MrOutcomes { total: number; merged: number; opened: number; closed: number; unknown: number }
