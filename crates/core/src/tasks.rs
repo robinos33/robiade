@@ -165,6 +165,13 @@ impl Task {
         self.session = session;
     }
 
+    /// Un agent démarré sur la tâche : elle pointe sur sa session et passe en cours, même si elle
+    /// était finie — la relancer, c'est la rouvrir.
+    pub fn start(&mut self, session: SessionId, now: Millis) {
+        self.link_session(Some(session));
+        self.move_to(TaskStatus::Doing, now);
+    }
+
     pub fn move_to(&mut self, status: TaskStatus, now: Millis) {
         self.done_at = (status == TaskStatus::Done).then_some(self.done_at.unwrap_or(now));
         self.status = status;
@@ -234,6 +241,15 @@ mod tests {
         assert_eq!(Task::create(TaskId("t".into()), "   ", None, 0), Err(TaskError::EmptyTitle));
         let long = "é".repeat(TITLE_MAX_CHARS + 1);
         assert_eq!(Task::create(TaskId("t".into()), &long, None, 0), Err(TaskError::TitleTooLong));
+    }
+
+    #[test]
+    fn starting_an_agent_links_its_session_and_reopens_the_task() {
+        let mut t = task();
+        t.move_to(TaskStatus::Done, 20);
+        let session = SessionId::parse("0b6f2c1e-7a4d-4c39-9f2e-5d8a1b3c4e6f").unwrap();
+        t.start(session.clone(), 30);
+        assert_eq!((t.status(), t.session(), t.done_at()), (TaskStatus::Doing, Some(&session), None));
     }
 
     #[test]
