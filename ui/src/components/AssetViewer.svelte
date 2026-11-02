@@ -39,13 +39,16 @@
   let source = $state(false);
   let close: HTMLButtonElement | undefined = $state();
 
+  /** Les agents sont republiés à chaque événement, `asset` avec eux : seul un changement de chemin recharge. */
+  const path = $derived(asset.path);
+
   $effect(() => {
-    const path = asset.path;
+    const current = path;
     content = null;
     error = null;
     source = false;
-    api.readAsset(agentId, path).then(
-      (c) => asset.path === path && (content = c),
+    api.readAsset(agentId, current).then(
+      (c) => path === current && (content = c),
       (e) => (error = String(e)),
     );
   });
