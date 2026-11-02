@@ -19,6 +19,7 @@ pub mod pricing;
 pub mod project;
 pub mod secrets;
 pub mod stats;
+pub mod task_start;
 pub mod tasks;
 pub mod vcs;
 
