@@ -243,13 +243,14 @@ temps passé en `AwaitingPermission`.
 - MR produites par des sessions, et part de celles qui ont été mergées.
 
 **Activité GitLab** (mes contributions, par jour / semaine / mois / année) : MR ouvertes, MR
-mergées, commits, reviews faites. Source unique : mes événements GitLab (`/events`), tous projets
-confondus — un événement ne porte que l'identifiant de son projet, la vue ne suit donc pas le
+mergées, commits, reviews faites. Sources : mes événements GitLab (`/events`) et mes MR mergées
+(`/merge_requests?scope=created_by_me&state=merged`), tous projets confondus — un événement ne porte que l'identifiant de son projet, la vue ne suit donc pas le
 filtre de projet. Un événement a pour auteur celui qui agit, d'où ce que compte chaque série
 (décidé le 2026-11-02) :
 - MR ouvertes : `opened` sur une MR ;
-- merges : `accepted` sur une MR, soit les MR que **j'ai** mergées, les miennes ou celles des
-  autres ; une MR à moi mergée par un collègue n'y est pas ;
+- MR mergées : **mes** MR, mergées par moi ou par n'importe qui, à la date de leur merge. Pas
+  l'événement `accepted` : il appartient à celui qui merge, il manquerait les merges des collègues ;
+  une MR d'un autre que j'ai mergée ne compte pas ;
 - commits : `commit_count` de chaque push ; un push forcé après rebase les recompte, c'est un
   volume poussé ;
 - reviews : `approved` sur une MR. Un commentaire ne compte pas : l'événement ne dit pas à qui est
