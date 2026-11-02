@@ -11,6 +11,7 @@ pub mod keychain;
 pub mod mariadb;
 pub mod postgres;
 pub mod pty;
+pub mod self_update;
 pub mod shell_env;
 pub mod sqlite_audit;
 pub mod sqlite_connections;
