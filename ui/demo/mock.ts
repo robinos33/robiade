@@ -5,6 +5,7 @@
 import type {
   Agent, Container, DbCell, DbColumn, DbConnection, DbPageRequest, FileChange, Forge, GitWorktree, Issue, MergeRequest, Overview, Session, Task, Tokens, WorktreeRemoval,
 } from '../src/lib/types';
+import { localDay } from '../src/lib/format';
 
 const NOW = Date.now();
 const MIN = 60_000;
@@ -172,9 +173,9 @@ const issues: Issue[] = [
 ];
 
 const tasks: Task[] = [
-  { id: 't1', title: 'Relire la MR de Camille avant la démo', notes: '', projectPath: null, status: 'doing', createdAt: NOW - 90 * MIN, doneAt: null },
-  { id: 't2', title: 'Mettre à jour la doc de l’API de pagination', notes: '', projectPath: `${HOME}/code/catalogue-api`, status: 'todo', createdAt: NOW - 300 * MIN, doneAt: null },
-  { id: 't3', title: 'Vider le cache CDN après la mise en prod', notes: '', projectPath: `${HOME}/code/site-vitrine`, status: 'done', createdAt: NOW - 3000 * MIN, doneAt: NOW - 200 * MIN },
+  { id: 't1', title: 'Relire la MR de Camille avant la démo', notes: '', projectPath: null, status: 'doing', dueOn: localDay(NOW), createdAt: NOW - 90 * MIN, doneAt: null },
+  { id: 't2', title: 'Mettre à jour la doc de l’API de pagination', notes: '', projectPath: `${HOME}/code/catalogue-api`, status: 'todo', dueOn: localDay(NOW - 2 * 24 * 60 * MIN), createdAt: NOW - 300 * MIN, doneAt: null },
+  { id: 't3', title: 'Vider le cache CDN après la mise en prod', notes: '', projectPath: `${HOME}/code/site-vitrine`, status: 'done', dueOn: null, createdAt: NOW - 3000 * MIN, doneAt: NOW - 200 * MIN },
 ];
 
 const DAY = 24 * 60 * MIN;
@@ -405,6 +406,15 @@ const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
   list_history: () => sessions,
   list_agents: () => agents,
   list_tasks: () => tasks,
+  create_task: (args) => {
+    const task: Task = {
+      id: `t${tasks.length + 1}`, title: String(args.title), notes: '', projectPath: (args.projectPath as string | null) ?? null,
+      status: 'todo', dueOn: (args.dueOn as string | null) ?? null, createdAt: Date.now(), doneAt: null,
+    };
+    tasks.unshift(task);
+    return task;
+  },
+  schedule_task: (args) => Object.assign(tasks.find((t) => t.id === args.id)!, { dueOn: args.dueOn ?? null }),
   merge_requests: () => forge,
   issues: () => issues,
   stats: () => overview(),
