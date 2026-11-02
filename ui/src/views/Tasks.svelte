@@ -55,6 +55,27 @@
 
   const projectName = (root: string | null) => app.projects.find((p) => p.root === root)?.name ?? null;
 
+  /** `#12` dans le projet de la tâche, `projet#12` ailleurs. */
+  function issueLabel(t: Task) {
+    if (!t.issue) return '';
+    const own = app.projects.find((p) => p.root === t.projectPath)?.gitlabProject;
+    const same = own?.toLowerCase() === t.issue.project.toLowerCase();
+    return same ? `#${t.issue.iid}` : `${t.issue.project.split('/').pop()}#${t.issue.iid}`;
+  }
+  /** Titre de l'issue liée, si elle fait partie des issues déjà lues. */
+  const issueTitle = (t: Task) =>
+    issues?.find((i) => i.iid === t.issue?.iid && i.project.toLowerCase() === t.issue.project.toLowerCase())?.title;
+
+  const linkedSession = (t: Task) => app.history.find((s) => s.sessionId === t.sessionId);
+  /** Agent vivant sur la session liée : on l'ouvre plutôt que son historique. */
+  const linkedAgent = (t: Task) =>
+    app.agents.find((a) => a.status !== 'ended' && (a.resumedFrom ?? a.id) === t.sessionId);
+  function openLinkedSession(t: Task) {
+    const agent = linkedAgent(t);
+    if (agent) app.openAgent(agent.id);
+    else if (t.sessionId) app.openSession(t.sessionId);
+  }
+
   async function add(e: SubmitEvent) {
     e.preventDefault();
     if (!title.trim()) return;
@@ -122,6 +143,25 @@
                       onchange={(e) => schedule(t, e.currentTarget.value)}
                     />
                   </span>
+                  {#if t.issue || t.sessionId}
+                    <span class="links">
+                      {#if t.issue && t.issueUrl}
+                        {@const url = t.issueUrl}
+                        <button class="chip mono" title={issueTitle(t) ?? 'Ouvrir l’issue dans GitLab'} onclick={() => void openUrl(url)}>{issueLabel(t)}</button>
+                      {/if}
+                      {#if t.sessionId}
+                        {@const session = linkedSession(t)}
+                        <button
+                          class="chip session"
+                          class:live={linkedAgent(t) !== undefined}
+                          title={linkedAgent(t) ? 'Ouvrir l’agent sur cette session' : 'Ouvrir la session dans l’historique'}
+                          onclick={() => openLinkedSession(t)}
+                        >
+                          <Icon name="history" size={11} />{session?.title ?? 'Session'}
+                        </button>
+                      {/if}
+                    </span>
+                  {/if}
                 </div>
                 <button class="del btn ghost" title="Supprimer" onclick={() => remove(t)}><Icon name="trash" size={13} /></button>
               </li>
@@ -251,6 +291,15 @@
   .due-on.due { color: var(--danger); background: var(--danger-soft); font-weight: 600; }
   .del { opacity: 0; height: 22px; padding: 0 5px; color: var(--ink-3); }
   .task:hover .del { opacity: 1; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 3px; min-width: 0; height: 18px; padding: 0 6px;
+    border: 1px solid var(--line-strong); border-radius: 9px; background: none; color: var(--ink-2); font-size: 11px;
+  }
+  .chip:hover { background: var(--bg-hover); }
+  .links { display: flex; gap: 6px; min-width: 0; }
+  .chip.session { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip.session :global(svg) { vertical-align: -1px; margin-right: 3px; }
+  .chip.live { border-color: var(--info); }
   .none { padding: 4px 2px; }
   .team { border-top: 1px solid var(--line); padding-top: 18px; }
   .team p { margin: 0; }

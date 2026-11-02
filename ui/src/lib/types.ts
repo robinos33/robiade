@@ -104,6 +104,10 @@ export interface Task {
   status: TaskStatus;
   /** `AAAA-MM-JJ`. */
   dueOn: string | null;
+  /** Issue d'équipe référencée ; son titre et son état se lisent sur GitLab. */
+  issue: MrRef | null;
+  issueUrl: string | null;
+  sessionId: string | null;
   createdAt: number;
   doneAt: number | null;
 }
