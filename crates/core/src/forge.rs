@@ -50,6 +50,25 @@ impl IssueRef {
         let (project, iid) = parse_item_url(url, &["issues", "work_items"])?;
         Some(Self { project, iid })
     }
+
+    /// Référence saisie à la main, comme GitLab l'écrit : son URL, `groupe/projet#12`, ou `#12`
+    /// dans `default_project` (le projet GitLab du contexte, s'il y en a un).
+    pub fn parse(raw: &str, default_project: Option<&str>) -> Option<Self> {
+        let raw = raw.trim();
+        if raw.starts_with("https://") {
+            return Self::from_url(raw);
+        }
+        let (project, iid) = raw.split_once('#')?;
+        let project = if project.is_empty() { default_project? } else { project };
+        if !is_project_path(project) || iid.is_empty() || !iid.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        Some(Self { project: project.to_owned(), iid: iid.parse().ok()? })
+    }
+
+    pub fn web_url(&self) -> String {
+        format!("https://{GITLAB_HOST}/{}/-/issues/{}", self.project, self.iid)
+    }
 }
 
 /// Une tâche d'équipe : GitLab en est la source, Robiade la montre sans rien en garder.
@@ -258,6 +277,20 @@ mod tests {
         assert_eq!(IssueRef::from_url(&format!("{base}/work_items/5021")), expected);
         assert_eq!(IssueRef::from_url(&format!("{base}/issues/5021")), expected);
         assert_eq!(IssueRef::from_url(&format!("{base}/merge_requests/1")), None);
+    }
+
+    #[test]
+    fn an_issue_is_typed_as_gitlab_writes_it() {
+        let issue = IssueRef { project: "shop/boutique".into(), iid: 12 };
+        assert_eq!(issue.web_url(), "https://gitlab.example.com/shop/boutique/-/issues/12");
+        let expected = Some(issue);
+        assert_eq!(IssueRef::parse(" #12 ", Some("shop/boutique")), expected);
+        assert_eq!(IssueRef::parse("shop/boutique#12", Some("autre/projet")), expected);
+        assert_eq!(IssueRef::parse("shop/boutique#12", None), expected);
+        assert_eq!(IssueRef::parse("https://gitlab.example.com/shop/boutique/-/issues/12", None), expected);
+        for bad in ["#12", "12", "a/../b#1", "a b#1", "a/b#", "a/b#1x", "https://gitlab.com/a/b/-/issues/1"] {
+            assert_eq!(IssueRef::parse(bad, None), None, "{bad}");
+        }
     }
 
     #[test]
