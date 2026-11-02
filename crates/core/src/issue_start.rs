@@ -12,8 +12,18 @@ const SLUG_MAX_CHARS: usize = 40;
 
 /// `ticket-<iid>-<titre en minuscules ASCII>`, comme mes branches de ticket.
 pub fn branch_name(issue: &Issue) -> String {
+    let slug = slug(&issue.title);
+    if slug.is_empty() {
+        format!("ticket-{}", issue.issue.iid)
+    } else {
+        format!("ticket-{}-{slug}", issue.issue.iid)
+    }
+}
+
+/// Titre ramené à des mots ASCII en minuscules séparés par `-`, borné : de quoi nommer une branche.
+pub(crate) fn slug(title: &str) -> String {
     let mut slug = String::new();
-    for c in issue.title.chars().flat_map(fold_accent) {
+    for c in title.chars().flat_map(fold_accent) {
         if c.is_ascii_alphanumeric() {
             slug.push(c.to_ascii_lowercase());
         } else if !slug.is_empty() && !slug.ends_with('-') {
@@ -23,12 +33,7 @@ pub fn branch_name(issue: &Issue) -> String {
             break;
         }
     }
-    let slug = slug.trim_end_matches('-');
-    if slug.is_empty() {
-        format!("ticket-{}", issue.issue.iid)
-    } else {
-        format!("ticket-{}-{slug}", issue.issue.iid)
-    }
+    slug.trim_end_matches('-').to_owned()
 }
 
 /// Lettres accentuées courantes du français ramenées à leur base ; le reste passe tel quel.
@@ -94,14 +99,14 @@ pub fn initial_prompt(issue: &Issue, branch: &str) -> String {
     prompt
 }
 
-const TITLE_MAX_CHARS: usize = 200;
+pub(crate) const TITLE_MAX_CHARS: usize = 200;
 
 fn longest_backtick_run(text: &str) -> usize {
     text.split(|c| c != '`').map(str::len).max().unwrap_or(0)
 }
 
 /// Texte ramené à une ligne : un titre ne peut pas ouvrir de paragraphe dans le prompt.
-fn one_line(text: &str, max: usize) -> String {
+pub(crate) fn one_line(text: &str, max: usize) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(max).collect()
 }
 
