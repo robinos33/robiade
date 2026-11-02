@@ -189,6 +189,7 @@ fn main() {
             commands::list_tasks,
             commands::create_task,
             commands::update_task,
+            commands::schedule_task,
             commands::delete_task,
             commands::list_agents,
             commands::spawn_agent,

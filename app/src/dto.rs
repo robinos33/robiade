@@ -489,6 +489,8 @@ pub struct TaskDto {
     pub notes: String,
     pub project_path: Option<String>,
     pub status: TaskStatusDto,
+    /// `AAAA-MM-JJ`.
+    pub due_on: Option<String>,
     pub created_at: i64,
     pub done_at: Option<i64>,
 }
@@ -501,6 +503,7 @@ impl From<&Task> for TaskDto {
             notes: t.notes().to_owned(),
             project_path: t.project_path().map(str::to_owned),
             status: t.status().into(),
+            due_on: t.due_on().map(|d| d.as_str().to_owned()),
             created_at: t.created_at(),
             done_at: t.done_at(),
         }

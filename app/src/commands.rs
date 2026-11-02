@@ -14,7 +14,7 @@ use robiade_core::forge::{IssueRef, MrRef};
 use robiade_core::issue_start;
 use robiade_core::history::{SessionSearch, TranscriptReader};
 use robiade_core::stats;
-use robiade_core::tasks::{Task, TaskId, TaskRepository};
+use robiade_core::tasks::{DueDate, Task, TaskId, TaskRepository};
 use robiade_core::vcs::FileChange;
 use secrecy::ExposeSecret;
 use tauri::{Manager, State};
@@ -134,9 +134,15 @@ pub fn list_tasks(state: State<AppState>) -> CmdResult<Vec<TaskDto>> {
 }
 
 #[tauri::command]
-pub fn create_task(state: State<AppState>, title: String, project_path: Option<String>) -> CmdResult<TaskDto> {
+pub fn create_task(
+    state: State<AppState>,
+    title: String,
+    project_path: Option<String>,
+    due_on: Option<String>,
+) -> CmdResult<TaskDto> {
     let id = TaskId(uuid::Uuid::new_v4().to_string());
-    let task = Task::create(id, &title, project_path, now()).map_err(|e| e.to_string())?;
+    let mut task = Task::create(id, &title, project_path, now()).map_err(|e| e.to_string())?;
+    task.schedule(due_on.as_deref().map(DueDate::parse).transpose().map_err(|e| e.to_string())?);
     state.tasks.save(&task).map_err(|e| e.to_string())?;
     Ok((&task).into())
 }
@@ -159,6 +165,16 @@ pub fn update_task(
     if let Some(status) = status {
         task.move_to(status.into(), now());
     }
+    state.tasks.save(&task).map_err(|e| e.to_string())?;
+    Ok((&task).into())
+}
+
+/// Pose ou retire (`None`) l'échéance : une commande à part, `update_task` ne sachant pas distinguer
+/// un champ absent d'un champ vidé.
+#[tauri::command]
+pub fn schedule_task(state: State<AppState>, id: String, due_on: Option<String>) -> CmdResult<TaskDto> {
+    let mut task = state.tasks.get(&TaskId(id)).map_err(|e| e.to_string())?;
+    task.schedule(due_on.as_deref().map(DueDate::parse).transpose().map_err(|e| e.to_string())?);
     state.tasks.save(&task).map_err(|e| e.to_string())?;
     Ok((&task).into())
 }
