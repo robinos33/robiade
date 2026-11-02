@@ -25,6 +25,8 @@
 
   /** Pastille : l'Inbox, et les tâches dès qu'une échéance tombe — leur compte remplace alors celui des « en cours ». */
   const hot = (view: View) => view === 'inbox' || (view === 'tasks' && app.dueTasks.length > 0);
+  /** Échéances tombées hors du projet affiché : signalées partout, comptées seulement chez elles. */
+  const dueElsewhere = $derived(app.allDueTasks.length - app.dueTasks.length);
 
   const liveIn = (root: string) => app.liveAgents.filter((a) => a.projectRoot === root);
   const liveInWorktree = (path: string) => app.liveAgents.filter((a) => a.worktreePath === path);
@@ -70,7 +72,9 @@
         <button class="item" class:active={app.view === item.view} onclick={() => (app.view = item.view)}>
           <Icon name={item.icon} />
           <span class="label">{item.label}</span>
-          {#if n}
+          {#if item.view === 'tasks' && app.dueTasks.length === 0 && dueElsewhere > 0}
+            <span class="dot hot" title="{dueElsewhere} échéance(s) tombée(s) hors de ce projet"></span>
+          {:else if n}
             <span class="count" class:hot={hot(item.view)} title={item.view === 'tasks' && hot('tasks') ? 'Échéance aujourd’hui ou dépassée' : undefined}>{n}</span>
           {/if}
         </button>

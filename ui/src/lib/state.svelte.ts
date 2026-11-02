@@ -119,6 +119,8 @@ class AppState {
   /** Pas encore faite, et son échéance est aujourd'hui ou déjà passée. */
   isDue = (t: Task) => t.status !== 'done' && t.dueOn !== null && t.dueOn <= this.today;
   dueTasks = $derived(this.visibleTasks.filter(this.isDue));
+  /** Tous projets confondus, tâches globales comprises : de quoi signaler une échéance hors du projet affiché. */
+  allDueTasks = $derived(this.tasks.filter(this.isDue));
 
   /** Mes MR qui demandent une action : pipeline rouge, conflits, discussions ouvertes. */
   mrAttention: MergeRequest[] = $derived(
