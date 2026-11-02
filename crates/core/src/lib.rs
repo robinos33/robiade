@@ -16,6 +16,7 @@ pub mod issue_start;
 pub mod merge_actions;
 pub mod pricing;
 pub mod project;
+pub mod secrets;
 pub mod stats;
 pub mod tasks;
 pub mod vcs;
