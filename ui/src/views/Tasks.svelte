@@ -53,7 +53,6 @@
     );
   });
 
-  const today = $derived(new Date(app.now).toISOString().slice(0, 10));
   const projectName = (root: string | null) => app.projects.find((p) => p.root === root)?.name ?? null;
 
   async function add(e: SubmitEvent) {
@@ -167,7 +166,7 @@
                 </span>
               </div>
               {#if i.dueDate}
-                <span class="due num" class:late={i.dueDate < today} title="Échéance">{i.dueDate}</span>
+                <span class="due num" class:late={i.dueDate < app.today} title="Échéance">{i.dueDate}</span>
               {/if}
               <button class="btn ghost act" title="Modifier les assignés, après confirmation" onclick={() => (acting = { issue: i, action: { kind: 'assign', assignees: i.assignees } })}>
                 Assignés…
