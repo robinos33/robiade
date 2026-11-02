@@ -282,6 +282,7 @@ impl Forge for GitLab {
             let last = events.len() < 100;
             found.extend(events.into_iter().filter_map(contribution).filter(|c| (from..to).contains(&c.at)));
             if last {
+                found.extend(self.my_merges(from, to)?);
                 return Ok(found);
             }
         }
@@ -357,6 +358,44 @@ fn gitlab_message(raw: &str) -> String {
 }
 
 const DAY_MS: Millis = 86_400_000;
+
+impl GitLab {
+    /// Mes MR mergées dans `[from, to)`, qui que soit celui qui a mergé. Contrairement aux
+    /// événements, le filtre de l'API est à l'instant près (vérifié le 2026-11-02).
+    fn my_merges(&self, from: Millis, to: Millis) -> Result<Vec<Contribution>, ForgeError> {
+        let instant = |at: Millis| {
+            chrono::DateTime::from_timestamp_millis(at)
+                .map(|d| d.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string())
+                .ok_or_else(|| ForgeError::Api("date hors limites".into()))
+        };
+        let (after, before) = (instant(from)?, instant(to)?);
+        let mut found = vec![];
+        for page in 1..=MAX_EVENT_PAGES {
+            let mrs: Vec<ApiMergedMr> = self.get(&format!(
+                "/merge_requests?scope=created_by_me&state=merged&merged_after={after}&merged_before={before}\
+                 &per_page={PER_PAGE}&page={page}"
+            ))?;
+            let last = mrs.len() < 100;
+            found.extend(mrs.into_iter().filter_map(merge).filter(|c| (from..to).contains(&c.at)));
+            if last {
+                return Ok(found);
+            }
+        }
+        Err(ForgeError::Api(format!("plus de {MAX_EVENT_PAGES} pages de MR mergées sur la période")))
+    }
+}
+
+#[derive(Deserialize)]
+struct ApiMergedMr {
+    #[serde(default)]
+    merged_at: Option<String>,
+}
+
+/// `None` pour une MR sans date de merge lisible.
+fn merge(m: ApiMergedMr) -> Option<Contribution> {
+    let at = chrono::DateTime::parse_from_rfc3339(m.merged_at.as_deref()?).ok()?.timestamp_millis();
+    Some(Contribution::merged(at))
+}
 
 #[derive(Deserialize)]
 struct ApiEvent {
@@ -521,6 +560,14 @@ mod tests {
         let comment = r#"{"action_name":"commented on","target_type":"DiffNote","created_at":"2026-10-26T13:43:40Z",
             "note":{"body":"ok"}}"#;
         assert_eq!(event(comment), None);
+    }
+
+    #[test]
+    fn a_merged_merge_request_counts_at_its_merge() {
+        let mr = |json: &str| merge(serde_json::from_str(json).unwrap());
+        let merged = mr(r#"{"iid":2805,"merged_at":"2026-10-28T17:23:38.850Z","merged_by":{"username":"x"}}"#);
+        assert_eq!(merged, Some(Contribution::merged(1_793_208_218_850)));
+        assert_eq!(mr(r#"{"iid":1,"merged_at":null}"#), None);
     }
 
     #[test]

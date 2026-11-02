@@ -1,10 +1,11 @@
 //! Activité GitLab : mes contributions par jour, semaine, mois ou année.
 //!
-//! Source unique : mes événements GitLab. Un événement a pour auteur celui qui agit, d'où ce que
-//! compte chaque série :
+//! Sources : mes événements GitLab, et mes MR mergées. Un événement a pour auteur celui qui agit,
+//! d'où ce que compte chaque série :
 //! - **MR ouvertes** : `opened` sur une MR ;
-//! - **merges** : `accepted` sur une MR, c'est-à-dire les MR que **j'ai** mergées, les miennes ou
-//!   celles des autres. Une MR à moi mergée par un collègue n'y est pas ;
+//! - **MR mergées** : mes MR mergées, par moi ou par n'importe qui, datées de leur merge. Elles ne
+//!   viennent pas des événements : le merge d'une MR à moi par un collègue est un événement à lui.
+//!   Une MR d'un autre que j'ai mergée n'y est pas ;
 //! - **commits** : `commit_count` de chaque push (`pushed to`, `pushed new`). Un push forcé après
 //!   rebase recompte ses commits : c'est un volume poussé, pas un nombre de commits distincts ;
 //! - **reviews** : `approved` sur une MR. Les commentaires ne comptent pas : rien dans l'événement
@@ -31,13 +32,17 @@ pub struct Contribution {
 }
 
 impl Contribution {
+    /// Une de mes MR, mergée à l'instant `merged_at`.
+    pub fn merged(merged_at: Millis) -> Self {
+        Self { kind: ContributionKind::MrMerged, at: merged_at, count: 1 }
+    }
+
     /// `None` pour un événement qui n'est pas une contribution comptée (commentaire, suppression
-    /// de branche, issue…). `commit_count` : celui du `push_data`, s'il y en a un.
+    /// de branche, issue, merge — lu ailleurs…). `commit_count` : celui du `push_data`, s'il y en a un.
     pub fn classify(action: &str, target_type: Option<&str>, commit_count: Option<u32>, at: Millis) -> Option<Self> {
         let on_mr = target_type == Some("MergeRequest");
         let (kind, count) = match action {
             "opened" if on_mr => (ContributionKind::MrOpened, 1),
-            "accepted" if on_mr => (ContributionKind::MrMerged, 1),
             "approved" if on_mr => (ContributionKind::Review, 1),
             "pushed to" | "pushed new" => (ContributionKind::Commits, commit_count.filter(|c| *c > 0)?),
             _ => return None,
@@ -194,7 +199,8 @@ mod tests {
     fn classifies_the_events_seen_on_gitlab() {
         let c = |a, t, n| Contribution::classify(a, t, n, 0).map(|c| (c.kind, c.count));
         assert_eq!(c("opened", Some("MergeRequest"), None), Some((ContributionKind::MrOpened, 1)));
-        assert_eq!(c("accepted", Some("MergeRequest"), None), Some((ContributionKind::MrMerged, 1)));
+        // Un merge vient de mes MR mergées, pas de l'événement : il ne compterait que les miens.
+        assert_eq!(c("accepted", Some("MergeRequest"), None), None);
         assert_eq!(c("approved", Some("MergeRequest"), None), Some((ContributionKind::Review, 1)));
         assert_eq!(c("pushed to", None, Some(3)), Some((ContributionKind::Commits, 3)));
         assert_eq!(c("pushed new", Some("Project"), Some(2)), Some((ContributionKind::Commits, 2)));
