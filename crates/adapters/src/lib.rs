@@ -18,5 +18,6 @@ pub mod sqlite_console_history;
 pub mod sqlite_agents;
 pub mod sqlite_search;
 pub mod sqlite_tasks;
+pub mod task_backup;
 pub mod workspace;
 pub mod vault;
