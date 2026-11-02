@@ -105,3 +105,5 @@ const bytes = new TextEncoder().encode(lines.join('\r\n'));
 let bin = '';
 bytes.forEach((b) => (bin += String.fromCharCode(b)));
 emit('agent:output', { id: AGENT_IDS[0]!, data: btoa(bin) });
+// `?update=failed&output` : ouvre la sortie d'une mise à jour échouée.
+if (params.has('output')) await click('button.update', 'Mise à jour échouée');

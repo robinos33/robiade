@@ -429,7 +429,19 @@ function dbPage(request: DbPageRequest) {
   return { columns: orderColumns, rows: ids.map(orderRow), next: { kind: 'after', values: [String(after + 200)] } };
 }
 
+const DEMO_UPDATES: Record<string, unknown> = {
+  installing: { state: 'installing', commits: 3 },
+  ready: { state: 'ready', commits: 3 },
+  failed: {
+    state: 'failed',
+    output: 'error[E0425]: cannot find value `relaunch` in this scope\n  --> app/src/commands.rs:987:9\nerror: could not compile `robiade`\n\nJournal complet : /Users/demo/Library/Caches/dev.robin.robiade/update.log',
+  },
+};
+
 const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
+  /** `?update=installing|ready|failed` : état de la mise à jour au lancement. */
+  update_status: () => DEMO_UPDATES[new URLSearchParams(location.search).get('update') ?? ''] ?? null,
+  relaunch: () => null,
   environment: () => ({ claudePath: '/usr/local/bin/claude', home: HOME, commit: 'b71236c9e4f2a8d1c3b5e7f9a0d2c4e6f8a1b3c5', dirty: false }),
   list_history: () => sessions,
   list_agents: () => agents,
