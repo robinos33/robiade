@@ -30,7 +30,7 @@
   /** Échelles très différentes (commits contre MR) : un petit graphe par série, pas d'axe commun. */
   const SERIES: { key: Exclude<keyof ContributionBucket, 'startDay'>; label: string; hint: string }[] = [
     { key: 'mrsOpened', label: 'MR ouvertes', hint: 'MR que j’ai ouvertes' },
-    { key: 'mrsMerged', label: 'Merges', hint: 'MR que j’ai mergées, les miennes ou celles des autres' },
+    { key: 'mrsMerged', label: 'MR mergées', hint: 'Mes MR mergées, par moi ou par n’importe qui' },
     { key: 'commits', label: 'Commits poussés', hint: 'Commits de chaque push : un push forcé après rebase les recompte' },
     { key: 'reviews', label: 'Reviews', hint: 'MR approuvées ; un commentaire seul ne compte pas' },
   ];
