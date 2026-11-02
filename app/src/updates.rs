@@ -15,6 +15,11 @@ pub const COMMIT: Option<&str> = option_env!("ROBIADE_COMMIT");
 /// `.git` commun du dépôt d'où elle a été construite.
 const REPO: Option<&str> = option_env!("ROBIADE_REPO");
 
+/// Construite avec des modifications non commitées : son commit ne la décrit qu'en partie.
+pub fn dirty() -> bool {
+    option_env!("ROBIADE_DIRTY") == Some("1")
+}
+
 #[derive(Default)]
 pub struct Updates {
     /// `None` tant que rien n'est décidé, ou pour une build qui ne se met pas à jour.

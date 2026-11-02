@@ -52,6 +52,8 @@ pub fn environment(app: tauri::AppHandle, state: State<AppState>) -> Environment
     EnvironmentDto {
         claude_path: state.agents.claude_path().map(str::to_owned),
         home: app.path().home_dir().map(|h| h.to_string_lossy().into_owned()).unwrap_or_default(),
+        commit: crate::updates::COMMIT.map(str::to_owned),
+        dirty: crate::updates::dirty(),
     }
 }
 

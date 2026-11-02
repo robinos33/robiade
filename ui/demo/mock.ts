@@ -430,7 +430,7 @@ function dbPage(request: DbPageRequest) {
 }
 
 const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
-  environment: () => ({ claudePath: '/usr/local/bin/claude', home: HOME }),
+  environment: () => ({ claudePath: '/usr/local/bin/claude', home: HOME, commit: 'b71236c9e4f2a8d1c3b5e7f9a0d2c4e6f8a1b3c5', dirty: false }),
   list_history: () => sessions,
   list_agents: () => agents,
   list_tasks: () => tasks,

@@ -28,6 +28,13 @@
   /** Échéances tombées hors du projet affiché : signalées partout, comptées seulement chez elles. */
   const dueElsewhere = $derived(app.allDueTasks.length - app.dueTasks.length);
 
+  /** Commit de la build, au survol du nom : c'est lui qui dit si une mise à jour a été prise. */
+  const build = $derived.by(() => {
+    const env = app.env;
+    if (!env?.commit) return 'Build hors install.sh : pas de mise à jour automatique';
+    return `Build ${env.commit.slice(0, 7)}${env.dirty ? ', avec des modifications non commitées' : ''}`;
+  });
+
   const liveIn = (root: string) => app.liveAgents.filter((a) => a.projectRoot === root);
   const liveInWorktree = (path: string) => app.liveAgents.filter((a) => a.worktreePath === path);
 
@@ -55,7 +62,7 @@
 
   <div class="brand" data-tauri-drag-region>
     <span class="logo" aria-hidden="true">R</span>
-    <span class="name">Robiade</span>
+    <span class="name" title={build}>Robiade</span>
     <button class="palette" onclick={() => (app.paletteOpen = true)} title="Palette de commandes">
       <kbd>⌘K</kbd>
     </button>

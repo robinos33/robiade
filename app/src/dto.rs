@@ -936,6 +936,9 @@ impl From<&UpdateStatus> for UpdateDto {
 pub struct EnvironmentDto {
     pub claude_path: Option<String>,
     pub home: String,
+    /// Commit dont la build est issue ; `None` hors `install.sh`.
+    pub commit: Option<String>,
+    pub dirty: bool,
 }
 
 #[derive(Serialize, Clone)]

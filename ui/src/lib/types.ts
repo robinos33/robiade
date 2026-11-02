@@ -245,7 +245,8 @@ export interface ContributionBucket { startDay: number; mrsOpened: number; mrsMe
 
 export interface MrOutcomes { total: number; merged: number; opened: number; closed: number; unknown: number }
 
-export interface Environment { claudePath: string | null; home: string }
+/** `commit` : commit dont la build est issue, absent hors `install.sh` ; `dirty` : avec des modifications non commitées. */
+export interface Environment { claudePath: string | null; home: string; commit: string | null; dirty: boolean }
 
 export interface Project { root: string; name: string; lastActivityAt: number; sessions: number; gitlabProject: string | null }
 /** Un worktree, connu par les sessions qui y ont tourné ou par git ; `git` est absent tant qu'il n'est pas relu. */
