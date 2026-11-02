@@ -1,6 +1,8 @@
 //! Dépôt source de Robiade : comparaison à `origin/main` et construction dans un worktree réservé.
 //!
-//! Pas de `fetch` : je pousse depuis ce dépôt ou l'un de ses worktrees, qui partagent ses refs.
+//! Un `fetch` précède la comparaison : un commit poussé d'ailleurs (GitLab, une autre machine)
+//! compte aussi. Hors ligne, la ref locale sert ; mes push, faits depuis ce dépôt ou l'un de ses
+//! worktrees, l'ont déjà mise à jour.
 //! La construction ne touche jamais la copie de travail : elle a lieu dans un worktree en tête
 //! détachée, gardé d'une fois sur l'autre pour que `target/` et `node_modules` restent chauds.
 //! C'est le `scripts/install.sh` du commit construit qui tourne, et il installe l'app.
@@ -8,11 +10,14 @@
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use robiade_core::updates::{AppSource, Behind};
 
 /// Branche dont l'app suit les commits.
 const TARGET: &str = "origin/main";
+/// Un fetch plus long est abandonné : la ref locale sert.
+const FETCH_TIMEOUT: Duration = Duration::from_secs(30);
 /// Lignes de la sortie du build gardées pour l'interface ; le journal complet reste sur le disque.
 const TAIL_LINES: usize = 80;
 
@@ -62,6 +67,38 @@ impl SourceRepo {
         cmd
     }
 
+    /// `git fetch origin main`, abandonné au-delà de `FETCH_TIMEOUT`. Un échec n'est pas une
+    /// erreur : la comparaison se fait sur ce que le dépôt connaît déjà.
+    fn fetch(&self) {
+        let branch = TARGET.trim_start_matches("origin/");
+        let spawned = self
+            .git()
+            .args(["fetch", "--quiet", "--no-tags", "origin", branch])
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn();
+        let Ok(mut child) = spawned else { return };
+        let started = Instant::now();
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) if status.success() => return,
+                Ok(Some(_)) => {
+                    let mut stderr = String::new();
+                    if let Some(mut pipe) = child.stderr.take() {
+                        let _ = std::io::Read::read_to_string(&mut pipe, &mut stderr);
+                    }
+                    return eprintln!("fetch de {TARGET} impossible, ref locale gardée : {}", stderr.trim());
+                }
+                Ok(None) if started.elapsed() < FETCH_TIMEOUT => std::thread::sleep(Duration::from_millis(100)),
+                _ => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return eprintln!("fetch de {TARGET} abandonné, ref locale gardée");
+                }
+            }
+        }
+    }
+
     /// Met le worktree de build sur `commit`, en le créant au besoin. Un worktree dont le dossier
     /// a disparu est encore connu de git : `--force` le recrée au même endroit.
     fn checkout(&self, commit: &str) -> Result<(), String> {
@@ -99,6 +136,7 @@ impl SourceRepo {
 
 impl AppSource for SourceRepo {
     fn behind(&self, installed: &str) -> Result<Behind, String> {
+        self.fetch();
         let target = run_out(self.git().args(["rev-parse", "--verify", "--end-of-options", &format!("{TARGET}^{{commit}}")]))?;
         let count = run_out(self.git().args(["rev-list", "--count", &format!("{installed}..{target}")]))?;
         let commits = count.parse().map_err(|_| format!("git rev-list --count : {count:?}"))?;
@@ -174,6 +212,13 @@ mod tests {
         std::fs::write(clone.join("scripts/install.sh"), "exit 1\n").unwrap();
         git(&clone, &["push", "-q", "origin", "main"]);
         assert_eq!(source.behind(&installed).unwrap(), Behind { target: target.clone(), commits: 2 });
+
+        // Poussé d'ailleurs : seul le fetch le fait connaître du dépôt.
+        let elsewhere = root.join("elsewhere");
+        git(&root, &["clone", "-q", remote.to_str().unwrap(), elsewhere.to_str().unwrap()]);
+        let target = commit(&elsewhere, "pwd > ../built-in # ailleurs\n");
+        git(&elsewhere, &["push", "-q", "origin", "main"]);
+        assert_eq!(source.behind(&installed).unwrap(), Behind { target: target.clone(), commits: 3 });
 
         source.install(&target).unwrap();
         let built_in = std::fs::read_to_string(cache.join("built-in")).unwrap();
