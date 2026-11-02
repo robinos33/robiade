@@ -1,11 +1,22 @@
 <script lang="ts">
-  import { api } from '../lib/api';
   import { app } from '../lib/state.svelte';
-  import type { Issue, IssueStart } from '../lib/types';
+  import type { IssueStart } from '../lib/types';
 
-  let { issue, projectRoot, onclose }: { issue: Issue; projectRoot: string; onclose: () => void } = $props();
+  let {
+    heading,
+    fromGitlab,
+    prepare,
+    launch,
+    onclose,
+  }: {
+    heading: string;
+    /** Le prompt cite une description venue de GitLab : le rappeler avant l'envoi. */
+    fromGitlab: boolean;
+    prepare: () => Promise<IssueStart>;
+    launch: (branch: string, base: string, prompt: string) => Promise<{ agentId: string; fetched: boolean }>;
+    onclose: () => void;
+  } = $props();
 
-  const target = $derived({ project: issue.project, iid: issue.iid });
   let proposal = $state<IssueStart | null>(null);
   let branch = $state('');
   let base = $state('');
@@ -17,7 +28,7 @@
   const dir = $derived(proposal ? `${proposal.repository}/.claude/worktrees/${branch.replaceAll('/', '-')}` : '');
 
   $effect(() => {
-    api.prepareIssueStart(projectRoot, target).then(
+    prepare().then(
       (p) => {
         proposal = p;
         branch = p.branch;
@@ -32,7 +43,7 @@
     busy = true;
     error = null;
     try {
-      const started = await api.startIssueAgent(projectRoot, target, branch.trim(), base, prompt);
+      const started = await launch(branch.trim(), base, prompt);
       if (!started.fetched) app.notify(`${base} n'a pas pu être mis à jour depuis origin : la base locale a servi.`);
       app.openAgent(started.agentId);
       onclose();
@@ -54,9 +65,9 @@
 
 <div class="scrim" role="presentation">
   <div class="dialog" role="dialog" aria-labelledby="start-title">
-    <h2 id="start-title">Démarrer un agent sur #{issue.iid} {issue.title}</h2>
+    <h2 id="start-title">{heading}</h2>
     {#if !proposal}
-      <p class="muted">{error ? '' : 'Lecture de l’issue et du dépôt…'}</p>
+      <p class="muted">{error ? '' : 'Lecture du dépôt…'}</p>
     {:else}
       <div class="grid">
         <label for="branch">Branche</label>
@@ -71,7 +82,7 @@
       <label class="k" for="prompt">Premier message, envoyé tel quel à l'agent</label>
       <textarea id="prompt" class="field mono" rows="14" bind:value={prompt}></textarea>
       <p class="muted note">
-        La description vient de GitLab : relis-la, une issue peut contenir des consignes destinées à l'agent.
+        {#if fromGitlab}La description vient de GitLab : relis-la, une issue peut contenir des consignes destinées à l'agent.{/if}
         {base} est mis à jour depuis origin avant la création ; aucun hook git ne tourne.
       </p>
     {/if}

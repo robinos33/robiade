@@ -7,7 +7,7 @@
   import Icon from '../components/Icon.svelte';
   import IssueActionConfirm from '../components/IssueActionConfirm.svelte';
   import IssueCreateDialog from '../components/IssueCreateDialog.svelte';
-  import IssueStartDialog from '../components/IssueStartDialog.svelte';
+  import AgentStartDialog from '../components/AgentStartDialog.svelte';
   import TaskLinkDialog from '../components/TaskLinkDialog.svelte';
 
   /** Issue sur laquelle démarrer un agent, avec le dépôt local de son projet. */
@@ -256,7 +256,15 @@
 {/if}
 
 {#if starting}
-  <IssueStartDialog issue={starting.issue} projectRoot={starting.root} onclose={() => (starting = null)} />
+  {@const { issue, root } = starting}
+  {@const target = { project: issue.project, iid: issue.iid }}
+  <AgentStartDialog
+    heading={`Démarrer un agent sur #${issue.iid} ${issue.title}`}
+    fromGitlab
+    prepare={() => api.prepareIssueStart(root, target)}
+    launch={(branch, base, prompt) => api.startIssueAgent(root, target, branch, base, prompt)}
+    onclose={() => (starting = null)}
+  />
 {/if}
 
 <style>
