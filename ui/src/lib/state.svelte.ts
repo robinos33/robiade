@@ -2,7 +2,7 @@ import { listen } from '@tauri-apps/api/event';
 import { api } from './api';
 import { localDay } from './format';
 import { writeOutput } from './terminals';
-import type { Agent, Environment, Forge, GitWorktree, MergeRequest, MrState, Project, Session, Task, Workspace, Worktree } from './types';
+import type { Agent, Environment, Forge, GitWorktree, MergeRequest, MrState, Project, QuitRequest, Session, Task, Workspace, Worktree } from './types';
 
 export type View = 'inbox' | 'agents' | 'history' | 'mr' | 'tasks' | 'stats' | 'env' | 'db';
 
@@ -25,8 +25,8 @@ class AppState {
   paletteOpen = $state(false);
   /** Fenêtre « Reprendre une session », l'équivalent visuel de `/resume`. */
   resumeOpen = $state(false);
-  /** Agents qu'une fermeture interromprait ; non nul tant que la confirmation est affichée. */
-  quitRequest = $state<Agent[] | null>(null);
+  /** Agents qu'une fermeture, ou une relance, interromprait ; non nul tant que la confirmation est affichée. */
+  quitRequest = $state<QuitRequest | null>(null);
   toast = $state<string | null>(null);
   now = $state(Date.now());
   /** MR lues sur GitLab ; `null` avant la première lecture. */
@@ -166,7 +166,7 @@ class AppState {
       ...(await Promise.all([
         listen<Agent[]>('agents:changed', (e) => (this.agents = e.payload)),
         listen<{ id: string; data: string }>('agent:output', (e) => writeOutput(e.payload.id, e.payload.data)),
-        listen<Agent[]>('app:quit-requested', (e) => (this.quitRequest = e.payload)),
+        listen<QuitRequest>('app:quit-requested', (e) => (this.quitRequest = e.payload)),
       ])),
     );
     this.env = await api.environment();

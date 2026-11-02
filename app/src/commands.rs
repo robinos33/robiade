@@ -983,12 +983,26 @@ pub fn update_status(state: State<AppState>) -> Option<UpdateDto> {
     state.updates.status().as_ref().map(UpdateDto::from)
 }
 
-/// Fermeture confirmée : les agents sont arrêtés, leurs sessions restent reprenables.
+/// Relance l'app pour prendre la mise à jour installée. Les agents qu'elle interromprait
+/// passent d'abord par la confirmation de fermeture, qui rappelle `quit` avec `relaunch`.
 #[tauri::command]
-pub fn quit(app: tauri::AppHandle, state: State<AppState>) {
+pub fn relaunch(app: tauri::AppHandle) {
+    if !crate::hold_quit(&app, true) {
+        app.request_restart();
+    }
+}
+
+/// Fermeture confirmée : les agents sont arrêtés, leurs sessions restent reprenables.
+/// `relaunch` : l'app redémarre aussitôt.
+#[tauri::command]
+pub fn quit(app: tauri::AppHandle, state: State<AppState>, relaunch: bool) {
     state.quit_confirmed.store(true, std::sync::atomic::Ordering::SeqCst);
     state.agents.kill_all();
-    app.exit(0);
+    if relaunch {
+        app.request_restart();
+    } else {
+        app.exit(0);
+    }
 }
 
 #[tauri::command]

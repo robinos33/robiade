@@ -910,6 +910,15 @@ impl From<ContributionBucket> for ContributionBucketDto {
     }
 }
 
+/// Fermeture à confirmer : les agents qu'elle interromprait.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct QuitRequestDto {
+    pub agents: Vec<AgentDto>,
+    /// Fermeture pour relancer l'app, et prendre une mise à jour.
+    pub relaunch: bool,
+}
+
 /// État de la mise à jour au lancement.
 #[derive(Serialize, Clone)]
 #[serde(tag = "state", rename_all = "camelCase")]

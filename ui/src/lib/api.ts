@@ -100,5 +100,7 @@ export const api = {
   cancelDbStatement: (id: string) => invoke<void>('cancel_db_statement', { id }),
   dbConsoleHistory: (id: string) => invoke<DbConsoleHistory[]>('db_console_history', { id }),
   readAsset: (id: string, path: string) => invoke<AssetContent>('read_asset', { id, path }),
-  quit: () => invoke<void>('quit'),
+  /** Relance pour prendre la mise à jour ; des agents vivants passent d'abord par la confirmation. */
+  relaunch: () => invoke<void>('relaunch'),
+  quit: (relaunch: boolean) => invoke<void>('quit', { relaunch }),
 };

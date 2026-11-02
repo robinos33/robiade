@@ -4,7 +4,8 @@
   import { shortPath } from '../lib/format';
   import StatusBadge from './StatusBadge.svelte';
 
-  const agents = $derived(app.quitRequest ?? []);
+  const agents = $derived(app.quitRequest?.agents ?? []);
+  const relaunch = $derived(app.quitRequest?.relaunch ?? false);
   let cancel: HTMLButtonElement | undefined = $state();
 
   $effect(() => cancel?.focus());
@@ -21,7 +22,7 @@
 <div class="scrim" role="presentation">
   <div class="dialog" role="alertdialog" aria-labelledby="quit-title" aria-describedby="quit-desc">
     <header>
-      <h2 id="quit-title">Quitter Robiade et arrêter ces agents ?</h2>
+      <h2 id="quit-title">{relaunch ? 'Relancer' : 'Quitter'} Robiade et arrêter ces agents ?</h2>
       <p id="quit-desc" class="muted">
         Leur travail en cours est interrompu. Les sessions restent reprenables depuis l'historique.
       </p>
@@ -37,8 +38,8 @@
     </ul>
     <footer>
       <button class="btn" bind:this={cancel} onclick={() => (app.quitRequest = null)}>Annuler</button>
-      <button class="btn danger" onclick={() => void api.quit()}>
-        Arrêter {agents.length} agent{agents.length > 1 ? 's' : ''} et quitter
+      <button class="btn danger" onclick={() => void api.quit(relaunch)}>
+        Arrêter {agents.length} agent{agents.length > 1 ? 's' : ''} et {relaunch ? 'relancer' : 'quitter'}
       </button>
     </footer>
   </div>

@@ -246,6 +246,9 @@ export interface ContributionBucket { startDay: number; mrsOpened: number; mrsMe
 export interface MrOutcomes { total: number; merged: number; opened: number; closed: number; unknown: number }
 
 /** `commit` : commit dont la build est issue, absent hors `install.sh` ; `dirty` : avec des modifications non commitées. */
+/** Fermeture à confirmer ; `relaunch` : pour relancer l'app et prendre une mise à jour. */
+export interface QuitRequest { agents: Agent[]; relaunch: boolean }
+
 export interface Environment { claudePath: string | null; home: string; commit: string | null; dirty: boolean }
 
 export interface Project { root: string; name: string; lastActivityAt: number; sessions: number; gitlabProject: string | null }

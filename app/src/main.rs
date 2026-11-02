@@ -87,7 +87,8 @@ fn main_window(app: &tauri::App) -> tauri::Result<()> {
 
 /// Retient la fermeture si elle interromprait un agent, et demande confirmation à l'interface,
 /// qui affiche les agents concernés. Renvoie `true` si la fermeture doit être annulée.
-fn hold_quit(app: &tauri::AppHandle) -> bool {
+/// `relaunch` : fermeture pour relancer l'app, que l'interface annonce comme telle.
+pub fn hold_quit(app: &tauri::AppHandle, relaunch: bool) -> bool {
     let Some(state) = app.try_state::<AppState>() else { return false };
     if state.quit_confirmed.load(Ordering::SeqCst) {
         return false;
@@ -96,7 +97,7 @@ fn hold_quit(app: &tauri::AppHandle) -> bool {
     if busy.is_empty() || app.get_webview_window("main").is_none() {
         return false;
     }
-    let _ = app.emit("app:quit-requested", &busy);
+    let _ = app.emit("app:quit-requested", dto::QuitRequestDto { agents: busy, relaunch });
     true
 }
 
@@ -196,7 +197,7 @@ fn main() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if hold_quit(window.app_handle()) {
+                if hold_quit(window.app_handle(), false) {
                     api.prevent_close();
                 }
             }
@@ -268,12 +269,19 @@ fn main() {
             commands::merge_request_outcomes,
             commands::merge_request_states,
             commands::update_status,
+            commands::relaunch,
             commands::quit,
         ])
         .build(tauri::generate_context!())
         .expect("échec du démarrage de Robiade")
         .run(|app, event| match event {
-            tauri::RunEvent::ExitRequested { api, .. } if hold_quit(app) => api.prevent_exit(),
+            // Une relance ne peut pas être retenue ici (Tauri ignore `prevent_exit`) : elle est
+            // confirmée avant d'être demandée, par `commands::relaunch`.
+            tauri::RunEvent::ExitRequested { api, code, .. }
+                if code != Some(tauri::RESTART_EXIT_CODE) && hold_quit(app, false) =>
+            {
+                api.prevent_exit()
+            }
             tauri::RunEvent::Exit => app.state::<AppState>().agents.kill_all(),
             _ => {}
         });
