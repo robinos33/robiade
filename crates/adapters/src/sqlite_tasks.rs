@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::sync::Mutex;
 
-use robiade_core::tasks::{Task, TaskError, TaskId, TaskRepository, TaskStatus};
+use robiade_core::tasks::{DueDate, Task, TaskError, TaskId, TaskRepository, TaskStatus};
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
 pub struct SqliteTaskRepository {
@@ -30,10 +30,25 @@ impl SqliteTaskRepository {
              );",
         )
         .map_err(storage)?;
+        Self::migrate(&conn)?;
         Ok(Self { conn: Mutex::new(conn) })
     }
 
+    /// Évolutions du schéma, rejouées une seule fois par base : la table d'origine reste créée telle
+    /// quelle, chaque étape s'applique ensuite par-dessus. Ajouter une étape, jamais en modifier une.
+    fn migrate(conn: &Connection) -> Result<(), TaskError> {
+        const STEPS: &[&str] = &["ALTER TABLE task ADD COLUMN due_on TEXT;"];
+        let done: usize = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).map_err(storage)?;
+        for (i, step) in STEPS.iter().enumerate().skip(done) {
+            conn.execute_batch(&format!("BEGIN; {step} PRAGMA user_version = {}; COMMIT;", i + 1))
+                .map_err(storage)?;
+        }
+        Ok(())
+    }
+
     fn from_row(row: &Row) -> rusqlite::Result<Task> {
+        // Écrite par `save`, donc valide ; une valeur illisible vaut « pas d'échéance » plutôt qu'une liste vide.
+        let due_on = row.get::<_, Option<String>>(5)?.and_then(|d| DueDate::parse(&d).ok());
         let status = match row.get::<_, String>(4)?.as_str() {
             "doing" => TaskStatus::Doing,
             "done" => TaskStatus::Done,
@@ -45,13 +60,14 @@ impl SqliteTaskRepository {
             row.get(2)?,
             row.get(3)?,
             status,
-            row.get(5)?,
+            due_on,
             row.get(6)?,
+            row.get(7)?,
         ))
     }
 }
 
-const COLUMNS: &str = "id, title, notes, project_path, status, created_at, done_at";
+const COLUMNS: &str = "id, title, notes, project_path, status, due_on, created_at, done_at";
 
 impl TaskRepository for SqliteTaskRepository {
     fn all(&self) -> Result<Vec<Task>, TaskError> {
@@ -80,9 +96,9 @@ impl TaskRepository for SqliteTaskRepository {
         let conn = self.conn.lock().map_err(storage)?;
         conn.execute(
             &format!(
-                "INSERT INTO task ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                "INSERT INTO task ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                  ON CONFLICT(id) DO UPDATE SET title = ?2, notes = ?3, project_path = ?4,
-                     status = ?5, done_at = ?7"
+                     status = ?5, due_on = ?6, done_at = ?8"
             ),
             params![
                 task.id().0,
@@ -90,6 +106,7 @@ impl TaskRepository for SqliteTaskRepository {
                 task.notes(),
                 task.project_path(),
                 status,
+                task.due_on().map(DueDate::as_str),
                 task.created_at(),
                 task.done_at()
             ],
@@ -116,11 +133,39 @@ mod tests {
         let repo = SqliteTaskRepository::open(Path::new(":memory:")).unwrap();
         let mut task = Task::create(TaskId("a".into()), "Écrire la spec", Some("/p".into()), 1).unwrap();
         repo.save(&task).unwrap();
+        task.schedule(Some(DueDate::parse("2026-11-02").unwrap()));
         task.move_to(TaskStatus::Done, 5);
         repo.save(&task).unwrap();
         assert_eq!(repo.get(&TaskId("a".into())).unwrap(), task);
         assert_eq!(repo.all().unwrap().len(), 1);
         repo.delete(&TaskId("a".into())).unwrap();
         assert_eq!(repo.get(&TaskId("a".into())), Err(TaskError::NotFound));
+    }
+
+    #[test]
+    fn migrates_a_base_created_before_due_dates_and_only_once() {
+        let dir = std::env::temp_dir().join(format!("robiade-tasks-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("robiade.db");
+        let _ = std::fs::remove_file(&path);
+        {
+            let old = Connection::open(&path).unwrap();
+            old.execute_batch(
+                "CREATE TABLE task (id TEXT PRIMARY KEY, title TEXT NOT NULL, notes TEXT NOT NULL DEFAULT '',
+                     project_path TEXT, status TEXT NOT NULL, created_at INTEGER NOT NULL, done_at INTEGER);
+                 INSERT INTO task VALUES ('old', 'Avant', '', NULL, 'todo', 1, NULL);",
+            )
+            .unwrap();
+        }
+        let repo = SqliteTaskRepository::open(&path).unwrap();
+        let mut old = repo.get(&TaskId("old".into())).unwrap();
+        assert_eq!(old.due_on(), None);
+        old.schedule(Some(DueDate::parse("2026-11-03").unwrap()));
+        repo.save(&old).unwrap();
+        drop(repo);
+        // Réouverture : la colonne existe déjà, l'étape ne doit pas être rejouée.
+        let repo = SqliteTaskRepository::open(&path).unwrap();
+        assert_eq!(repo.get(&TaskId("old".into())).unwrap(), old);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -20,10 +20,51 @@ pub enum TaskError {
     EmptyTitle,
     #[error("le titre dépasse {TITLE_MAX_CHARS} caractères")]
     TitleTooLong,
+    #[error("échéance invalide : {0} (attendu AAAA-MM-JJ)")]
+    InvalidDueDate(String),
     #[error("tâche introuvable")]
     NotFound,
     #[error("stockage des tâches indisponible : {0}")]
     Storage(String),
+}
+
+/// Échéance : un jour du calendrier, sans heure ni fuseau — c'est l'utilisateur qui sait quel jour on est.
+/// Format ISO `AAAA-MM-JJ`, dont l'ordre lexical est l'ordre chronologique.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct DueDate(String);
+
+impl DueDate {
+    pub fn parse(raw: &str) -> Result<Self, TaskError> {
+        let invalid = || TaskError::InvalidDueDate(raw.to_owned());
+        let bytes = raw.as_bytes();
+        if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' {
+            return Err(invalid());
+        }
+        let number = |range: std::ops::Range<usize>| -> Result<u32, TaskError> {
+            let part = &raw[range];
+            if !part.bytes().all(|b| b.is_ascii_digit()) {
+                return Err(invalid());
+            }
+            part.parse().map_err(|_| invalid())
+        };
+        let (year, month, day) = (number(0..4)?, number(5..7)?, number(8..10)?);
+        let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+        let days_in_month = match month {
+            1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+            4 | 6 | 9 | 11 => 30,
+            2 if leap => 29,
+            2 => 28,
+            _ => return Err(invalid()),
+        };
+        if day == 0 || day > days_in_month {
+            return Err(invalid());
+        }
+        Ok(Self(raw.to_owned()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,6 +75,7 @@ pub struct Task {
     /// Absent : tâche globale.
     project_path: Option<String>,
     status: TaskStatus,
+    due_on: Option<DueDate>,
     created_at: Millis,
     done_at: Option<Millis>,
 }
@@ -46,22 +88,26 @@ impl Task {
             notes: String::new(),
             project_path,
             status: TaskStatus::Todo,
+            due_on: None,
             created_at: now,
             done_at: None,
         })
     }
 
     /// Reconstitution depuis le stockage : les invariants ont été vérifiés à l'écriture.
+    /// Une valeur par colonne : un objet intermédiaire ne ferait que déplacer la liste.
+    #[allow(clippy::too_many_arguments)]
     pub fn restore(
         id: TaskId,
         title: String,
         notes: String,
         project_path: Option<String>,
         status: TaskStatus,
+        due_on: Option<DueDate>,
         created_at: Millis,
         done_at: Option<Millis>,
     ) -> Self {
-        Self { id, title, notes, project_path, status, created_at, done_at }
+        Self { id, title, notes, project_path, status, due_on, created_at, done_at }
     }
 
     pub fn rename(&mut self, title: &str) -> Result<(), TaskError> {
@@ -71,6 +117,11 @@ impl Task {
 
     pub fn set_notes(&mut self, notes: &str) {
         self.notes = notes.to_owned();
+    }
+
+    /// `None` retire l'échéance.
+    pub fn schedule(&mut self, due_on: Option<DueDate>) {
+        self.due_on = due_on;
     }
 
     pub fn move_to(&mut self, status: TaskStatus, now: Millis) {
@@ -103,6 +154,9 @@ impl Task {
     }
     pub fn status(&self) -> TaskStatus {
         self.status
+    }
+    pub fn due_on(&self) -> Option<&DueDate> {
+        self.due_on.as_ref()
     }
     pub fn created_at(&self) -> Millis {
         self.created_at
@@ -143,5 +197,29 @@ mod tests {
         assert_eq!(t.done_at(), Some(20));
         t.move_to(TaskStatus::Doing, 40);
         assert_eq!(t.done_at(), None);
+    }
+
+    #[test]
+    fn due_date_is_a_real_calendar_day() {
+        assert_eq!(DueDate::parse("2026-11-02").unwrap().as_str(), "2026-11-02");
+        assert!(DueDate::parse("2028-02-29").is_ok());
+        assert!(DueDate::parse("2000-02-29").is_ok());
+        for bad in ["", "2026-11-2", "2026/11/02", "2026-13-01", "2026-00-10", "2026-04-31", "2027-02-29", "1900-02-29", "2026-1a-02", "+026-11-02"] {
+            assert_eq!(DueDate::parse(bad), Err(TaskError::InvalidDueDate(bad.into())), "{bad}");
+        }
+    }
+
+    #[test]
+    fn due_dates_sort_chronologically() {
+        assert!(DueDate::parse("2026-09-30").unwrap() < DueDate::parse("2026-10-01").unwrap());
+    }
+
+    #[test]
+    fn schedule_sets_and_clears_the_due_date() {
+        let mut t = task();
+        t.schedule(Some(DueDate::parse("2026-11-02").unwrap()));
+        assert_eq!(t.due_on().map(DueDate::as_str), Some("2026-11-02"));
+        t.schedule(None);
+        assert_eq!(t.due_on(), None);
     }
 }
