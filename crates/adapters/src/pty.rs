@@ -33,6 +33,12 @@ impl AgentProcess {
             .openpty(PtySize { rows: spec.rows, cols: spec.cols, pixel_width: 0, pixel_height: 0 })
             .map_err(|e| e.to_string())?;
         let mut cmd = CommandBuilder::new(spec.claude);
+        // Un Robiade lancé depuis Claude Code ferait de l'agent un sous-agent sans transcript (#16).
+        for (name, _) in std::env::vars_os() {
+            if name.to_str().is_some_and(is_leaked_claude_var) {
+                cmd.env_remove(&name);
+            }
+        }
         cmd.args(&spec.args);
         cmd.cwd(spec.cwd);
         cmd.env("PATH", spec.path_env);
@@ -86,5 +92,25 @@ impl AgentProcess {
         if let Ok(mut c) = self.child.lock() {
             let _ = c.kill();
         }
+    }
+}
+
+/// Variable héritée de Claude Code, à ne pas transmettre à un agent.
+fn is_leaked_claude_var(name: &str) -> bool {
+    name == "CLAUDECODE" || name.starts_with("CLAUDE_")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_leaked_claude_var;
+
+    #[test]
+    fn strips_inherited_claude_code_variables_and_keeps_the_others() {
+        assert!(is_leaked_claude_var("CLAUDECODE"));
+        assert!(is_leaked_claude_var("CLAUDE_CODE_CHILD_SESSION"));
+        assert!(is_leaked_claude_var("CLAUDE_CONFIG_DIR"));
+        assert!(!is_leaked_claude_var("ROBIADE_AGENT_ID"));
+        assert!(!is_leaked_claude_var("PATH"));
+        assert!(!is_leaked_claude_var("ANTHROPIC_API_KEY"));
     }
 }
