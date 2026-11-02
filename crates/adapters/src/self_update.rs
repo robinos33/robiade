@@ -7,7 +7,8 @@
 //! détachée, gardé d'une fois sur l'autre pour que `target/` et `node_modules` restent chauds.
 //! C'est le `scripts/install.sh` du commit construit qui tourne, et il installe l'app.
 
-use std::fs::File;
+use std::fs::{File, OpenOptions};
+use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -29,6 +30,8 @@ pub struct SourceRepo {
     worktree: PathBuf,
     /// Sortie complète du dernier build.
     log: PathBuf,
+    /// Verrou d'un build en cours, quelle que soit l'instance de Robiade qui l'a lancé.
+    lock: PathBuf,
     /// PATH du shell de login : `npm` et `cargo` n'en ont pas d'autre depuis le Finder.
     path: String,
 }
@@ -41,6 +44,7 @@ impl SourceRepo {
             repo,
             worktree: workspace.join("update"),
             log: workspace.join("update.log"),
+            lock: workspace.join("update.lock"),
             path,
         }
     }
@@ -99,6 +103,27 @@ impl SourceRepo {
         }
     }
 
+    /// Verrou exclusif, sans attente : un build lancé par une instance précédente, quittée depuis,
+    /// peut tourner encore — l'extraction d'un autre commit ou un second `npm install` le casseraient.
+    fn lock(&self) -> Result<File, String> {
+        if let Some(parent) = self.lock.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let file = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(&self.lock)
+            .map_err(|e| format!("verrou {} : {e}", self.lock.display()))?;
+        // SAFETY: descripteur ouvert, possédé par `file` pour toute la durée de l'appel.
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+            return Err("Un build lancé par une instance précédente de Robiade tourne encore : \
+                        il installera la mise à jour. Relancer une fois qu'il aura fini."
+                .into());
+        }
+        Ok(file)
+    }
+
     /// Met le worktree de build sur `commit`, en le créant au besoin. Un worktree dont le dossier
     /// a disparu est encore connu de git : `--force` le recrée au même endroit.
     fn checkout(&self, commit: &str) -> Result<(), String> {
@@ -114,14 +139,18 @@ impl SourceRepo {
     }
 
     /// Lance `scripts/install.sh` du worktree ; sa sortie va au journal.
-    fn build(&self) -> Result<(), String> {
+    ///
+    /// Le verrou devient l'entrée standard du build : le `flock` appartient à la description de
+    /// fichier, que le script et ses enfants partagent. Il tient donc tant que le build tourne,
+    /// même si Robiade est quitté entre-temps.
+    fn build(&self, lock: File) -> Result<(), String> {
         let log = File::create(&self.log).map_err(|e| format!("journal {} : {e}", self.log.display()))?;
         let err = log.try_clone().map_err(|e| e.to_string())?;
         let status = Command::new("/bin/sh")
             .arg(self.worktree.join("scripts/install.sh"))
             .current_dir(&self.worktree)
             .env("PATH", &self.path)
-            .stdin(Stdio::null())
+            .stdin(lock)
             .stdout(log)
             .stderr(err)
             .status()
@@ -144,8 +173,9 @@ impl AppSource for SourceRepo {
     }
 
     fn install(&self, commit: &str) -> Result<(), String> {
+        let lock = self.lock()?;
         self.checkout(commit)?;
-        self.build()
+        self.build(lock)
     }
 }
 
@@ -230,6 +260,12 @@ mod tests {
         let failure = source.install(&broken).unwrap_err();
         assert!(failure.starts_with("error[E0425]: introuvable"), "{failure}");
         assert!(failure.contains("update.log"));
+
+        // Un build encore en cours, lancé par une instance précédente : rien n'est touché.
+        let held = source.lock().unwrap();
+        assert!(source.install(&target).unwrap_err().contains("tourne encore"));
+        assert_eq!(git(&cache.join("update"), &["rev-parse", "HEAD"]), broken);
+        drop(held);
 
         // Dossier supprimé à la main : git le connaît encore, il est recréé.
         std::fs::remove_dir_all(cache.join("update")).unwrap();
