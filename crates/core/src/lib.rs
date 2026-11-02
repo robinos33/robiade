@@ -21,6 +21,7 @@ pub mod secrets;
 pub mod stats;
 pub mod task_start;
 pub mod tasks;
+pub mod updates;
 pub mod vcs;
 
 /// Instant en millisecondes depuis l'epoch Unix. Fourni par l'appelant : le domaine n'a pas d'horloge.
