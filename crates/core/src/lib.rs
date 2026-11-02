@@ -6,6 +6,7 @@
 pub mod agents;
 pub mod assets;
 pub mod containers;
+pub mod contributions;
 pub mod databases;
 pub mod db_browse;
 pub mod db_console;
