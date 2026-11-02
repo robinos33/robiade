@@ -1,8 +1,8 @@
 <script lang="ts">
   import { app } from '../lib/state.svelte';
   import { api } from '../lib/api';
-  import { count, dayLabel, dollars, duration, tokens } from '../lib/format';
-  import type { MrOutcomes, Overview } from '../lib/types';
+  import { count, dayLabel, dollars, duration, periodLabel, tokens } from '../lib/format';
+  import type { ContributionBucket, Granularity, MrOutcomes, Overview } from '../lib/types';
 
   const WINDOWS = [7, 30, 90, 365];
   let windowDays = $state(30);
@@ -24,6 +24,57 @@
     if (refs.length === 0) return;
     api.mergeRequestOutcomes(refs).then((o) => (outcomes = o), (e) => (outcomes = String(e)));
   });
+
+  // Activité GitLab : tous projets, indépendante de la période et du projet choisis plus haut.
+  const GRANULARITIES: [Granularity, string][] = [['day', 'Jour'], ['week', 'Semaine'], ['month', 'Mois'], ['year', 'Année']];
+  /** Échelles très différentes (commits contre MR) : un petit graphe par série, pas d'axe commun. */
+  const SERIES: { key: Exclude<keyof ContributionBucket, 'startDay'>; label: string; hint: string }[] = [
+    { key: 'mrsOpened', label: 'MR ouvertes', hint: 'MR que j’ai ouvertes' },
+    { key: 'mrsMerged', label: 'Merges', hint: 'MR que j’ai mergées, les miennes ou celles des autres' },
+    { key: 'commits', label: 'Commits poussés', hint: 'Commits de chaque push : un push forcé après rebase les recompte' },
+    { key: 'reviews', label: 'Reviews', hint: 'MR approuvées ; un commentaire seul ne compte pas' },
+  ];
+  let granularity = $state<Granularity>('week');
+  /** Dernier résultat, gardé pendant la lecture suivante : rien ne saute en changeant de regroupement. */
+  let activity = $state<ContributionBucket[] | null>(null);
+  let activityError = $state<string | null>(null);
+  let activityLoading = $state(false);
+  let activityHover = $state<number | null>(null);
+  let activityRequest = 0;
+
+  $effect(() => {
+    const g = granularity;
+    const request = ++activityRequest;
+    activityLoading = true;
+    api.gitlabActivity(g).then(
+      (buckets) => {
+        if (request !== activityRequest) return;
+        [activity, activityError, activityLoading, activityHover] = [buckets, null, false, null];
+      },
+      (e) => {
+        if (request !== activityRequest) return;
+        [activityError, activityLoading] = [String(e), false];
+      },
+    );
+  });
+
+  const MW = 240, MH = 64;
+  const multiples = $derived.by(() => {
+    if (!activity || activity.length === 0) return null;
+    const buckets = activity;
+    const slot = MW / buckets.length;
+    const gap = Math.min(2, slot * 0.25);
+    return SERIES.map((s) => {
+      const values = buckets.map((b) => b[s.key]);
+      const max = Math.max(1, ...values);
+      const bars = values.map((v, i) => {
+        const h = (v / max) * MH;
+        return { x: i * slot + gap / 2, w: Math.max(1, slot - gap), y: MH - h, h };
+      });
+      return { ...s, total: values.reduce((a, b) => a + b, 0), bars, slot };
+    });
+  });
+  const activityHovered = $derived(activity && activityHover !== null ? activity[activityHover] : null);
 
   // Graphe : une seule série → une teinte, pas de légende, survol par barre.
   const W = 760, H = 180, PAD_B = 22, PAD_T = 8;
@@ -208,9 +259,54 @@
         </div>
       </div>
 
-      <div class="panel later">
-        <h2 class="section-title">Activité GitLab</h2>
-        <p class="muted">MR ouvertes et mergées, commits, reviews, par jour / semaine / mois / année. Prévu avec le module Forge (v2).</p>
+      <div class="panel">
+        <div class="panel-head">
+          <h2 class="section-title">Activité GitLab</h2>
+          <span class="muted small">tous projets{activityLoading ? ' · lecture…' : ''}</span>
+          <span class="grow"></span>
+          <div class="seg" role="radiogroup" aria-label="Regroupement de l'activité GitLab">
+            {#each GRANULARITIES as [g, label] (g)}
+              <button role="radio" aria-checked={granularity === g} class:on={granularity === g} onclick={() => (granularity = g)}>
+                {label}
+              </button>
+            {/each}
+          </div>
+        </div>
+        {#if activityError}
+          <p class="muted small" title={activityError}>GitLab illisible : {activityError}</p>
+        {/if}
+        {#if !activity}
+          {#if !activityError}<p class="muted small">Lecture des événements GitLab…</p>{/if}
+        {:else if multiples}
+          <div class="multiples">
+            {#each multiples as m (m.key)}
+              <div class="multiple">
+                <div class="mhead">
+                  <span class="k" title={m.hint}>{m.label}</span>
+                  <span class="num">{activityHovered ? count(activityHovered[m.key]) : count(m.total)}</span>
+                </div>
+                <svg viewBox="0 0 {MW} {MH}" preserveAspectRatio="none" role="img" aria-label="{m.label} : {m.total} sur la période">
+                  <line x1="0" x2={MW} y1={MH} y2={MH} class="grid" />
+                  {#each m.bars as b, i (i)}
+                    <rect x={i * m.slot} y="0" width={m.slot} height={MH} class="hit" role="presentation"
+                      onmouseenter={() => (activityHover = i)} onmouseleave={() => (activityHover = null)} />
+                    <path d={barPath(b.x, b.y, b.w, b.h)} class="bar" class:dim={activityHover !== null && activityHover !== i}
+                      pointer-events="none" />
+                  {/each}
+                </svg>
+              </div>
+            {/each}
+          </div>
+          <div class="xlabels static">
+            {#if activityHovered}
+              <span><strong>{periodLabel(activityHovered.startDay, granularity)}</strong></span>
+              <span class="muted">les totaux affichent cette période</span>
+            {:else}
+              <span>{periodLabel(activity[0]?.startDay ?? 0, granularity)}</span>
+              <span>{periodLabel(activity.at(-1)?.startDay ?? 0, granularity)}</span>
+            {/if}
+          </div>
+        {/if}
       </div>
     {/if}
   </div>
@@ -250,5 +346,14 @@
   .barcell { width: 46%; }
   .hbar { display: block; height: 8px; border-radius: 0 4px 4px 0; background: var(--chart); min-width: 2px; }
   .right { text-align: right; padding-left: 10px; white-space: nowrap; }
-  .later p { margin: 0; }
+  .panel-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .panel-head .section-title { margin: 0; }
+  .grow { flex: 1; }
+  .small { font-size: 12px; margin: 0; }
+  .multiples { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 20px; }
+  .multiple { display: flex; flex-direction: column; gap: 4px; }
+  .mhead { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; }
+  .mhead .num { font-weight: 600; }
+  .multiple svg { height: 64px; }
+  .xlabels.static { margin-top: 8px; }
 </style>

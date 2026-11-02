@@ -238,6 +238,11 @@ export interface IssueStart {
 
 export interface Forge { mine: MergeRequest[]; reviews: MergeRequest[] }
 
+/** Regroupement de l'activité GitLab. */
+export type Granularity = 'day' | 'week' | 'month' | 'year';
+/** Mes contributions GitLab sur une période ; `startDay` : premier jour local, compté depuis l'epoch. */
+export interface ContributionBucket { startDay: number; mrsOpened: number; mrsMerged: number; commits: number; reviews: number }
+
 export interface MrOutcomes { total: number; merged: number; opened: number; closed: number; unknown: number }
 
 export interface Environment { claudePath: string | null; home: string }

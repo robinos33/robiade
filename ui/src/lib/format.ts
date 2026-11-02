@@ -1,4 +1,4 @@
-import type { DbEngine } from './types';
+import type { DbEngine, Granularity } from './types';
 
 const rtf = new Intl.RelativeTimeFormat('fr', { numeric: 'auto', style: 'short' });
 const compact = new Intl.NumberFormat('fr', { notation: 'compact', maximumFractionDigits: 1 });
@@ -53,6 +53,24 @@ export function localDay(at: number): string {
 export function dayLabel(day: number): string {
   const offset = new Date().getTimezoneOffset() * 60000;
   return dayFmt.format(day * 86400000 + offset + 12 * 3600000);
+}
+
+const weekFmt = new Intl.DateTimeFormat('fr', { day: 'numeric', month: 'short' });
+const monthFmt = new Intl.DateTimeFormat('fr', { month: 'long', year: 'numeric' });
+
+/** Période commençant le jour local `day` : « mar. 3 nov. », « sem. du 2 nov. », « novembre 2026 », « 2026 ». */
+export function periodLabel(day: number, granularity: Granularity): string {
+  const at = day * 86400000 + new Date().getTimezoneOffset() * 60000 + 12 * 3600000;
+  switch (granularity) {
+    case 'day':
+      return dayLabel(day);
+    case 'week':
+      return `sem. du ${weekFmt.format(at)}`;
+    case 'month':
+      return monthFmt.format(at);
+    case 'year':
+      return String(new Date(at).getFullYear());
+  }
 }
 
 export function mrNumber(url: string): string | null {
