@@ -3,7 +3,8 @@
 use std::path::Path;
 use std::sync::Mutex;
 
-use robiade_core::tasks::{DueDate, Task, TaskError, TaskId, TaskRepository, TaskStatus};
+use robiade_core::forge::IssueRef;
+use robiade_core::tasks::{DueDate, SessionId, Task, TaskError, TaskId, TaskRepository, TaskStatus};
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
 pub struct SqliteTaskRepository {
@@ -37,7 +38,12 @@ impl SqliteTaskRepository {
     /// Évolutions du schéma, rejouées une seule fois par base : la table d'origine reste créée telle
     /// quelle, chaque étape s'applique ensuite par-dessus. Ajouter une étape, jamais en modifier une.
     fn migrate(conn: &Connection) -> Result<(), TaskError> {
-        const STEPS: &[&str] = &["ALTER TABLE task ADD COLUMN due_on TEXT;"];
+        const STEPS: &[&str] = &[
+            "ALTER TABLE task ADD COLUMN due_on TEXT;",
+            "ALTER TABLE task ADD COLUMN issue_project TEXT;
+             ALTER TABLE task ADD COLUMN issue_iid INTEGER;
+             ALTER TABLE task ADD COLUMN session_id TEXT;",
+        ];
         let done: usize = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).map_err(storage)?;
         for (i, step) in STEPS.iter().enumerate().skip(done) {
             conn.execute_batch(&format!("BEGIN; {step} PRAGMA user_version = {}; COMMIT;", i + 1))
@@ -49,6 +55,12 @@ impl SqliteTaskRepository {
     fn from_row(row: &Row) -> rusqlite::Result<Task> {
         // Écrite par `save`, donc valide ; une valeur illisible vaut « pas d'échéance » plutôt qu'une liste vide.
         let due_on = row.get::<_, Option<String>>(5)?.and_then(|d| DueDate::parse(&d).ok());
+        // Même règle pour les liens : un lien illisible est un lien absent.
+        let issue = match (row.get::<_, Option<String>>(8)?, row.get::<_, Option<i64>>(9)?) {
+            (Some(project), Some(iid)) => IssueRef::parse(&format!("{project}#{iid}"), None),
+            _ => None,
+        };
+        let session = row.get::<_, Option<String>>(10)?.and_then(|s| SessionId::parse(&s).ok());
         let status = match row.get::<_, String>(4)?.as_str() {
             "doing" => TaskStatus::Doing,
             "done" => TaskStatus::Done,
@@ -61,13 +73,16 @@ impl SqliteTaskRepository {
             row.get(3)?,
             status,
             due_on,
+            issue,
+            session,
             row.get(6)?,
             row.get(7)?,
         ))
     }
 }
 
-const COLUMNS: &str = "id, title, notes, project_path, status, due_on, created_at, done_at";
+const COLUMNS: &str =
+    "id, title, notes, project_path, status, due_on, created_at, done_at, issue_project, issue_iid, session_id";
 
 impl TaskRepository for SqliteTaskRepository {
     fn all(&self) -> Result<Vec<Task>, TaskError> {
@@ -96,9 +111,10 @@ impl TaskRepository for SqliteTaskRepository {
         let conn = self.conn.lock().map_err(storage)?;
         conn.execute(
             &format!(
-                "INSERT INTO task ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                "INSERT INTO task ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
                  ON CONFLICT(id) DO UPDATE SET title = ?2, notes = ?3, project_path = ?4,
-                     status = ?5, due_on = ?6, done_at = ?8"
+                     status = ?5, due_on = ?6, done_at = ?8, issue_project = ?9, issue_iid = ?10,
+                     session_id = ?11"
             ),
             params![
                 task.id().0,
@@ -108,7 +124,10 @@ impl TaskRepository for SqliteTaskRepository {
                 status,
                 task.due_on().map(DueDate::as_str),
                 task.created_at(),
-                task.done_at()
+                task.done_at(),
+                task.issue().map(|i| i.project.as_str()),
+                task.issue().map(|i| i.iid as i64),
+                task.session().map(SessionId::as_str)
             ],
         )
         .map_err(storage)?;
@@ -134,6 +153,8 @@ mod tests {
         let mut task = Task::create(TaskId("a".into()), "Écrire la spec", Some("/p".into()), 1).unwrap();
         repo.save(&task).unwrap();
         task.schedule(Some(DueDate::parse("2026-11-02").unwrap()));
+        task.link_issue(Some(IssueRef { project: "shop/boutique".into(), iid: 12 }));
+        task.link_session(Some(SessionId::parse("0b7f3c2e-9a41-4d3b-8e6f-1c2d3e4f5a6b").unwrap()));
         task.move_to(TaskStatus::Done, 5);
         repo.save(&task).unwrap();
         assert_eq!(repo.get(&TaskId("a".into())).unwrap(), task);

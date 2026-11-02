@@ -1,5 +1,6 @@
 //! Tâches perso : le seul contexte dont Robiade est la source de vérité.
 
+use crate::forge::IssueRef;
 use crate::Millis;
 
 pub const TITLE_MAX_CHARS: usize = 200;
@@ -22,6 +23,8 @@ pub enum TaskError {
     TitleTooLong,
     #[error("échéance invalide : {0} (attendu AAAA-MM-JJ)")]
     InvalidDueDate(String),
+    #[error("identifiant de session invalide : {0}")]
+    InvalidSession(String),
     #[error("tâche introuvable")]
     NotFound,
     #[error("stockage des tâches indisponible : {0}")]
@@ -76,8 +79,32 @@ pub struct Task {
     project_path: Option<String>,
     status: TaskStatus,
     due_on: Option<DueDate>,
+    /// Issue d'équipe référencée, jamais recopiée : rien d'elle n'est gardé ici.
+    issue: Option<IssueRef>,
+    /// Session Claude Code où la tâche a été menée.
+    session: Option<SessionId>,
     created_at: Millis,
     done_at: Option<Millis>,
+}
+
+/// Identifiant d'une session Claude Code : un UUID, tel que Robiade le génère au lancement.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionId(String);
+
+impl SessionId {
+    pub fn parse(raw: &str) -> Result<Self, TaskError> {
+        let groups: Vec<&str> = raw.split('-').collect();
+        let lengths = groups.iter().map(|g| g.len()).collect::<Vec<_>>();
+        let hex = raw.bytes().all(|b| b == b'-' || b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+        if lengths != [8, 4, 4, 4, 12] || !hex {
+            return Err(TaskError::InvalidSession(raw.to_owned()));
+        }
+        Ok(Self(raw.to_owned()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 impl Task {
@@ -89,6 +116,8 @@ impl Task {
             project_path,
             status: TaskStatus::Todo,
             due_on: None,
+            issue: None,
+            session: None,
             created_at: now,
             done_at: None,
         })
@@ -104,10 +133,12 @@ impl Task {
         project_path: Option<String>,
         status: TaskStatus,
         due_on: Option<DueDate>,
+        issue: Option<IssueRef>,
+        session: Option<SessionId>,
         created_at: Millis,
         done_at: Option<Millis>,
     ) -> Self {
-        Self { id, title, notes, project_path, status, due_on, created_at, done_at }
+        Self { id, title, notes, project_path, status, due_on, issue, session, created_at, done_at }
     }
 
     pub fn rename(&mut self, title: &str) -> Result<(), TaskError> {
@@ -122,6 +153,16 @@ impl Task {
     /// `None` retire l'échéance.
     pub fn schedule(&mut self, due_on: Option<DueDate>) {
         self.due_on = due_on;
+    }
+
+    /// `None` retire le lien.
+    pub fn link_issue(&mut self, issue: Option<IssueRef>) {
+        self.issue = issue;
+    }
+
+    /// `None` retire le lien.
+    pub fn link_session(&mut self, session: Option<SessionId>) {
+        self.session = session;
     }
 
     pub fn move_to(&mut self, status: TaskStatus, now: Millis) {
@@ -157,6 +198,12 @@ impl Task {
     }
     pub fn due_on(&self) -> Option<&DueDate> {
         self.due_on.as_ref()
+    }
+    pub fn issue(&self) -> Option<&IssueRef> {
+        self.issue.as_ref()
+    }
+    pub fn session(&self) -> Option<&SessionId> {
+        self.session.as_ref()
     }
     pub fn created_at(&self) -> Millis {
         self.created_at
@@ -212,6 +259,27 @@ mod tests {
     #[test]
     fn due_dates_sort_chronologically() {
         assert!(DueDate::parse("2026-09-30").unwrap() < DueDate::parse("2026-10-01").unwrap());
+    }
+
+    #[test]
+    fn a_session_id_is_a_lowercase_uuid() {
+        let id = "0b7f3c2e-9a41-4d3b-8e6f-1c2d3e4f5a6b";
+        assert_eq!(SessionId::parse(id).unwrap().as_str(), id);
+        for bad in ["", "0b7f3c2e", "0B7F3C2E-9A41-4D3B-8E6F-1C2D3E4F5A6B", "0b7f3c2e-9a41-4d3b-8e6f-1c2d3e4f5a6", "../../etc/passwd-0000-0000-000000000000", "0b7f3c2e-9a41-4d3b-8e6f-1c2d3e4f5a6g"] {
+            assert_eq!(SessionId::parse(bad), Err(TaskError::InvalidSession(bad.into())), "{bad}");
+        }
+    }
+
+    #[test]
+    fn links_are_set_and_cleared() {
+        let mut t = task();
+        t.link_issue(Some(IssueRef { project: "a/b".into(), iid: 3 }));
+        t.link_session(Some(SessionId::parse("0b7f3c2e-9a41-4d3b-8e6f-1c2d3e4f5a6b").unwrap()));
+        assert_eq!(t.issue().map(|i| i.iid), Some(3));
+        assert!(t.session().is_some());
+        t.link_issue(None);
+        t.link_session(None);
+        assert_eq!((t.issue(), t.session()), (None, None));
     }
 
     #[test]
