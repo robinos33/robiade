@@ -222,6 +222,11 @@ C'est le seul contexte où l'ADE porte de l'état, donc le seul où un agrégat 
   le projet de la tâche, `groupe/projet#12`, ou l'URL) et ne garde que le projet et le numéro ;
   le titre affiché au survol vient des issues déjà lues, sinon rien.
 - Le lien vers une session ouvre l'agent s'il tourne encore, sinon la session dans l'historique.
+- **Démarrer un agent depuis une tâche** pas encore faite : même chemin que depuis une issue
+  (branche, worktree, prompt relu avant envoi). Une tâche liée à une issue part du dépôt de
+  l'issue, de sa branche `ticket-<iid>-…` et de son prompt ; sinon, du dépôt de son projet et
+  d'une branche `tache-<titre>`. Mes notes s'ajoutent au prompt. Une fois l'agent lancé, la tâche
+  est liée à sa session et passe en cours. Une tâche globale, sans dépôt, n'en propose pas.
 - Vue unifiée : la liste des tâches d'un projet montre les deux types côte à côte, typés
   visuellement ; seules les tâches perso sont éditables en place.
 
