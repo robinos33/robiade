@@ -6,12 +6,14 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use rayon::prelude::*;
+use robiade_core::contributions::Contribution;
 use robiade_core::forge::{
     is_project_path, is_username, Approvals, Forge, ForgeError, Issue, IssueRef, IssueState, MergeRequest, MrRef, MrState, PipelineStatus,
     GITLAB_HOST,
 };
 use robiade_core::issue_actions::{IssuePlanned, NewIssue};
 use robiade_core::merge_actions::Planned;
+use robiade_core::Millis;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use serde_json::json;
@@ -22,6 +24,8 @@ use crate::keychain;
 const TOKEN_SERVICE: &str = "gitlab-api-token";
 /// Une page suffit : au-delà de 100 MR ouvertes, la liste n'est plus un outil de suivi.
 const PER_PAGE: &str = "100";
+/// Pages d'événements lues au plus pour une plage : au-delà, la plage est trop large pour un appel.
+const MAX_EVENT_PAGES: usize = 50;
 
 pub struct GitLab {
     http: ureq::Agent,
@@ -262,6 +266,28 @@ impl Forge for GitLab {
         issue_to_domain(found).ok_or_else(|| ForgeError::Api("issue hors de l'instance configurée".into()))
     }
 
+    fn my_contributions(&self, from: Millis, to: Millis) -> Result<Vec<Contribution>, ForgeError> {
+        // `after` et `before` sont des dates exclusives, dans un fuseau que l'API ne précise pas :
+        // un jour de marge de chaque côté, puis le tri exact sur l'horodatage de chaque événement.
+        let date = |at: Millis| {
+            chrono::DateTime::from_timestamp_millis(at)
+                .map(|d| d.date_naive().format("%Y-%m-%d").to_string())
+                .ok_or_else(|| ForgeError::Api("date hors limites".into()))
+        };
+        let (after, before) = (date(from - DAY_MS)?, date(to + DAY_MS)?);
+        let mut found = vec![];
+        for page in 1..=MAX_EVENT_PAGES {
+            let events: Vec<ApiEvent> =
+                self.get(&format!("/events?after={after}&before={before}&per_page={PER_PAGE}&page={page}"))?;
+            let last = events.len() < 100;
+            found.extend(events.into_iter().filter_map(contribution).filter(|c| (from..to).contains(&c.at)));
+            if last {
+                return Ok(found);
+            }
+        }
+        Err(ForgeError::Api(format!("plus de {MAX_EVENT_PAGES} pages d'événements GitLab sur la période")))
+    }
+
     fn project_issues(&self, project: &str) -> Result<Vec<Issue>, ForgeError> {
         if !is_project_path(project) {
             return Err(ForgeError::NotFound);
@@ -328,6 +354,31 @@ fn gitlab_message(raw: &str) -> String {
     };
     let line = message.split_whitespace().collect::<Vec<_>>().join(" ");
     line.chars().take(300).collect()
+}
+
+const DAY_MS: Millis = 86_400_000;
+
+#[derive(Deserialize)]
+struct ApiEvent {
+    action_name: String,
+    #[serde(default)]
+    target_type: Option<String>,
+    created_at: String,
+    #[serde(default)]
+    push_data: Option<ApiPushData>,
+}
+
+#[derive(Deserialize)]
+struct ApiPushData {
+    #[serde(default)]
+    commit_count: Option<u32>,
+}
+
+/// `None` pour un événement qui n'est pas une contribution comptée, ou mal daté.
+fn contribution(e: ApiEvent) -> Option<Contribution> {
+    let at = chrono::DateTime::parse_from_rfc3339(&e.created_at).ok()?.timestamp_millis();
+    let commits = e.push_data.and_then(|p| p.commit_count);
+    Contribution::classify(&e.action_name, e.target_type.as_deref(), commits, at)
 }
 
 #[derive(Deserialize)]
@@ -420,6 +471,7 @@ fn to_domain(m: ApiMergeRequest) -> Option<MergeRequest> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use robiade_core::contributions::ContributionKind;
 
     fn parse(json: &str) -> Option<MergeRequest> {
         to_domain(serde_json::from_str(json).unwrap())
@@ -455,6 +507,20 @@ mod tests {
         assert_eq!(issue.issue, IssueRef { project: "shop/boutique".into(), iid: 5021 });
         assert_eq!((issue.assignees, issue.due_date.as_deref()), (vec!["robinos33".to_owned()], Some("2026-11-02")));
         assert_eq!(issue.state, IssueState::Closed);
+    }
+
+    #[test]
+    fn reads_a_push_and_skips_a_comment() {
+        let event = |json: &str| contribution(serde_json::from_str(json).unwrap());
+        let push = event(
+            r#"{"action_name":"pushed new","target_type":null,"created_at":"2026-10-26T13:43:40.062Z",
+                "push_data":{"commit_count":2,"action":"created","ref_type":"branch","ref":"cache"}}"#,
+        )
+        .unwrap();
+        assert_eq!((push.kind, push.count, push.at), (ContributionKind::Commits, 2, 1_793_022_220_062));
+        let comment = r#"{"action_name":"commented on","target_type":"DiffNote","created_at":"2026-10-26T13:43:40Z",
+            "note":{"body":"ok"}}"#;
+        assert_eq!(event(comment), None);
     }
 
     #[test]
