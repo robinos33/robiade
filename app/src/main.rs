@@ -230,6 +230,8 @@ fn main() {
             commands::create_issue,
             commands::prepare_issue_start,
             commands::start_issue_agent,
+            commands::prepare_task_start,
+            commands::start_task_agent,
             commands::worktrees,
             commands::prepare_worktree_creation,
             commands::create_worktree,

@@ -10,8 +10,8 @@ use robiade_core::db_browse::{page, page_query, PageRequest, TableRef};
 use robiade_core::databases::DbError;
 use robiade_core::db_console::{self, Admission, ConsoleHistory, Policy, StatementKind};
 use robiade_core::merge_actions::AuditEntry;
-use robiade_core::forge::{IssueRef, MrRef};
-use robiade_core::issue_start;
+use robiade_core::forge::{Issue, IssueRef, MrRef};
+use robiade_core::{issue_start, task_start};
 use robiade_core::history::{SessionSearch, TranscriptReader};
 use robiade_core::contributions::{self, Granularity};
 use robiade_core::stats;
@@ -565,6 +565,76 @@ pub async fn start_issue_agent(
         let found = state.forge.issue(&issue_ref).map_err(|e| e.to_string())?;
         let launch = Launch { repository, branch, base, prompt, tab_name: issue_start::tab_name(&found) };
         launch_in_worktree(&state, launch, cols, rows)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Dépôt principal où démarrer un agent sur la tâche, et l'issue liée, relue sur GitLab, s'il y en a
+/// une. Une tâche liée part du dépôt de l'issue ; sinon, du dépôt de son propre projet.
+fn task_start_context(state: &AppState, project_root: &str, task: &Task) -> CmdResult<(String, Option<Issue>)> {
+    if let Some(issue) = task.issue() {
+        let repository = issue_repository(state, project_root, issue)?;
+        return Ok((repository, Some(state.forge.issue(issue).map_err(|e| e.to_string())?)));
+    }
+    let repository = main_repository(state, project_root)?;
+    let own = task.project_path().and_then(|p| project_dir(p).ok());
+    let own = own.map(|d| state.workspaces.resolve(&d.to_string_lossy()).project_root);
+    if own.as_deref() != Some(repository.as_str()) {
+        return Err("ce dossier n'est pas le dépôt du projet de la tâche".into());
+    }
+    Ok((repository, None))
+}
+
+/// Ce que « démarrer un agent sur cette tâche » proposera : branche, bases, prompt à relire.
+#[tauri::command]
+pub async fn prepare_task_start(app: tauri::AppHandle, project_root: String, id: String) -> CmdResult<IssueStartDto> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let task = state.tasks.get(&TaskId(id)).map_err(|e| e.to_string())?;
+        let (repository, issue) = task_start_context(&state, &project_root, &task)?;
+        let bases = state.worktrees.bases(&repository).map_err(|e| e.to_string())?;
+        if bases.is_empty() {
+            return Err("aucune base origin/staging, origin/main ni origin/master dans ce dépôt".into());
+        }
+        let branch = task_start::branch_name(&task, issue.as_ref());
+        Ok(IssueStartDto {
+            repository: repository.clone(),
+            worktree_dir: issue_start::worktree_dir(&repository, &branch),
+            prompt: task_start::initial_prompt(&task, issue.as_ref(), &branch),
+            tab_name: task_start::tab_name(&task, issue.as_ref()),
+            branch,
+            bases,
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Lance l'agent dans un nouveau worktree, puis lie la tâche à sa session et la passe en cours.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn start_task_agent(
+    app: tauri::AppHandle,
+    project_root: String,
+    id: String,
+    branch: String,
+    base: String,
+    prompt: String,
+    cols: u16,
+    rows: u16,
+) -> CmdResult<IssueStartedDto> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let mut task = state.tasks.get(&TaskId(id)).map_err(|e| e.to_string())?;
+        let (repository, issue) = task_start_context(&state, &project_root, &task)?;
+        let tab_name = task_start::tab_name(&task, issue.as_ref());
+        let started = launch_in_worktree(&state, Launch { repository, branch, base, prompt, tab_name }, cols, rows)?;
+        // Un agent lancé ici a pour session son propre identifiant (`--session-id`).
+        let session = SessionId::parse(&started.agent_id).map_err(|e| e.to_string())?;
+        task.start(session, now());
+        state.tasks.save(&task).map_err(|e| format!("agent lancé, mais la tâche n'a pas pu être liée : {e}"))?;
+        Ok(started)
     })
     .await
     .map_err(|e| e.to_string())?
