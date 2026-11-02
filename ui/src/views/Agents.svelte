@@ -174,48 +174,52 @@
           {/if}
         </li>
       {/snippet}
-      <ul class="list">
-        {#if running.length}
-          <li class="group section-title first">En cours <span class="num">{running.length}</span></li>
-          {#each running as a (a.id)}{@render tab(a)}{/each}
-        {/if}
-        {#if recent.length}
-          <li class="group section-title">Récents · à reprendre</li>
-          <!-- Une ligne par entrée : les agents en cours restent ce qu'on voit d'abord. -->
-          {#each recent as r (r.kind === 'tab' ? r.agent.id : r.session.sessionId)}
-            {#if r.kind === 'tab'}
-              <li class="tab">
-                <button
-                  class="recent"
-                  class:active={active?.id === r.agent.id}
-                  onclick={() => app.openAgent(r.agent.id)}
-                  title={[r.agent.projectName, r.agent.worktreeName].filter(Boolean).join(' · ')}
-                >
-                  <StatusBadge status={r.agent.status} compact />
-                  <span class="ellipsis">{r.agent.name ?? r.agent.projectName}</span>
-                  <span class="num right">{ago(r.at, app.now)}</span>
-                </button>
-                <button class="close" onclick={() => forget(r.agent.id)} title="Fermer l'onglet (la session reste dans l'historique)">
-                  <Icon name="close" size={12} />
-                </button>
-              </li>
-            {:else}
-              <li>
-                <button
-                  class="recent"
-                  onclick={() => app.spawn(r.session.projectPath, r.session.sessionId)}
-                  title={`Reprendre dans un nouvel onglet — ${[r.session.projectName, r.session.worktreeName].filter(Boolean).join(' · ')}`}
-                >
-                  <Icon name="resume" size={11} />
-                  <span class="ellipsis">{r.session.title}</span>
-                  <span class="num right">{ago(r.at, app.now)}</span>
-                </button>
-              </li>
-            {/if}
-          {/each}
-        {/if}
-        <li><button class="more" onclick={() => (app.resumeOpen = true)}>Toutes les sessions… <kbd>⌘O</kbd></button></li>
-      </ul>
+      <!-- Les agents en cours prennent la colonne ; les récents restent ancrés en bas, hauteur bornée. -->
+      <div class="rail">
+        <ul class="list running">
+          <li class="group section-title">En cours <span class="num">{running.length}</span></li>
+          {#each running as a (a.id)}{@render tab(a)}{:else}<li class="none muted">Aucun agent en cours</li>{/each}
+        </ul>
+        <div class="recents">
+          {#if recent.length}
+            <h2 class="group section-title">Récents · à reprendre</h2>
+            <ul class="list">
+              {#each recent as r (r.kind === 'tab' ? r.agent.id : r.session.sessionId)}
+                {#if r.kind === 'tab'}
+                  <li class="tab">
+                    <button
+                      class="recent"
+                      class:active={active?.id === r.agent.id}
+                      onclick={() => app.openAgent(r.agent.id)}
+                      title={[r.agent.projectName, r.agent.worktreeName].filter(Boolean).join(' · ')}
+                    >
+                      <StatusBadge status={r.agent.status} compact />
+                      <span class="ellipsis">{r.agent.name ?? r.agent.projectName}</span>
+                      <span class="num right">{ago(r.at, app.now)}</span>
+                    </button>
+                    <button class="close" onclick={() => forget(r.agent.id)} title="Fermer l'onglet (la session reste dans l'historique)">
+                      <Icon name="close" size={12} />
+                    </button>
+                  </li>
+                {:else}
+                  <li>
+                    <button
+                      class="recent"
+                      onclick={() => app.spawn(r.session.projectPath, r.session.sessionId)}
+                      title={`Reprendre dans un nouvel onglet — ${[r.session.projectName, r.session.worktreeName].filter(Boolean).join(' · ')}`}
+                    >
+                      <Icon name="resume" size={11} />
+                      <span class="ellipsis">{r.session.title}</span>
+                      <span class="num right">{ago(r.at, app.now)}</span>
+                    </button>
+                  </li>
+                {/if}
+              {/each}
+            </ul>
+          {/if}
+          <button class="more" onclick={() => (app.resumeOpen = true)}>Toutes les sessions… <kbd>⌘O</kbd></button>
+        </div>
+      </div>
 
       {#if active}
         <div class="term-wrap">
@@ -349,7 +353,13 @@
   .session-id:hover { background: var(--bg-active); color: var(--ink); }
   .page { display: flex; flex-direction: column; min-height: 0; flex: 1; }
   .split { display: grid; grid-template-columns: 250px 1fr 260px; min-height: 0; flex: 1; }
-  .list { list-style: none; margin: 0; padding: 8px; overflow-y: auto; border-right: 1px solid var(--line); }
+  .rail { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
+  .list { list-style: none; margin: 0; padding: 0; }
+  .running { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; }
+  /* Hauteur bornée : seule la liste défile, le titre et « Toutes les sessions… » restent visibles. */
+  .recents { display: flex; flex-direction: column; flex: none; max-height: 40%; padding: 8px; border-top: 1px solid var(--line); }
+  .recents .list { min-height: 0; overflow-y: auto; }
+  .none { padding: 4px 10px; font-size: 12px; }
   .agent {
     display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 8px 10px;
     border: 0; border-radius: var(--radius-sm); background: none; text-align: left;
@@ -368,8 +378,7 @@
     background: none; color: var(--ink-2); font-size: 12.5px;
   }
   .more:hover { color: var(--ink); background: var(--bg-hover); }
-  .group { padding: 14px 10px 4px; }
-  .group.first { padding-top: 4px; }
+  .group { padding: 4px 10px; }
   .group .num { margin-left: 4px; color: var(--ink-2); }
   .agent.live { border-left: 2px solid var(--accent); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
   .recent {
