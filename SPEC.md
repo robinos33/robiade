@@ -173,6 +173,9 @@ globale de Claude Code :
 - le JSON passé par `--settings` déclare les hooks de l'ADE, qui n'existent donc que pour ses
   propres sessions. `~/.claude/settings.json` reste intact ;
 - un hook qui reçoit un `sessionId` inconnu est ignoré.
+- l'agent ne reçoit aucune variable `CLAUDE*` de l'environnement de l'ADE (issue #16) : un ADE lancé
+  depuis une session Claude Code les transmettrait, et `claude` se croirait sous-agent, sans
+  transcript ni reprise possible.
 
 Cycle de vie : fermer l'ADE termine ses sessions (confirmation s'il y en a en `Running` ou
 `AwaitingPermission`). Rien n'est perdu : au redémarrage, une session se reprend avec
