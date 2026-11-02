@@ -210,6 +210,10 @@ C'est le seul contexte où l'ADE porte de l'état, donc le seul où un agrégat 
 - **Agrégat `Task`** : identifiant, titre (non vide, ≤ 200 caractères), notes, projet optionnel
   (absent = tâche globale), statut `Todo → Doing → Done` (retour arrière autorisé, `Done` horodaté),
   échéance optionnelle, liens optionnels vers une session ou une issue GitLab.
+- **Échéance** : un jour du calendrier (`AAAA-MM-JJ`), sans heure ni fuseau, saisi au champ date.
+  Une tâche pas encore faite dont l'échéance est aujourd'hui ou passée (jour local) est **tombée** :
+  date en rouge sur la carte, pastille et compte sur l'entrée « Tâches », à la place du compte
+  des tâches en cours.
 - Une tâche perso peut **référencer** une issue d'équipe, jamais la dupliquer : pas de
   synchronisation, pas de champ recopié.
 - Vue unifiée : la liste des tâches d'un projet montre les deux types côte à côte, typés
