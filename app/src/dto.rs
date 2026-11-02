@@ -13,6 +13,7 @@ use robiade_core::issue_actions::{IssueAction, NewIssue};
 use robiade_core::project::{self, Workspace};
 use robiade_core::merge_actions::{AuditEntry, MrAction};
 use robiade_core::history::{EntryKind, SearchHit, SessionSummary, TokenUsage, TranscriptEntry, HIT_END, HIT_START};
+use robiade_core::secrets::mask_secrets;
 use robiade_core::pricing::{Estimate, PRICES_AS_OF};
 use robiade_core::stats::{self, AgentsOverview, Overview};
 use robiade_core::tasks::{Task, TaskStatus};
@@ -269,7 +270,7 @@ impl SessionDto {
             session_id: s.session_id.clone(),
             project_path: s.project_path.clone(),
             workspace: workspace.into(),
-            title: s.title.clone(),
+            title: mask_secrets(&s.title),
             git_branch: s.git_branch.clone(),
             started_at: s.started_at,
             last_activity_at: s.last_activity_at,
@@ -300,7 +301,7 @@ impl From<TranscriptEntry> for EntryDto {
             EntryKind::Assistant => "assistant",
             EntryKind::ToolUse => "tool",
         };
-        Self { kind, at: e.at, text: e.text }
+        Self { kind, at: e.at, text: mask_secrets(&e.text) }
     }
 }
 
@@ -322,7 +323,8 @@ impl From<SearchHit> for SearchHitDto {
                 snippet.push((text.replace(['\n', '\r'], " "), hit));
             }
         };
-        let mut parts = h.snippet.split(HIT_START);
+        let masked = mask_secrets(&h.snippet);
+        let mut parts = masked.split(HIT_START);
         push(parts.next().unwrap_or_default(), false);
         for part in parts {
             let (hit, rest) = part.split_once(HIT_END).unwrap_or((part, ""));
@@ -1423,6 +1425,14 @@ mod tests {
         let hit = SearchHit { session_id: "s".into(), snippet: "le \u{2}rebase\u{3} du\n\u{2}wagon\u{3}".into() };
         let dto = SearchHitDto::from(hit);
         let expected = [("le ", false), ("rebase", true), (" du ", false), ("wagon", true)];
+        assert_eq!(dto.snippet, expected.map(|(t, h)| (t.to_owned(), h)));
+    }
+
+    #[test]
+    fn masks_a_token_found_by_the_search() {
+        let hit = SearchHit { session_id: "s".into(), snippet: "TOKEN=\u{2}glpat\u{3}-AbCdEf0123456789xyzw".into() };
+        let dto = SearchHitDto::from(hit);
+        let expected = [("TOKEN=", false), ("glpat", true), ("-••••••", false)];
         assert_eq!(dto.snippet, expected.map(|(t, h)| (t.to_owned(), h)));
     }
 }
