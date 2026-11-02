@@ -3,7 +3,7 @@
  * Rien de ce fichier n'entre dans le build (seul `index.html` est une entrée Vite).
  */
 import type {
-  Agent, Container, DbCell, DbColumn, DbConnection, DbPageRequest, FileChange, Forge, GitWorktree, Issue, MergeRequest, Overview, Session, Task, Tokens, WorktreeRemoval,
+  ContributionBucket, Granularity, Agent, Container, DbCell, DbColumn, DbConnection, DbPageRequest, FileChange, Forge, GitWorktree, Issue, MergeRequest, Overview, Session, Task, Tokens, WorktreeRemoval,
 } from '../src/lib/types';
 import { localDay } from '../src/lib/format';
 
@@ -179,6 +179,34 @@ const tasks: Task[] = [
 ];
 
 const DAY = 24 * 60 * MIN;
+
+/** Contributions GitLab de démo : premiers jours des périodes calculés comme le cœur (semaine au lundi). */
+const PERIODS: Record<Granularity, number> = { day: 30, week: 26, month: 12, year: 3 };
+const gitlabActivity = (granularity: Granularity): ContributionBucket[] => {
+  const today = Math.floor(NOW / DAY);
+  const dayOf = (d: Date) => Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) / DAY);
+  const starts: number[] = [];
+  for (let i = PERIODS[granularity] - 1; i >= 0; i--) {
+    const now = new Date(NOW);
+    if (granularity === 'day') starts.push(today - i);
+    else if (granularity === 'week') starts.push(today - ((today + 3) % 7) - 7 * i);
+    else if (granularity === 'month') starts.push(dayOf(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1))));
+    else starts.push(dayOf(new Date(Date.UTC(now.getUTCFullYear() - i, 0, 1))));
+  }
+  const scale = { day: 1, week: 5, month: 21, year: 230 }[granularity];
+  return starts.map((startDay, i) => {
+    const weekend = granularity === 'day' && [3, 4].includes(startDay % 7);
+    const wave = weekend ? 0 : 1 + ((i * 7) % 5) / 4;
+    return {
+      startDay,
+      mrsOpened: Math.round(0.6 * scale * wave),
+      mrsMerged: Math.round(0.5 * scale * wave),
+      commits: Math.round(6 * scale * wave),
+      reviews: Math.round(0.8 * scale * wave * (i % 3 ? 1 : 0.4)),
+    };
+  });
+};
+
 const overview = (): Overview => {
   const days = Array.from({ length: 30 }, (_, i) => {
     // Numéro de jour depuis l'epoch, comme le renvoie le cœur.
@@ -432,6 +460,7 @@ const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
   stats: () => overview(),
   merge_request_states: () => ({}),
   merge_request_outcomes: () => ({ total: 31, merged: 24, opened: 5, closed: 2, unknown: 0 }),
+  gitlab_activity: (args) => gitlabActivity((args as { granularity: Granularity }).granularity),
   search_history: () => [],
   read_transcript: () => [],
   audit_log: () => [],
