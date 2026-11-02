@@ -24,7 +24,7 @@ use robiade_adapters::sqlite_search::SearchIndex;
 use robiade_adapters::vault::VaultKv;
 use robiade_adapters::workspace::WorkspaceResolver;
 use robiade_adapters::sqlite_tasks::SqliteTaskRepository;
-use robiade_adapters::{backup, hooks, shell_env};
+use robiade_adapters::{backup, hooks, shell_env, task_backup};
 use robiade_core::containers::Containers;
 use robiade_core::databases::{DatabaseProbe, Vault};
 use robiade_core::db_browse::DatabaseBrowser;
@@ -147,6 +147,18 @@ fn main() {
             // Premier remplissage de l'index en tâche de fond : l'interface n'attend pas.
             let (warm_store, warm_index) = (transcripts.clone(), search.clone());
             std::thread::spawn(move || warm_index.sync(&warm_store.transcript_files()));
+
+            // Export du jour au démarrage, puis vérifié toutes les heures : une app jamais quittée
+            // en fait un par jour quand même.
+            let backed_up = SqliteTaskRepository::open(&data_dir.join("robiade.db"))?;
+            let backup_dir = data_dir.join("backups");
+            std::thread::spawn(move || loop {
+                let day = task_backup::local_day(std::time::SystemTime::now());
+                if let Err(e) = task_backup::export_daily(&backed_up, &backup_dir, &day) {
+                    eprintln!("export des tâches impossible : {e}");
+                }
+                std::thread::sleep(std::time::Duration::from_secs(3600));
+            });
 
             let gitlab: Arc<dyn Forge> = Arc::new(GitLab::default());
             let docker: Arc<dyn Containers> = Arc::new(DockerEngine::new(home.clone())?);
