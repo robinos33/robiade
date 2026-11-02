@@ -562,23 +562,39 @@ pub async fn start_issue_agent(
         let state = app.state::<AppState>();
         let issue_ref = issue.validate().ok_or("issue invalide")?;
         let repository = issue_repository(&state, &project_root, &issue_ref)?;
-        if !issue_start::is_valid_branch(&branch) {
-            return Err("nom de branche refusé".into());
-        }
-        let prompt = prompt.trim().to_owned();
-        if prompt.is_empty() || prompt.chars().count() > issue_start::PROMPT_MAX_CHARS {
-            return Err("prompt vide ou trop long".into());
-        }
         let found = state.forge.issue(&issue_ref).map_err(|e| e.to_string())?;
-        let dir = issue_start::worktree_dir(&repository, &branch);
-        let fetched = state.worktrees.create(&repository, &branch, &base, &dir).map_err(|e| e.to_string())?;
-        let agent =
-            state.agents.spawn(Path::new(&dir), None, Some(prompt), cols.clamp(20, 500), rows.clamp(5, 200))?;
-        state.agents.rename(&agent_id(&agent.id)?, &issue_start::tab_name(&found))?;
-        Ok(IssueStartedDto { agent_id: agent.id, fetched })
+        let launch = Launch { repository, branch, base, prompt, tab_name: issue_start::tab_name(&found) };
+        launch_in_worktree(&state, launch, cols, rows)
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Ce qu'il faut pour lancer un agent dans un nouveau worktree, une fois tout relu et validé.
+struct Launch {
+    repository: String,
+    branch: String,
+    base: String,
+    prompt: String,
+    tab_name: String,
+}
+
+/// Crée la branche et le worktree, puis lance l'agent avec le prompt relu et nomme son onglet.
+fn launch_in_worktree(state: &AppState, launch: Launch, cols: u16, rows: u16) -> CmdResult<IssueStartedDto> {
+    if !issue_start::is_valid_branch(&launch.branch) {
+        return Err("nom de branche refusé".into());
+    }
+    let prompt = launch.prompt.trim().to_owned();
+    if prompt.is_empty() || prompt.chars().count() > issue_start::PROMPT_MAX_CHARS {
+        return Err("prompt vide ou trop long".into());
+    }
+    let dir = issue_start::worktree_dir(&launch.repository, &launch.branch);
+    let fetched =
+        state.worktrees.create(&launch.repository, &launch.branch, &launch.base, &dir).map_err(|e| e.to_string())?;
+    let agent =
+        state.agents.spawn(Path::new(&dir), None, Some(prompt), cols.clamp(20, 500), rows.clamp(5, 200))?;
+    state.agents.rename(&agent_id(&agent.id)?, &launch.tab_name)?;
+    Ok(IssueStartedDto { agent_id: agent.id, fetched })
 }
 
 /// Dépôt principal désigné par l'interface : ni worktree, ni sous-dossier, ni dossier hors Git.
