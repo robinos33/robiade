@@ -15,7 +15,10 @@ export const api = {
       projectRoot,
     }),
   listTasks: () => invoke<Task[]>('list_tasks'),
-  createTask: (title: string, projectPath: string | null) => invoke<Task>('create_task', { title, projectPath }),
+  createTask: (title: string, projectPath: string | null, dueOn: string | null) =>
+    invoke<Task>('create_task', { title, projectPath, dueOn }),
+  /** `dueOn` à `null` retire l'échéance. */
+  scheduleTask: (id: string, dueOn: string | null) => invoke<Task>('schedule_task', { id, dueOn }),
   updateTask: (id: string, patch: { title?: string; notes?: string; status?: TaskStatus }) =>
     invoke<Task>('update_task', { id, ...patch }),
   deleteTask: (id: string) => invoke<void>('delete_task', { id }),

@@ -33,6 +33,8 @@
   const NEXT: Record<TaskStatus, TaskStatus> = { todo: 'doing', doing: 'done', done: 'todo' };
 
   let title = $state('');
+  /** `AAAA-MM-JJ`, vide tant qu'aucune échéance n'est choisie. */
+  let dueOn = $state('');
 
   /** Issues du projet GitLab sélectionné, ou celles qui me sont assignées en vue globale. */
   let issues = $state<Issue[] | null>(null);
@@ -58,8 +60,9 @@
     e.preventDefault();
     if (!title.trim()) return;
     try {
-      await api.createTask(title, app.project);
+      await api.createTask(title, app.project, dueOn || null);
       title = '';
+      dueOn = '';
       await app.refreshTasks();
     } catch (err) {
       app.notify(String(err));
@@ -68,6 +71,11 @@
 
   async function move(t: Task, status: TaskStatus) {
     await api.updateTask(t.id, { status }).catch((e) => app.notify(String(e)));
+    await app.refreshTasks();
+  }
+
+  async function schedule(t: Task, day: string) {
+    await api.scheduleTask(t.id, day || null).catch((e) => app.notify(String(e)));
     await app.refreshTasks();
   }
 
@@ -86,6 +94,7 @@
   <div class="scroll">
     <form onsubmit={add}>
       <input class="field" maxlength="200" placeholder={app.project ? `Nouvelle tâche dans ${projectName(app.project)}…` : 'Nouvelle tâche globale…'} bind:value={title} />
+      <input class="field date" type="date" title="Échéance, facultative" aria-label="Échéance" bind:value={dueOn} />
       <button class="btn primary" disabled={!title.trim()}>Ajouter</button>
     </form>
 
@@ -103,6 +112,16 @@
                   <span class="meta">
                     <span class="scope">{projectName(t.projectPath) ?? 'Globale'}</span>
                     <span>{ago(t.doneAt ?? t.createdAt, app.now)}</span>
+                    <input
+                      class="due-on"
+                      class:unset={t.dueOn === null}
+                      class:due={app.isDue(t)}
+                      type="date"
+                      title={app.isDue(t) ? (t.dueOn === app.today ? 'Échéance aujourd’hui' : 'Échéance dépassée') : 'Échéance'}
+                      aria-label="Échéance"
+                      value={t.dueOn ?? ''}
+                      onchange={(e) => schedule(t, e.currentTarget.value)}
+                    />
                   </span>
                 </div>
                 <button class="del btn ghost" title="Supprimer" onclick={() => remove(t)}><Icon name="trash" size={13} /></button>
@@ -199,7 +218,8 @@
   form { display: flex; gap: 8px; max-width: 720px; }
   form .field { height: 34px; }
   form .btn { height: 34px; }
-  .board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; align-items: start; }
+  form .date { flex: none; width: auto; }
+  .board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: start; }
   .col { background: var(--bg-raised); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; }
   .col h2 span { color: var(--ink-3); margin-left: 4px; }
   ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
@@ -219,6 +239,17 @@
   .t { word-break: break-word; }
   .meta { display: flex; gap: 10px; font-size: 11.5px; color: var(--ink-3); }
   .scope { color: var(--ink-2); }
+  .meta { align-items: center; min-width: 0; }
+  .meta > span { white-space: nowrap; }
+  .meta .scope { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .due-on {
+    margin-left: auto; height: 18px; padding: 0 5px; border: 0; border-radius: 9px;
+    background: none; color: var(--ink-2); font: inherit; font-variant-numeric: tabular-nums;
+  }
+  .due-on:hover, .due-on:focus { background: var(--bg-hover); }
+  .due-on.unset { opacity: 0; }
+  .task:hover .due-on.unset, .due-on.unset:focus { opacity: 1; }
+  .due-on.due { color: var(--danger); background: var(--danger-soft); font-weight: 600; }
   .del { opacity: 0; height: 22px; padding: 0 5px; color: var(--ink-3); }
   .task:hover .del { opacity: 1; }
   .none { padding: 4px 2px; }

@@ -102,6 +102,8 @@ export interface Task {
   notes: string;
   projectPath: string | null;
   status: TaskStatus;
+  /** `AAAA-MM-JJ`. */
+  dueOn: string | null;
   createdAt: number;
   doneAt: number | null;
 }

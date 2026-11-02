@@ -1,5 +1,6 @@
 import { listen } from '@tauri-apps/api/event';
 import { api } from './api';
+import { localDay } from './format';
 import { writeOutput } from './terminals';
 import type { Agent, Environment, Forge, GitWorktree, MergeRequest, MrState, Project, Session, Task, Workspace, Worktree } from './types';
 
@@ -114,6 +115,9 @@ class AppState {
   visibleTasks = $derived(
     this.tasks.filter((t) => this.project === null || t.projectPath === this.project),
   );
+  today = $derived(localDay(this.now));
+  /** Pas encore faite, et son échéance est aujourd'hui ou déjà passée. */
+  isDue = (t: Task) => t.status !== 'done' && t.dueOn !== null && t.dueOn <= this.today;
 
   /** Mes MR qui demandent une action : pipeline rouge, conflits, discussions ouvertes. */
   mrAttention: MergeRequest[] = $derived(

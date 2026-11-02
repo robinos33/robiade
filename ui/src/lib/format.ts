@@ -43,6 +43,12 @@ const ENGINE_LABELS: Record<DbEngine, string> = {
 };
 export const engineLabel = (engine: DbEngine) => ENGINE_LABELS[engine];
 
+/** Jour local `AAAA-MM-JJ`, celui d'un `<input type="date">` — pas le jour UTC de `toISOString`. */
+export function localDay(at: number): string {
+  const d = new Date(at);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 /** `day` : jour local compté depuis l'epoch, tel que calculé côté Rust. */
 export function dayLabel(day: number): string {
   const offset = new Date().getTimezoneOffset() * 60000;
