@@ -7,6 +7,7 @@ mod containers;
 mod db_sessions;
 mod dto;
 mod forge;
+mod updates;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -53,6 +54,7 @@ pub struct AppState {
     pub browser: Arc<dyn DatabaseBrowser>,
     pub db_sessions: db_sessions::DbSessions,
     pub console_history: SqliteConsoleHistory,
+    pub updates: Arc<updates::Updates>,
     /// Fermeture confirmée dans l'interface malgré des agents au travail.
     pub quit_confirmed: AtomicBool,
 }
@@ -123,6 +125,8 @@ fn main() {
 
             let workspaces = Arc::new(WorkspaceResolver::default());
             let login = shell_env::resolve();
+            let updates = Arc::new(updates::Updates::default());
+            let build_path = login.path.clone();
             let git = Arc::new(GitCli::with_path(login.path.clone()));
             let registry = Arc::new(agents::AgentRegistry::new(
                 app.handle().clone(),
@@ -145,6 +149,8 @@ fn main() {
                 let _ = std::fs::remove_file(data_dir.join(old));
             }
             let search = Arc::new(SearchIndex::open(&cache_dir.join("cache.db"))?);
+            // Le worktree de build et ses `target/` vivent dans le cache, lui aussi hors Time Machine.
+            updates.start(app.handle().clone(), cache_dir.clone(), build_path);
             // Premier remplissage de l'index en tâche de fond : l'interface n'attend pas.
             let (warm_store, warm_index) = (transcripts.clone(), search.clone());
             std::thread::spawn(move || warm_index.sync(&warm_store.transcript_files()));
@@ -183,6 +189,7 @@ fn main() {
                 browser: Arc::new(Engines),
                 db_sessions: db_sessions::DbSessions::default(),
                 console_history: SqliteConsoleHistory::open(&data_dir.join("robiade.db"))?,
+                updates,
                 quit_confirmed: AtomicBool::new(false),
             });
             Ok(())
@@ -260,6 +267,7 @@ fn main() {
             commands::db_console_history,
             commands::merge_request_outcomes,
             commands::merge_request_states,
+            commands::update_status,
             commands::quit,
         ])
         .build(tauri::generate_context!())

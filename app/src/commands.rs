@@ -26,7 +26,7 @@ use crate::dto::{
     FileChangeDto, ForgeDto, GranularityDto, IssueActionDto, IssueActionPreviewDto, IssueDto, IssueRefDto, IssueStartDto,
     IssueStartedDto, MergeRequestDto, MrActionDto, MrOutcomesDto, MrRefDto, NewIssueDto, OverviewDto, PageDto,
     PageRequestDto, RelationDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto, WorktreeCreationDto, WorktreeDto,
-    WorktreeRemovalDto,
+    UpdateDto, WorktreeRemovalDto,
 };
 use crate::db_sessions::OpenSession;
 use crate::{now, AppState};
@@ -973,6 +973,12 @@ pub async fn merge_request_states(
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;
     Ok(known.into_iter().zip(found).filter_map(|((url, _), s)| Some((url, crate::dto::mr_state(s?)))).collect())
+}
+
+/// État de la mise à jour au lancement ; `None` tant que rien n'est décidé, ou en `tauri dev`.
+#[tauri::command]
+pub fn update_status(state: State<AppState>) -> Option<UpdateDto> {
+    state.updates.status().as_ref().map(UpdateDto::from)
 }
 
 /// Fermeture confirmée : les agents sont arrêtés, leurs sessions restent reprenables.

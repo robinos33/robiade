@@ -18,6 +18,7 @@ use robiade_core::secrets::mask_secrets;
 use robiade_core::pricing::{Estimate, PRICES_AS_OF};
 use robiade_core::stats::{self, AgentsOverview, Overview};
 use robiade_core::tasks::{Task, TaskStatus};
+use robiade_core::updates::UpdateStatus;
 use robiade_core::vcs::{ChangeKind, FileChange, LinkedWorktree};
 use serde::{Deserialize, Serialize};
 
@@ -906,6 +907,27 @@ pub struct ContributionBucketDto {
 impl From<ContributionBucket> for ContributionBucketDto {
     fn from(b: ContributionBucket) -> Self {
         Self { start_day: b.start_day, mrs_opened: b.mrs_opened, mrs_merged: b.mrs_merged, commits: b.commits, reviews: b.reviews }
+    }
+}
+
+/// État de la mise à jour au lancement.
+#[derive(Serialize, Clone)]
+#[serde(tag = "state", rename_all = "camelCase")]
+pub enum UpdateDto {
+    UpToDate,
+    Installing { commits: u32 },
+    Ready { commits: u32 },
+    Failed { output: String },
+}
+
+impl From<&UpdateStatus> for UpdateDto {
+    fn from(s: &UpdateStatus) -> Self {
+        match s {
+            UpdateStatus::UpToDate => Self::UpToDate,
+            UpdateStatus::Installing { commits } => Self::Installing { commits: *commits },
+            UpdateStatus::Ready { commits } => Self::Ready { commits: *commits },
+            UpdateStatus::Failed { output } => Self::Failed { output: output.clone() },
+        }
     }
 }
 
