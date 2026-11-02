@@ -53,6 +53,11 @@ export const api = {
     invoke<{ agentId: string; fetched: boolean }>('start_issue_agent', {
       projectRoot, issue, branch, base, prompt, cols: 120, rows: 36,
     }),
+  prepareTaskStart: (projectRoot: string, id: string) => invoke<IssueStart>('prepare_task_start', { projectRoot, id }),
+  startTaskAgent: (projectRoot: string, id: string, branch: string, base: string, prompt: string) =>
+    invoke<{ agentId: string; fetched: boolean }>('start_task_agent', {
+      projectRoot, id, branch, base, prompt, cols: 120, rows: 36,
+    }),
   worktrees: (repository: string) => invoke<GitWorktree[]>('worktrees', { repository }),
   prepareWorktreeCreation: (repository: string, branch: string) =>
     invoke<WorktreeCreation>('prepare_worktree_creation', { repository, branch }),

@@ -12,6 +12,8 @@
 
   /** Issue sur laquelle démarrer un agent, avec le dépôt local de son projet. */
   let starting = $state<{ issue: Issue; root: string } | null>(null);
+  /** Tâche sur laquelle démarrer un agent, avec le dépôt où créer son worktree. */
+  let startingTask = $state<{ task: Task; root: string } | null>(null);
   /** Action sur une issue, en attente de confirmation. */
   let acting = $state<{ issue: Issue; action: IssueAction } | null>(null);
   /** Tâche dont on modifie les liens. */
@@ -68,6 +70,13 @@
   /** Titre de l'issue liée, si elle fait partie des issues déjà lues. */
   const issueTitle = (t: Task) =>
     issues?.find((i) => i.iid === t.issue?.iid && i.project.toLowerCase() === t.issue.project.toLowerCase())?.title;
+
+  /** Dépôt où démarrer un agent sur la tâche : celui de l'issue liée, sinon celui de son projet. */
+  function startRoot(t: Task): string | null {
+    const issue = t.issue;
+    if (!issue) return t.projectPath;
+    return app.projects.find((p) => p.gitlabProject?.toLowerCase() === issue.project.toLowerCase())?.root ?? null;
+  }
 
   const linkedSession = (t: Task) => app.history.find((s) => s.sessionId === t.sessionId);
   /** Agent vivant sur la session liée : on l'ouvre plutôt que son historique. */
@@ -166,6 +175,10 @@
                     </span>
                   {/if}
                 </div>
+                {#if t.status !== 'done' && startRoot(t)}
+                  {@const root = startRoot(t) ?? ''}
+                  <button class="start-task btn ghost" title="Démarrer un agent : worktree, branche et prompt à relire" aria-label="Démarrer un agent" onclick={() => (startingTask = { task: t, root })}><Icon name="resume" size={13} /></button>
+                {/if}
                 <button class="link-to btn ghost" title="Lier à une issue ou à une session" aria-label="Lier" onclick={() => (linking = t)}><Icon name="link" size={13} /></button>
                 <button class="del btn ghost" title="Supprimer" onclick={() => remove(t)}><Icon name="trash" size={13} /></button>
               </li>
@@ -255,6 +268,21 @@
   <IssueCreateDialog project={creating} oncreated={() => reload++} onclose={() => (creating = null)} />
 {/if}
 
+{#if startingTask}
+  {@const { task, root } = startingTask}
+  <AgentStartDialog
+    heading={`Démarrer un agent sur « ${task.title} »`}
+    fromGitlab={task.issue !== null}
+    prepare={() => api.prepareTaskStart(root, task.id)}
+    launch={async (branch, base, prompt) => {
+      const started = await api.startTaskAgent(root, task.id, branch, base, prompt);
+      void app.refreshTasks();
+      return started;
+    }}
+    onclose={() => (startingTask = null)}
+  />
+{/if}
+
 {#if starting}
   {@const { issue, root } = starting}
   {@const target = { project: issue.project, iid: issue.iid }}
@@ -305,8 +333,8 @@
   .due-on.unset { opacity: 0; }
   .task:hover .due-on.unset, .due-on.unset:focus { opacity: 1; }
   .due-on.due { color: var(--danger); background: var(--danger-soft); font-weight: 600; }
-  .del, .link-to { opacity: 0; height: 22px; padding: 0 5px; color: var(--ink-3); flex: none; }
-  .task:hover .del, .task:hover .link-to, .link-to:focus, .del:focus { opacity: 1; }
+  .del, .link-to, .start-task { opacity: 0; height: 22px; padding: 0 5px; color: var(--ink-3); flex: none; }
+  .task:hover .del, .task:hover .link-to, .task:hover .start-task, .link-to:focus, .del:focus, .start-task:focus { opacity: 1; }
   .chip {
     display: inline-flex; align-items: center; gap: 3px; min-width: 0; height: 18px; padding: 0 6px;
     border: 1px solid var(--line-strong); border-radius: 9px; background: none; color: var(--ink-2); font-size: 11px;
