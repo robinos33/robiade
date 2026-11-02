@@ -49,7 +49,7 @@ Statut : brouillon du 2026-10-27. Les points marqués **[À trancher]** sont reg
 | Statistiques | Dérivées des transcripts | Agrégats SQLite, **reconstructibles** |
 | Résultats de requêtes DB | La base interrogée | **Rien sur disque** : en mémoire, le temps de l'affichage |
 | Historique des requêtes DB | ADE | SQLite (texte des requêtes, jamais les résultats) |
-| **Tâches perso** | **ADE** | SQLite, **sauvegardée** (export JSON horodaté quotidien) |
+| **Tâches perso** | **ADE** | SQLite, **sauvegardée** (export JSON horodaté quotidien, `backups/tasks-AAAA-MM-JJ.json` à côté de la base, 30 gardés ; restauration à la main) |
 | Identifiants DB de prod | Vault (KV v2 statique) | Rien : valeur lue au moment de se connecter, en mémoire |
 | Préférences, vues sauvegardées | ADE | SQLite |
 
