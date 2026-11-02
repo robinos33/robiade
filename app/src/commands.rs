@@ -13,6 +13,7 @@ use robiade_core::merge_actions::AuditEntry;
 use robiade_core::forge::{IssueRef, MrRef};
 use robiade_core::issue_start;
 use robiade_core::history::{SessionSearch, TranscriptReader};
+use robiade_core::contributions::{self, Granularity};
 use robiade_core::stats;
 use robiade_core::tasks::{DueDate, SessionId, Task, TaskId, TaskRepository};
 use robiade_core::vcs::FileChange;
@@ -21,8 +22,8 @@ use tauri::{Manager, State};
 
 use crate::dto::{
     ActionPreviewDto, AgentDto, AssetContentDto, AuditEntryDto, ConsoleHistoryDto, ConsoleReplyDto, ConsoleResultDto, FinishedWriteDto,
-    ContainerActionPreviewDto, ContainerDto, DbConnectionDto, DbConnectionInputDto, DbOverviewDto, DbProbeDto, DbTargetDto, EntryDto, EnvironmentDto,
-    FileChangeDto, ForgeDto, IssueActionDto, IssueActionPreviewDto, IssueDto, IssueRefDto, IssueStartDto,
+    ContainerActionPreviewDto, ContainerDto, ContributionBucketDto, DbConnectionDto, DbConnectionInputDto, DbOverviewDto, DbProbeDto, DbTargetDto, EntryDto, EnvironmentDto,
+    FileChangeDto, ForgeDto, GranularityDto, IssueActionDto, IssueActionPreviewDto, IssueDto, IssueRefDto, IssueStartDto,
     IssueStartedDto, MergeRequestDto, MrActionDto, MrOutcomesDto, MrRefDto, NewIssueDto, OverviewDto, PageDto,
     PageRequestDto, RelationDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto, WorktreeCreationDto, WorktreeDto,
     WorktreeRemovalDto,
@@ -126,6 +127,26 @@ pub async fn stats(
         stats::overview(&summaries, project_of, at, offset_ms, window_days),
         stats::agents_overview(&agents, at - window_days * 86_400_000, at),
     ))
+}
+
+/// Mes contributions GitLab par période, tous projets confondus : un événement GitLab ne porte
+/// que l'identifiant de son projet, pas son chemin.
+#[tauri::command]
+pub async fn gitlab_activity(
+    state: State<'_, AppState>,
+    granularity: GranularityDto,
+    utc_offset_minutes: i64,
+) -> CmdResult<Vec<ContributionBucketDto>> {
+    let granularity = Granularity::from(granularity);
+    let offset_ms = utc_offset_minutes.clamp(-14 * 60, 14 * 60) * 60_000;
+    let at = now();
+    let from = contributions::window_start(granularity, at, offset_ms);
+    let cache = state.contributions.clone();
+    let events = tauri::async_runtime::spawn_blocking(move || cache.since(from, at))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+    Ok(contributions::by_period(&events, granularity, at, offset_ms).into_iter().map(ContributionBucketDto::from).collect())
 }
 
 #[tauri::command]

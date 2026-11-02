@@ -3,6 +3,7 @@
 use robiade_core::agents::{Agent, AgentStatus, Gauges, Level};
 use robiade_core::assets::{Asset, AssetKind};
 use robiade_core::containers::{Container, ContainerState};
+use robiade_core::contributions::{ContributionBucket, Granularity};
 use robiade_core::databases::{Connection, Engine, Part, Probe, Source, Stage, Target, VaultRef};
 use robiade_core::db_browse::{Cell, Column, Cursor, Filter, FilterOp, Page, PageRequest, Relation, RelationKind, Sort};
 use robiade_core::db_console::{HistoryEntry, Outcome};
@@ -868,6 +869,43 @@ pub struct MrOutcomesDto {
 impl From<MrOutcomes> for MrOutcomesDto {
     fn from(o: MrOutcomes) -> Self {
         Self { total: o.total, merged: o.merged, opened: o.opened, closed: o.closed, unknown: o.unknown }
+    }
+}
+
+#[derive(Deserialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub enum GranularityDto {
+    Day,
+    Week,
+    Month,
+    Year,
+}
+
+impl From<GranularityDto> for Granularity {
+    fn from(g: GranularityDto) -> Self {
+        match g {
+            GranularityDto::Day => Self::Day,
+            GranularityDto::Week => Self::Week,
+            GranularityDto::Month => Self::Month,
+            GranularityDto::Year => Self::Year,
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContributionBucketDto {
+    /// Premier jour local de la période, en jours depuis l'epoch.
+    pub start_day: i64,
+    pub mrs_opened: u32,
+    pub mrs_merged: u32,
+    pub commits: u32,
+    pub reviews: u32,
+}
+
+impl From<ContributionBucket> for ContributionBucketDto {
+    fn from(b: ContributionBucket) -> Self {
+        Self { start_day: b.start_day, mrs_opened: b.mrs_opened, mrs_merged: b.mrs_merged, commits: b.commits, reviews: b.reviews }
     }
 }
 
