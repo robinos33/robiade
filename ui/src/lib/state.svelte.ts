@@ -118,6 +118,7 @@ class AppState {
   today = $derived(localDay(this.now));
   /** Pas encore faite, et son échéance est aujourd'hui ou déjà passée. */
   isDue = (t: Task) => t.status !== 'done' && t.dueOn !== null && t.dueOn <= this.today;
+  dueTasks = $derived(this.visibleTasks.filter(this.isDue));
 
   /** Mes MR qui demandent une action : pipeline rouge, conflits, discussions ouvertes. */
   mrAttention: MergeRequest[] = $derived(

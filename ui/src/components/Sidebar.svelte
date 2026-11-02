@@ -19,9 +19,12 @@
     if (view === 'inbox') return app.attention.length || null;
     if (view === 'agents') return app.visibleAgents.filter((a) => a.status !== 'ended').length || null;
     if (view === 'mr') return app.pendingReviews.length + app.mrAttention.length || null;
-    if (view === 'tasks') return app.visibleTasks.filter((t) => t.status === 'doing').length || null;
+    if (view === 'tasks') return app.dueTasks.length || app.visibleTasks.filter((t) => t.status === 'doing').length || null;
     return null;
   }
+
+  /** Pastille : l'Inbox, et les tâches dès qu'une échéance tombe — leur compte remplace alors celui des « en cours ». */
+  const hot = (view: View) => view === 'inbox' || (view === 'tasks' && app.dueTasks.length > 0);
 
   const liveIn = (root: string) => app.liveAgents.filter((a) => a.projectRoot === root);
   const liveInWorktree = (path: string) => app.liveAgents.filter((a) => a.worktreePath === path);
@@ -67,7 +70,9 @@
         <button class="item" class:active={app.view === item.view} onclick={() => (app.view = item.view)}>
           <Icon name={item.icon} />
           <span class="label">{item.label}</span>
-          {#if n}<span class="count" class:hot={item.view === 'inbox'}>{n}</span>{/if}
+          {#if n}
+            <span class="count" class:hot={hot(item.view)} title={item.view === 'tasks' && hot('tasks') ? 'Échéance aujourd’hui ou dépassée' : undefined}>{n}</span>
+          {/if}
         </button>
       </li>
     {/each}
