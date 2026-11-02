@@ -243,8 +243,24 @@ temps passé en `AwaitingPermission`.
 - MR produites par des sessions, et part de celles qui ont été mergées.
 
 **Activité GitLab** (mes contributions, par jour / semaine / mois / année) : MR ouvertes, MR
-mergées, commits, reviews faites. Source : API GitLab (`events`, `merge_requests`, `commits` par
-projet), agrégée localement et mise en cache ; le cache se reconstruit.
+mergées, commits, reviews faites. Source unique : mes événements GitLab (`/events`), tous projets
+confondus — un événement ne porte que l'identifiant de son projet, la vue ne suit donc pas le
+filtre de projet. Un événement a pour auteur celui qui agit, d'où ce que compte chaque série
+(décidé le 2026-11-02) :
+- MR ouvertes : `opened` sur une MR ;
+- merges : `accepted` sur une MR, soit les MR que **j'ai** mergées, les miennes ou celles des
+  autres ; une MR à moi mergée par un collègue n'y est pas ;
+- commits : `commit_count` de chaque push ; un push forcé après rebase les recompte, c'est un
+  volume poussé ;
+- reviews : `approved` sur une MR. Un commentaire ne compte pas : l'événement ne dit pas à qui est
+  la MR, et répondre sur la sienne n'est pas une review.
+
+Fenêtres : 30 jours, 26 semaines (du lundi), 12 mois, 3 ans (GitLab ne garde pas les événements
+au-delà). Lecture par tranches de 30 jours, en parallèle, gardées en mémoire : une tranche lue plus
+d'un jour après sa fin ne change plus, celle en cours est relue après 5 minutes. Rien sur disque :
+le cache se reconstruit au premier affichage après un lancement. Coût constaté : ~15 pages de
+100 événements par mois chargé, donc quelques secondes pour 26 semaines et de l'ordre de la minute
+pour 3 ans, une fois par lancement.
 
 Le coût est une **estimation** : tokens × grille tarifaire versionnée dans l'ADE. Avec un
 abonnement, ce n'est pas ce que je paie. L'UI met les tokens en premier et le coût en second.
