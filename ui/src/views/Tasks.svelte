@@ -8,11 +8,14 @@
   import IssueActionConfirm from '../components/IssueActionConfirm.svelte';
   import IssueCreateDialog from '../components/IssueCreateDialog.svelte';
   import IssueStartDialog from '../components/IssueStartDialog.svelte';
+  import TaskLinkDialog from '../components/TaskLinkDialog.svelte';
 
   /** Issue sur laquelle démarrer un agent, avec le dépôt local de son projet. */
   let starting = $state<{ issue: Issue; root: string } | null>(null);
   /** Action sur une issue, en attente de confirmation. */
   let acting = $state<{ issue: Issue; action: IssueAction } | null>(null);
+  /** Tâche dont on modifie les liens. */
+  let linking = $state<Task | null>(null);
   /** Projet GitLab où créer une issue, le temps de la saisie. */
   let creating = $state<string | null>(null);
   /** Incrémenté pour relire les issues, après une création. */
@@ -163,6 +166,7 @@
                     </span>
                   {/if}
                 </div>
+                <button class="link-to btn ghost" title="Lier à une issue ou à une session" aria-label="Lier" onclick={() => (linking = t)}><Icon name="link" size={13} /></button>
                 <button class="del btn ghost" title="Supprimer" onclick={() => remove(t)}><Icon name="trash" size={13} /></button>
               </li>
             {:else}
@@ -243,6 +247,10 @@
   <IssueActionConfirm issue={acting.issue} action={acting.action} ondone={replaced} onclose={() => (acting = null)} />
 {/if}
 
+{#if linking}
+  <TaskLinkDialog task={linking} onclose={() => (linking = null)} />
+{/if}
+
 {#if creating}
   <IssueCreateDialog project={creating} oncreated={() => reload++} onclose={() => (creating = null)} />
 {/if}
@@ -289,8 +297,8 @@
   .due-on.unset { opacity: 0; }
   .task:hover .due-on.unset, .due-on.unset:focus { opacity: 1; }
   .due-on.due { color: var(--danger); background: var(--danger-soft); font-weight: 600; }
-  .del { opacity: 0; height: 22px; padding: 0 5px; color: var(--ink-3); }
-  .task:hover .del { opacity: 1; }
+  .del, .link-to { opacity: 0; height: 22px; padding: 0 5px; color: var(--ink-3); flex: none; }
+  .task:hover .del, .task:hover .link-to, .link-to:focus, .del:focus { opacity: 1; }
   .chip {
     display: inline-flex; align-items: center; gap: 3px; min-width: 0; height: 18px; padding: 0 6px;
     border: 1px solid var(--line-strong); border-radius: 9px; background: none; color: var(--ink-2); font-size: 11px;

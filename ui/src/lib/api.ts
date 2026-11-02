@@ -19,6 +19,10 @@ export const api = {
     invoke<Task>('create_task', { title, projectPath, dueOn }),
   /** `dueOn` à `null` retire l'échéance. */
   scheduleTask: (id: string, dueOn: string | null) => invoke<Task>('schedule_task', { id, dueOn }),
+  /** `reference` : `#12`, `groupe/projet#12` ou URL ; `null` retire le lien. */
+  linkTaskIssue: (id: string, reference: string | null) => invoke<Task>('link_task_issue', { id, reference }),
+  /** `sessionId` à `null` retire le lien. */
+  linkTaskSession: (id: string, sessionId: string | null) => invoke<Task>('link_task_session', { id, sessionId }),
   updateTask: (id: string, patch: { title?: string; notes?: string; status?: TaskStatus }) =>
     invoke<Task>('update_task', { id, ...patch }),
   deleteTask: (id: string) => invoke<void>('delete_task', { id }),

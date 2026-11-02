@@ -33,6 +33,8 @@
     <path d="M5 3.5v9l7-4.5z" />
   {:else if name === 'branch'}
     <circle cx="4.5" cy="3.5" r="1.5" /><circle cx="4.5" cy="12.5" r="1.5" /><circle cx="11.5" cy="5.5" r="1.5" /><path d="M4.5 5v6M11.5 7c0 2.5-2 3-7 4" />
+  {:else if name === 'link'}
+    <path d="M6.8 9.2 9.2 6.8M7.6 4.8l1.2-1.2a2.6 2.6 0 0 1 3.6 3.6l-1.2 1.2M8.4 11.2l-1.2 1.2a2.6 2.6 0 0 1-3.6-3.6l1.2-1.2" />
   {:else if name === 'trash'}
     <path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5c0 .3.3.5.6.5h4.6c.3 0 .6-.2.6-.5l.6-8.5" />
   {:else if name === 'image'}
