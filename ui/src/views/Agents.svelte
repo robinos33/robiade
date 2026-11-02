@@ -359,6 +359,10 @@
   /* Hauteur bornée : seule la liste défile, le titre et « Toutes les sessions… » restent visibles. */
   .recents { display: flex; flex-direction: column; flex: none; max-height: 40%; padding: 8px; border-top: 1px solid var(--line); }
   .recents .list { min-height: 0; overflow-y: auto; }
+  /* En retrait des agents ouverts : fond enfoncé, pastilles atténuées jusqu'au survol. */
+  .recents { background: var(--bg-sunken); }
+  .recent :global(.badge) { opacity: 0.55; }
+  .recent:hover :global(.badge), .recent.active :global(.badge) { opacity: 1; }
   .none { padding: 4px 10px; font-size: 12px; }
   .agent {
     display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 8px 10px;
