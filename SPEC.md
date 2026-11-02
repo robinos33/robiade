@@ -218,7 +218,10 @@ C'est le seul contexte où l'ADE porte de l'état, donc le seul où un agrégat 
   le **nombre** compte les tâches du projet affiché, et une échéance tombée seulement ailleurs
   laisse une pastille sans nombre.
 - Une tâche perso peut **référencer** une issue d'équipe, jamais la dupliquer : pas de
-  synchronisation, pas de champ recopié.
+  synchronisation, pas de champ recopié. La référence se saisit comme GitLab l'écrit (`#12` dans
+  le projet de la tâche, `groupe/projet#12`, ou l'URL) et ne garde que le projet et le numéro ;
+  le titre affiché au survol vient des issues déjà lues, sinon rien.
+- Le lien vers une session ouvre l'agent s'il tourne encore, sinon la session dans l'historique.
 - Vue unifiée : la liste des tâches d'un projet montre les deux types côte à côte, typés
   visuellement ; seules les tâches perso sont éditables en place.
 
