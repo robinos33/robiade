@@ -483,6 +483,23 @@ const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
     blocker: null,
   }),
   prepare_worktree_removal: (args) => worktreeRemoval(String(args.path)),
+  prepare_task_start: (args) => {
+    const task = tasks.find((t) => t.id === args.id)!;
+    const slug = task.title.normalize('NFD').replace(/[^\w\s-]/g, '').trim().toLowerCase().replace(/\s+/g, '-').slice(0, 40);
+    const branch = task.issue ? `ticket-${task.issue.iid}-${slug}` : `tache-${slug}`;
+    return {
+      repository: args.projectRoot,
+      branch,
+      bases: ['origin/staging', 'origin/main'],
+      worktreeDir: `${args.projectRoot}/.claude/worktrees/${branch}`,
+      prompt: `Travaille sur ma tâche : « ${task.title} ».\n\nTu es dans un worktree dédié, sur la branche \`${branch}\`.\nCommence par me proposer un plan, sans modifier de fichier avant que je l'aie validé.`,
+      tabName: task.title,
+    };
+  },
+  start_task_agent: (args) => {
+    Object.assign(tasks.find((t) => t.id === args.id)!, { sessionId: AGENT_IDS[1]!, status: 'doing' });
+    return { agentId: AGENT_IDS[1]!, fetched: true };
+  },
   reveal_in_finder: () => null,
   prepare_container_action: (args) => {
     const found = containers.find((c) => c.id === args.id)!;

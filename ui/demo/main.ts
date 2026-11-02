@@ -34,6 +34,11 @@ if (params.get('link')) {
   const task = await find('li.task', params.get('link')!);
   task?.querySelector<HTMLElement>('.link-to')?.click();
 }
+// `?view=tasks&start=Mettre` : ouvre le démarrage d'un agent sur la tâche dont le titre contient ce texte.
+if (params.get('start')) {
+  const task = await find('li.task', params.get('start')!);
+  task?.querySelector<HTMLElement>('.start-task')?.click();
+}
 // `?view=agents&asset=regles-promo.md` : ouvre un asset de l'agent affiché.
 if (params.get('asset')) await click('.asset', params.get('asset')!);
 if (params.get('explore')) {
