@@ -29,6 +29,11 @@ if (params.get('edit')) {
   const row = await find('li.row', params.get('edit')!);
   [...(row?.querySelectorAll<HTMLElement>('.actions button') ?? [])].find((b) => b.textContent === 'Modifier')?.click();
 }
+// `?view=tasks&link=Relire` : ouvre les liens de la tâche dont le titre contient ce texte.
+if (params.get('link')) {
+  const task = await find('li.task', params.get('link')!);
+  task?.querySelector<HTMLElement>('.link-to')?.click();
+}
 // `?view=agents&asset=regles-promo.md` : ouvre un asset de l'agent affiché.
 if (params.get('asset')) await click('.asset', params.get('asset')!);
 if (params.get('explore')) {

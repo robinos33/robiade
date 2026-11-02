@@ -173,9 +173,9 @@ const issues: Issue[] = [
 ];
 
 const tasks: Task[] = [
-  { id: 't1', title: 'Relire la MR de Camille avant la démo', notes: '', projectPath: null, status: 'doing', dueOn: localDay(NOW), createdAt: NOW - 90 * MIN, doneAt: null },
-  { id: 't2', title: 'Mettre à jour la doc de l’API de pagination', notes: '', projectPath: `${HOME}/code/catalogue-api`, status: 'todo', dueOn: localDay(NOW - 2 * 24 * 60 * MIN), createdAt: NOW - 300 * MIN, doneAt: null },
-  { id: 't3', title: 'Vider le cache CDN après la mise en prod', notes: '', projectPath: `${HOME}/code/site-vitrine`, status: 'done', dueOn: null, createdAt: NOW - 3000 * MIN, doneAt: NOW - 200 * MIN },
+  { id: 't1', title: 'Relire la MR de Camille avant la démo', notes: '', projectPath: null, status: 'doing', dueOn: localDay(NOW), issue: null, issueUrl: null, sessionId: AGENT_IDS[0]!, createdAt: NOW - 90 * MIN, doneAt: null },
+  { id: 't2', title: 'Mettre à jour la doc de l’API de pagination', notes: '', projectPath: `${HOME}/code/catalogue-api`, status: 'todo', dueOn: localDay(NOW - 2 * 24 * 60 * MIN), issue: { project: 'shop/catalogue-api', iid: 41 }, issueUrl: `${GITLAB}/shop/catalogue-api/-/issues/41`, sessionId: null, createdAt: NOW - 300 * MIN, doneAt: null },
+  { id: 't3', title: 'Vider le cache CDN après la mise en prod', notes: '', projectPath: `${HOME}/code/site-vitrine`, status: 'done', dueOn: null, issue: null, issueUrl: null, sessionId: 's7', createdAt: NOW - 3000 * MIN, doneAt: NOW - 200 * MIN },
 ];
 
 const DAY = 24 * 60 * MIN;
@@ -409,12 +409,24 @@ const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
   create_task: (args) => {
     const task: Task = {
       id: `t${tasks.length + 1}`, title: String(args.title), notes: '', projectPath: (args.projectPath as string | null) ?? null,
-      status: 'todo', dueOn: (args.dueOn as string | null) ?? null, createdAt: Date.now(), doneAt: null,
+      status: 'todo', dueOn: (args.dueOn as string | null) ?? null, issue: null, issueUrl: null, sessionId: null,
+      createdAt: Date.now(), doneAt: null,
     };
     tasks.unshift(task);
     return task;
   },
   schedule_task: (args) => Object.assign(tasks.find((t) => t.id === args.id)!, { dueOn: args.dueOn ?? null }),
+  link_task_issue: (args) => {
+    const task = tasks.find((t) => t.id === args.id)!;
+    const raw = String(args.reference ?? '').trim();
+    if (!raw) return Object.assign(task, { issue: null, issueUrl: null });
+    const [project, iid] = raw.split('#');
+    const own = PROJECTS.find((p) => `${HOME}/code/${p.name}` === task.projectPath)?.gitlab;
+    const issue = { project: project || own || '', iid: Number(iid) };
+    if (!issue.project || !Number.isInteger(issue.iid) || issue.iid <= 0) throw `issue non reconnue : ${raw}`;
+    return Object.assign(task, { issue, issueUrl: `${GITLAB}/${issue.project}/-/issues/${issue.iid}` });
+  },
+  link_task_session: (args) => Object.assign(tasks.find((t) => t.id === args.id)!, { sessionId: args.sessionId ?? null }),
   merge_requests: () => forge,
   issues: () => issues,
   stats: () => overview(),
