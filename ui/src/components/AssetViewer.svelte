@@ -62,6 +62,15 @@
     return null;
   });
 
+  async function copySource(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      app.notify('Source copiée');
+    } catch (e) {
+      app.notify(`Copie impossible : ${e}`);
+    }
+  }
+
   function onkeydown(e: KeyboardEvent) {
     if (e.metaKey || e.altKey || e.ctrlKey) return;
     if (e.key === 'Escape') onclose();
@@ -88,6 +97,10 @@
       {/if}
       {#if asset.kind === 'html' || asset.kind === 'markdown'}
         <button class="btn ghost" onclick={() => (source = !source)}>{source ? 'Rendu' : 'Source'}</button>
+      {/if}
+      {#if content?.text}
+        {@const text = content.text}
+        <button class="btn ghost" onclick={() => void copySource(text)}>Copier la source</button>
       {/if}
       <button class="btn ghost icon" bind:this={close} onclick={onclose} title="Fermer (Échap)"><Icon name="close" size={14} /></button>
     </header>
