@@ -14,7 +14,7 @@ use robiade_core::forge::{IssueRef, MrRef};
 use robiade_core::issue_start;
 use robiade_core::history::{SessionSearch, TranscriptReader};
 use robiade_core::stats;
-use robiade_core::tasks::{DueDate, Task, TaskId, TaskRepository};
+use robiade_core::tasks::{DueDate, SessionId, Task, TaskId, TaskRepository};
 use robiade_core::vcs::FileChange;
 use secrecy::ExposeSecret;
 use tauri::{Manager, State};
@@ -175,6 +175,36 @@ pub fn update_task(
 pub fn schedule_task(state: State<AppState>, id: String, due_on: Option<String>) -> CmdResult<TaskDto> {
     let mut task = state.tasks.get(&TaskId(id)).map_err(|e| e.to_string())?;
     task.schedule(due_on.as_deref().map(DueDate::parse).transpose().map_err(|e| e.to_string())?);
+    state.tasks.save(&task).map_err(|e| e.to_string())?;
+    Ok((&task).into())
+}
+
+/// Lie ou délie (`None`) une issue d'équipe. `reference` est saisie à la main : URL, `projet#12`, ou
+/// `#12` dans le projet GitLab du dépôt de la tâche.
+#[tauri::command]
+pub fn link_task_issue(state: State<AppState>, id: String, reference: Option<String>) -> CmdResult<TaskDto> {
+    let mut task = state.tasks.get(&TaskId(id)).map_err(|e| e.to_string())?;
+    let issue = match reference.as_deref().map(str::trim).filter(|r| !r.is_empty()) {
+        None => None,
+        Some(raw) => {
+            let gitlab_project = task.project_path().and_then(|p| state.workspaces.resolve(p).gitlab_project);
+            let issue = IssueRef::parse(raw, gitlab_project.as_deref());
+            Some(issue.ok_or_else(|| match gitlab_project {
+                Some(_) => format!("issue non reconnue : {raw} (attendu #12, groupe/projet#12 ou son URL)"),
+                None => format!("issue non reconnue : {raw} (attendu groupe/projet#12 ou son URL)"),
+            })?)
+        }
+    };
+    task.link_issue(issue);
+    state.tasks.save(&task).map_err(|e| e.to_string())?;
+    Ok((&task).into())
+}
+
+/// Lie ou délie (`None`) une session Claude Code.
+#[tauri::command]
+pub fn link_task_session(state: State<AppState>, id: String, session_id: Option<String>) -> CmdResult<TaskDto> {
+    let mut task = state.tasks.get(&TaskId(id)).map_err(|e| e.to_string())?;
+    task.link_session(session_id.as_deref().map(SessionId::parse).transpose().map_err(|e| e.to_string())?);
     state.tasks.save(&task).map_err(|e| e.to_string())?;
     Ok((&task).into())
 }

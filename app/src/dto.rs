@@ -491,6 +491,10 @@ pub struct TaskDto {
     pub status: TaskStatusDto,
     /// `AAAA-MM-JJ`.
     pub due_on: Option<String>,
+    pub issue: Option<IssueRefDto>,
+    /// Adresse GitLab de l'issue liée, pour l'ouvrir.
+    pub issue_url: Option<String>,
+    pub session_id: Option<String>,
     pub created_at: i64,
     pub done_at: Option<i64>,
 }
@@ -504,6 +508,9 @@ impl From<&Task> for TaskDto {
             project_path: t.project_path().map(str::to_owned),
             status: t.status().into(),
             due_on: t.due_on().map(|d| d.as_str().to_owned()),
+            issue: t.issue().map(|i| IssueRefDto { project: i.project.clone(), iid: i.iid }),
+            issue_url: t.issue().map(IssueRef::web_url),
+            session_id: t.session().map(|s| s.as_str().to_owned()),
             created_at: t.created_at(),
             done_at: t.done_at(),
         }
