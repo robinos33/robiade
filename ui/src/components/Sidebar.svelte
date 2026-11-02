@@ -2,6 +2,7 @@
   import { app, type View } from '../lib/state.svelte';
   import type { Worktree } from '../lib/types';
   import Icon from './Icon.svelte';
+  import UpdateStatus from './UpdateStatus.svelte';
   import WorktreeRemoveDialog from './WorktreeRemoveDialog.svelte';
 
   const NAV: { view: View; label: string; icon: string; key: string }[] = [
@@ -141,6 +142,7 @@
       </ul>
     </div>
   {/if}
+  <UpdateStatus />
 </nav>
 
 {#if menu}

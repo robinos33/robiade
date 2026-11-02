@@ -246,6 +246,13 @@ export interface ContributionBucket { startDay: number; mrsOpened: number; mrsMe
 export interface MrOutcomes { total: number; merged: number; opened: number; closed: number; unknown: number }
 
 /** `commit` : commit dont la build est issue, absent hors `install.sh` ; `dirty` : avec des modifications non commitées. */
+/** Mise à jour au lancement ; absente tant que rien n'est décidé, ou en `tauri dev`. */
+export type Update =
+  | { state: 'upToDate' }
+  | { state: 'installing'; commits: number }
+  | { state: 'ready'; commits: number }
+  | { state: 'failed'; output: string };
+
 /** Fermeture à confirmer ; `relaunch` : pour relancer l'app et prendre une mise à jour. */
 export interface QuitRequest { agents: Agent[]; relaunch: boolean }
 

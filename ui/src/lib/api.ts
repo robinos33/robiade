@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
-  Agent, AssetContent, Container, ContributionBucket, Granularity, DbConnection, DbConnectionInput, DbConsoleHistory, DbConsoleReply, DbFinishedWrite, DbOverview, DbPage, DbPageRequest, DbProbe, DbTarget, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, SearchHit, Session, Task, TaskStatus, GitWorktree, WorktreeCreation, WorktreeRemoval,
+  Agent, AssetContent, Container, ContributionBucket, Granularity, DbConnection, DbConnectionInput, DbConsoleHistory, DbConsoleReply, DbFinishedWrite, DbOverview, DbPage, DbPageRequest, DbProbe, DbTarget, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, SearchHit, Session, Task, TaskStatus, GitWorktree, Update, WorktreeCreation, WorktreeRemoval,
 } from './types';
 
 export const api = {
@@ -100,6 +100,7 @@ export const api = {
   cancelDbStatement: (id: string) => invoke<void>('cancel_db_statement', { id }),
   dbConsoleHistory: (id: string) => invoke<DbConsoleHistory[]>('db_console_history', { id }),
   readAsset: (id: string, path: string) => invoke<AssetContent>('read_asset', { id, path }),
+  updateStatus: () => invoke<Update | null>('update_status'),
   /** Relance pour prendre la mise à jour ; des agents vivants passent d'abord par la confirmation. */
   relaunch: () => invoke<void>('relaunch'),
   quit: (relaunch: boolean) => invoke<void>('quit', { relaunch }),

@@ -2,7 +2,7 @@ import { listen } from '@tauri-apps/api/event';
 import { api } from './api';
 import { localDay } from './format';
 import { writeOutput } from './terminals';
-import type { Agent, Environment, Forge, GitWorktree, MergeRequest, MrState, Project, QuitRequest, Session, Task, Workspace, Worktree } from './types';
+import type { Agent, Environment, Forge, GitWorktree, MergeRequest, MrState, Project, QuitRequest, Session, Task, Update, Workspace, Worktree } from './types';
 
 export type View = 'inbox' | 'agents' | 'history' | 'mr' | 'tasks' | 'stats' | 'env' | 'db';
 
@@ -27,6 +27,8 @@ class AppState {
   resumeOpen = $state(false);
   /** Agents qu'une fermeture, ou une relance, interromprait ; non nul tant que la confirmation est affichée. */
   quitRequest = $state<QuitRequest | null>(null);
+  /** Mise à jour au lancement, lue au chargement puis suivie par `app:update`. */
+  update = $state<Update | null>(null);
   toast = $state<string | null>(null);
   now = $state(Date.now());
   /** MR lues sur GitLab ; `null` avant la première lecture. */
@@ -167,8 +169,11 @@ class AppState {
         listen<Agent[]>('agents:changed', (e) => (this.agents = e.payload)),
         listen<{ id: string; data: string }>('agent:output', (e) => writeOutput(e.payload.id, e.payload.data)),
         listen<QuitRequest>('app:quit-requested', (e) => (this.quitRequest = e.payload)),
+        listen<Update>('app:update', (e) => (this.update = e.payload)),
       ])),
     );
+    // Un événement arrivé pendant la lecture est plus récent qu'elle : il garde la main.
+    void api.updateStatus().then((u) => (this.update ??= u));
     this.env = await api.environment();
     this.agents = await api.listAgents();
     this.tasks = await api.listTasks();
