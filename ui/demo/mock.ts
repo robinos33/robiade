@@ -558,12 +558,22 @@ function linkedFile(uri: string) {
   return { state: 'content', kind: 'markdown', text: `# ${path.split('/').pop()}\n\nRapport de démo, ouvert par **⌘+clic** dans le terminal.`, dataUrl: null };
 }
 
+/**
+ * `?boot=fail|slow|hang` : un démarrage qui échoue, qui lit l'historique en 2 s, ou qui ne rend jamais la main.
+ * De quoi voir l'écran de démarrage partir quand même, sans attendre plus que le chargement, ni plus de 5 s.
+ */
+const BOOT = new URLSearchParams(location.search).get('boot');
+
 const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
   /** `?update=installing|ready|failed` : état de la mise à jour au lancement. */
   update_status: () => DEMO_UPDATES[new URLSearchParams(location.search).get('update') ?? ''] ?? null,
   relaunch: () => null,
-  environment: () => ({ claudePath: '/usr/local/bin/claude', home: HOME, commit: 'b71236c9e4f2a8d1c3b5e7f9a0d2c4e6f8a1b3c5', dirty: false }),
-  list_history: () => sessions,
+  environment: () => {
+    if (BOOT === 'fail') throw 'environnement illisible (démo)';
+    if (BOOT === 'hang') return new Promise(() => {});
+    return { claudePath: '/usr/local/bin/claude', home: HOME, commit: 'b71236c9e4f2a8d1c3b5e7f9a0d2c4e6f8a1b3c5', dirty: false };
+  },
+  list_history: () => (BOOT === 'slow' ? new Promise((r) => setTimeout(() => r(sessions), 2000)) : sessions),
   list_agents: () => agents,
   list_tasks: () => tasks,
   create_task: (args) => {
