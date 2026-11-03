@@ -13,6 +13,7 @@
     { view: 'tasks', label: 'Tâches', icon: 'tasks', key: '4' },
     { view: 'stats', label: 'Statistiques', icon: 'stats', key: '5' },
     { view: 'env', label: 'Environnements', icon: 'env', key: '7' },
+    { view: 'code', label: 'Code', icon: 'code', key: '8' },
     { view: 'db', label: 'Bases de données', icon: 'db', key: '' },
   ];
 

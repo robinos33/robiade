@@ -54,6 +54,15 @@ export interface Asset { path: string; name: string; kind: AssetKind; writtenAt:
 /** Contenu d'un asset : `dataUrl` pour une image, `text` pour le reste. */
 export interface AssetContent { kind: AssetKind; text: string | null; dataUrl: string | null }
 
+/** Fichiers d'un projet, relatifs à sa racine ; `secrets` ne s'ouvrent qu'à la demande. */
+export interface ProjectFiles { files: string[]; secrets: string[] }
+/** Un fichier de projet : son contenu, ou la raison pour laquelle il n'a pas été lu. */
+export type ProjectFile =
+  | ({ state: 'content' } & AssetContent)
+  | { state: 'secret' }
+  | { state: 'tooLarge'; size: number; limit: number }
+  | { state: 'binary'; size: number };
+
 export interface Gauge { percent: number; level: 'comfortable' | 'watch' | 'critical' }
 
 /** Relevés de la statusline de Claude Code ; tout peut manquer avant le premier rafraîchissement. */

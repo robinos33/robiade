@@ -4,7 +4,7 @@ import { localDay } from './format';
 import { writeOutput } from './terminals';
 import type { Agent, Environment, Forge, GitWorktree, MergeRequest, MrState, Project, QuitRequest, Session, Task, Update, Workspace, Worktree } from './types';
 
-export type View = 'inbox' | 'agents' | 'history' | 'mr' | 'tasks' | 'stats' | 'env' | 'db';
+export type View = 'inbox' | 'agents' | 'history' | 'mr' | 'tasks' | 'stats' | 'env' | 'db' | 'code';
 
 const ATTENTION_ORDER: Record<string, number> = { awaitingPermission: 0, failed: 1, awaitingInput: 2 };
 
@@ -274,6 +274,11 @@ class AppState {
     if (root !== null) this.openFirstAgent((a) => a.projectRoot === root);
   }
 
+  /** Racine que l'onglet Code parcourt : le worktree sélectionné, sinon le projet. */
+  get codeRoot(): string | null {
+    return this.worktree ?? this.project;
+  }
+
   /** Comme pour un projet : filtre sur le worktree et ouvre son premier agent s'il en a un. */
   selectWorktree(w: Worktree) {
     this.project = w.root;
@@ -281,7 +286,9 @@ class AppState {
     this.openFirstAgent((a) => a.worktreePath === w.path);
   }
 
+  /** L'onglet Code suit le projet choisi sans céder la place à son agent. */
   private openFirstAgent(match: (a: Agent) => boolean) {
+    if (this.view === 'code') return;
     const agents = this.agents.filter(match);
     const first = agents.find((a) => a.status !== 'ended') ?? agents[0];
     if (first) this.openAgent(first.id);

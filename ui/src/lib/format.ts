@@ -77,6 +77,15 @@ export function mrNumber(url: string): string | null {
   return url.match(/merge_requests\/(\d+)/)?.[1] ?? null;
 }
 
+const sizeFmt = new Intl.NumberFormat('fr', { maximumFractionDigits: 1 });
+
+/** Taille d'un fichier en octets, Ko ou Mo (base 1024, comme le Rust qui la borne). */
+export function fileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} o`;
+  if (bytes < 1024 * 1024) return `${sizeFmt.format(bytes / 1024)} Ko`;
+  return `${sizeFmt.format(bytes / (1024 * 1024))} Mo`;
+}
+
 export function shortPath(path: string, home: string): string {
   return home && path.startsWith(home) ? `~${path.slice(home.length)}` : path;
 }

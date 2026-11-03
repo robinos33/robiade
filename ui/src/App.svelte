@@ -14,8 +14,9 @@
   import Stats from './views/Stats.svelte';
   import Environments from './views/Environments.svelte';
   import Databases from './views/Databases.svelte';
+  import Code from './views/Code.svelte';
 
-  const KEYS: Record<string, View> = { '1': 'inbox', '2': 'agents', '3': 'history', '4': 'tasks', '5': 'stats', '6': 'mr', '7': 'env' };
+  const KEYS: Record<string, View> = { '1': 'inbox', '2': 'agents', '3': 'history', '4': 'tasks', '5': 'stats', '6': 'mr', '7': 'env', '8': 'code' };
 
   onMount(() => {
     app.init().catch((e) => app.notify(`Démarrage incomplet : ${e}`));
@@ -46,6 +47,7 @@
     {:else if app.view === 'tasks'}<Tasks />
     {:else if app.view === 'env'}<Environments />
     {:else if app.view === 'db'}<Databases />
+    {:else if app.view === 'code'}<Code />
     {:else}<Stats />{/if}
   </main>
 </div>
