@@ -24,6 +24,8 @@ Statut : brouillon du 2026-10-27. Les points marqués **[À trancher]** sont reg
   grille de données façon DataGrip) pour PostgreSQL, MariaDB, MongoDB, Elasticsearch.
 - **Statistiques** : une page globale, et les stats de la session en cours.
 - **Inbox** : ce qui demande mon attention, par projet et global.
+- **Code** : parcourir et lire les fichiers du projet ou du worktree sélectionné, en lecture
+  seule, pour un coup d'œil sans ouvrir PhpStorm.
 
 ### Hors périmètre (explicitement)
 - Être la source de vérité de quoi que ce soit, hors tâches perso et préférences d'interface.
@@ -31,7 +33,8 @@ Statut : brouillon du 2026-10-27. Les points marqués **[À trancher]** sont reg
 - Sessions Claude Code lancées hors de l'ADE (iTerm, IDE) : ni affichées ni pilotées. Leur
   transcript reste consultable dans l'historique, rien de plus.
 - Édition de données dans la grille DB (cellule par cellule) en v1 : voir §4.4.
-- Éditeur de code. L'ADE ouvre PhpStorm, il ne le remplace pas.
+- Éditeur de code. L'onglet Code lit, il n'édite pas (ni écriture, ni LSP) : l'ADE ouvre
+  PhpStorm, il ne le remplace pas.
 - Multi-utilisateur, synchronisation, hébergement.
 
 ---
@@ -405,6 +408,11 @@ Le niveau d'exigence est celui d'un outil d'administration.
   nettoyage à maintenir, le contenu ne peut rien exécuter.
 - Un transcript peut contenir des secrets collés par erreur : la recherche plein texte est locale
   et son index SQLite vit dans le cache de l'app, exclu de Time Machine (`tmutil addexclusion`).
+- Lecture des fichiers d'un projet (onglet Code) : une commande Rust, bornée à la racine du dépôt
+  ou du worktree (ni `..`, ni chemin absolu, ni lien qui en sort une fois résolu), fichiers
+  ordinaires seulement, taille vérifiée avant lecture. Les fichiers de secrets connus (`.env*`,
+  clés privées, `auth.json`…) ne sont lus qu'à ma demande ; le reste passe par le même masquage
+  de jetons que l'historique.
 
 **Actions**
 - Toute action sortante (GitLab, DB en écriture, suppression de worktree, arrêt de conteneur)
@@ -581,3 +589,15 @@ fermeture **avant** d'être demandée : Tauri ignore `prevent_exit` sur une rela
 vérification périodique : au lancement seulement. Un `tauri dev`, ou une build qui ne vient pas
 d'`install.sh`, ne se met jamais à jour ; la première installation qui embarque le commit se fait
 à la main.
+
+Décidé le 2026-11-03 : **un onglet Code, visualiseur en lecture seule** (issue #7). La liste des
+fichiers est celle de `git ls-files --cached --others --exclude-standard` : `.gitignore` respecté,
+fichiers non suivis d'un agent inclus, sans hook ni filtre git. Elle part entière vers l'interface
+(10 000 fichiers sur le plus gros dépôt du poste), qui en construit l'arbre et y cherche par nom
+(`⌘P`). L'aperçu est celui des assets des agents, avec une coloration CodeMirror en lecture seule ;
+les langages se chargent à la demande. Au-delà de 1 Mo de texte (20 Mo d'image), ou si le début du
+fichier contient un octet nul, rien n'est lu : un message le dit. Les fichiers de secrets connus
+restent dans l'arbre, marqués, et leur contenu ne se charge que sur « Afficher quand même » : le
+`.env` d'un projet Symfony est commité et utile à lire. **Risque résiduel** : la racine acceptée
+est tout dépôt ou worktree Git du disque, Robiade ne tenant pas de liste de projets côté Rust ; une
+WebView compromise pourrait donc lire un autre dépôt que ceux de l'interface.
