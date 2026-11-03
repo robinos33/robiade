@@ -13,10 +13,25 @@
   import AssetViewer from '../components/AssetViewer.svelte';
   import ChangesPanel from '../components/ChangesPanel.svelte';
   import Icon from '../components/Icon.svelte';
+  import ResizeHandle from '../components/ResizeHandle.svelte';
   import type { Agent, Session } from '../lib/types';
 
   /** Sessions reprenables proposées sous les onglets, comme le fait `/resume`. */
   const RECENT_SESSIONS = 8;
+  /** Largeur gardée au terminal quand on élargit un panneau : une soixantaine de colonnes. */
+  const TERMINAL_MIN = 480;
+
+  /** Largeurs choisies aux poignées ; `null` garde celles de la feuille de style. */
+  let railWidth = $state<number | null>(null);
+  let sideWidth = $state<number | null>(null);
+  const SIDE_MIN = 220;
+  /**
+   * Largeurs rendues, pour borner les panneaux. La liste passe d'abord, en supposant le panneau de
+   * droite à son minimum ; celui-ci prend ce qu'elle laisse. Des bornes qui dépendraient l'une de
+   * l'autre oscilleraient d'un rendu à l'autre.
+   */
+  let splitW = $state(0);
+  let railW = $state(0);
 
   let container: HTMLDivElement | undefined = $state();
   /** Chemin de l'asset ouvert en aperçu, pour l'agent actif. */
@@ -152,7 +167,12 @@
       </div>
     </div>
   {:else}
-    <div class="split">
+    <div
+      class="split"
+      bind:clientWidth={splitW}
+      style:--rail-w={railWidth ? `${railWidth}px` : null}
+      style:--side-w={sideWidth ? `${sideWidth}px` : null}
+    >
       {#snippet tab(a: Agent)}
         <li class="tab">
           <button
@@ -185,7 +205,15 @@
         </li>
       {/snippet}
       <!-- Les agents en cours prennent la colonne ; les récents restent ancrés en bas, hauteur bornée. -->
-      <div class="rail">
+      <div class="rail" bind:offsetWidth={railW}>
+        <ResizeHandle
+          id="agents.list"
+          edge="right"
+          min={180}
+          max={splitW ? splitW - SIDE_MIN - TERMINAL_MIN : Infinity}
+          label="Largeur de la liste des agents"
+          bind:width={railWidth}
+        />
         <ul class="list running">
           <li class="group section-title">En cours <span class="num">{running.length}</span></li>
           {#each running as a (a.id)}{@render tab(a)}{:else}<li class="none muted">Aucun agent en cours</li>{/each}
@@ -276,75 +304,86 @@
           <div class="term" bind:this={container}></div>
         </div>
 
-        <aside class="stats">
-          <div class="side-tabs" role="tablist">
-            <button role="tab" aria-selected={side === 'session'} class:on={side === 'session'} onclick={() => (side = 'session')}>
-              Session
-            </button>
-            <button role="tab" aria-selected={side === 'diff'} class:on={side === 'diff'} onclick={() => (side = 'diff')}>
-              Diff
-            </button>
-          </div>
-          {#if side === 'diff'}
-            <ChangesPanel agentId={active.id} activity={active.lastActivityAt + active.filesModified} />
-          {:else}
-          <dl>
-            <dt>Session</dt>
-            <dd>
-              <button class="session-id mono" onclick={() => copySessionId(sessionId)} title="{sessionId} — cliquer pour copier">
-                {sessionId.slice(0, 8)}<Icon name="copy" size={11} />
+        <!-- Enveloppe sans défilement : la poignée reste sur la bordure quand le panneau défile. -->
+        <div class="side">
+          <ResizeHandle
+            id="agents.side"
+            edge="left"
+            min={SIDE_MIN}
+            max={splitW ? splitW - railW - TERMINAL_MIN : Infinity}
+            label="Largeur du panneau Session et Diff"
+            bind:width={sideWidth}
+          />
+          <aside class="stats">
+            <div class="side-tabs" role="tablist">
+              <button role="tab" aria-selected={side === 'session'} class:on={side === 'session'} onclick={() => (side = 'session')}>
+                Session
               </button>
-            </dd>
-            <dt>Durée</dt><dd class="num">{duration(app.now - active.startedAt)}</dd>
-            <dt>T'a attendu</dt><dd class="num">{duration(active.waitedMs)}</dd>
-            <dt>dont permission</dt><dd class="num">{duration(active.permissionMs)}</dd>
-            <dt>Appels d'outils</dt><dd class="num">{active.toolCalls}</dd>
-            <dt>Sous-agents</dt><dd class="num">{active.subagents}</dd>
-            <dt>Fichiers modifiés</dt><dd class="num">{active.filesModified}</dd>
-            {#if session}
-              <dt>Tokens</dt><dd class="num">{tokens(session.tokens.total)}</dd>
-              <dt>entrée</dt><dd class="num">{tokens(session.tokens.input)}</dd>
-              <dt>sortie</dt><dd class="num">{tokens(session.tokens.output)}</dd>
-              <dt>cache</dt><dd class="num">{tokens(session.tokens.cacheRead + session.tokens.cacheCreation)}</dd>
-              <dt title="Tokens × tarif public de l'API ; avec un abonnement, ce n'est pas ce que tu paies">Coût estimé</dt>
-              <dd class="num">{dollars(session.cost.dollars)}</dd>
-              <dt>Messages</dt><dd class="num">{session.userMessages} / {session.assistantMessages}</dd>
-              <dt>Modèle</dt><dd class="mono ellipsis">{active.gauges.model ?? session.models.at(-1) ?? '—'}</dd>
-              <dt>Effort</dt><dd class="mono">{active.effort ?? '—'}</dd>
-            {/if}
-            <dt>Contexte</dt><dd class="num">{active.gauges.context ? `${active.gauges.context.percent} %` : '—'}</dd>
-          </dl>
-          {#if !session}
-            <p class="muted note">Tokens et modèle apparaissent dès que le transcript existe (après le premier échange).</p>
-          {/if}
-
-          {#if active.tools.length}
-            <h2 class="section-title assets-title">Outils</h2>
-            <dl class="tools">
-              {#each active.tools.slice(0, 10) as [tool, n] (tool)}
-                <dt class="mono ellipsis">{tool}</dt><dd class="num">{n}</dd>
-              {/each}
+              <button role="tab" aria-selected={side === 'diff'} class:on={side === 'diff'} onclick={() => (side = 'diff')}>
+                Diff
+              </button>
+            </div>
+            {#if side === 'diff'}
+              <ChangesPanel agentId={active.id} activity={active.lastActivityAt + active.filesModified} />
+            {:else}
+            <dl>
+              <dt>Session</dt>
+              <dd>
+                <button class="session-id mono" onclick={() => copySessionId(sessionId)} title="{sessionId} — cliquer pour copier">
+                  {sessionId.slice(0, 8)}<Icon name="copy" size={11} />
+                </button>
+              </dd>
+              <dt>Durée</dt><dd class="num">{duration(app.now - active.startedAt)}</dd>
+              <dt>T'a attendu</dt><dd class="num">{duration(active.waitedMs)}</dd>
+              <dt>dont permission</dt><dd class="num">{duration(active.permissionMs)}</dd>
+              <dt>Appels d'outils</dt><dd class="num">{active.toolCalls}</dd>
+              <dt>Sous-agents</dt><dd class="num">{active.subagents}</dd>
+              <dt>Fichiers modifiés</dt><dd class="num">{active.filesModified}</dd>
+              {#if session}
+                <dt>Tokens</dt><dd class="num">{tokens(session.tokens.total)}</dd>
+                <dt>entrée</dt><dd class="num">{tokens(session.tokens.input)}</dd>
+                <dt>sortie</dt><dd class="num">{tokens(session.tokens.output)}</dd>
+                <dt>cache</dt><dd class="num">{tokens(session.tokens.cacheRead + session.tokens.cacheCreation)}</dd>
+                <dt title="Tokens × tarif public de l'API ; avec un abonnement, ce n'est pas ce que tu paies">Coût estimé</dt>
+                <dd class="num">{dollars(session.cost.dollars)}</dd>
+                <dt>Messages</dt><dd class="num">{session.userMessages} / {session.assistantMessages}</dd>
+                <dt>Modèle</dt><dd class="mono ellipsis">{active.gauges.model ?? session.models.at(-1) ?? '—'}</dd>
+                <dt>Effort</dt><dd class="mono">{active.effort ?? '—'}</dd>
+              {/if}
+              <dt>Contexte</dt><dd class="num">{active.gauges.context ? `${active.gauges.context.percent} %` : '—'}</dd>
             </dl>
-          {/if}
+            {#if !session}
+              <p class="muted note">Tokens et modèle apparaissent dès que le transcript existe (après le premier échange).</p>
+            {/if}
 
-          <h2 class="section-title assets-title">Assets {#if active.assets.length}<span class="num">{active.assets.length}</span>{/if}</h2>
-          {#if active.assets.length === 0}
-            <p class="muted note">Images, pages HTML et notes que l'agent écrit apparaissent ici.</p>
-          {:else}
-            <ul class="assets">
-              {#each active.assets as f (f.path)}
-                <li>
-                  <button class="asset" onclick={() => (viewing = f.path)} title={f.path}>
-                    <Icon name={f.kind === 'image' ? 'image' : 'file'} size={14} />
-                    <span class="ellipsis">{f.name}</span>
-                    <span class="muted num right">{ago(f.writtenAt, app.now)}</span>
-                  </button>
-                </li>
-              {/each}
-            </ul>
-          {/if}
-          {/if}
-        </aside>
+            {#if active.tools.length}
+              <h2 class="section-title assets-title">Outils</h2>
+              <dl class="tools">
+                {#each active.tools.slice(0, 10) as [tool, n] (tool)}
+                  <dt class="mono ellipsis">{tool}</dt><dd class="num">{n}</dd>
+                {/each}
+              </dl>
+            {/if}
+
+            <h2 class="section-title assets-title">Assets {#if active.assets.length}<span class="num">{active.assets.length}</span>{/if}</h2>
+            {#if active.assets.length === 0}
+              <p class="muted note">Images, pages HTML et notes que l'agent écrit apparaissent ici.</p>
+            {:else}
+              <ul class="assets">
+                {#each active.assets as f (f.path)}
+                  <li>
+                    <button class="asset" onclick={() => (viewing = f.path)} title={f.path}>
+                      <Icon name={f.kind === 'image' ? 'image' : 'file'} size={14} />
+                      <span class="ellipsis">{f.name}</span>
+                      <span class="muted num right">{ago(f.writtenAt, app.now)}</span>
+                    </button>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+            {/if}
+          </aside>
+        </div>
       {:else}
         <div class="empty pick">
           <div><strong>Aucun agent ouvert.</strong>Reprends une session récente à gauche, ou lance-en une avec <kbd>⌘N</kbd>.</div>
@@ -377,8 +416,10 @@
   }
   .session-id:hover { background: var(--bg-active); color: var(--ink); }
   .page { display: flex; flex-direction: column; min-height: 0; flex: 1; }
-  .split { display: grid; grid-template-columns: 250px 1fr 260px; min-height: 0; flex: 1; }
-  .rail { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
+  .split {
+    display: grid; grid-template-columns: var(--rail-w, 250px) 1fr var(--side-w, 260px); min-height: 0; flex: 1;
+  }
+  .rail { position: relative; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
   .list { list-style: none; margin: 0; padding: 0; }
   .running { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; }
   /* Hauteur bornée : seule la liste défile, le titre et « Toutes les sessions… » restent visibles. */
@@ -454,7 +495,8 @@
   /* `fit` suspendu pendant un glisser : xterm garde sa taille, rognée plutôt que débordante. */
   .term { flex: 1; min-height: 0; overflow: hidden; padding: 10px 0 4px 12px; background: #24273a; /* TERMINAL_THEME.background */ }
   .term :global(.term-host) { height: 100%; }
-  .stats { border-left: 1px solid var(--line); padding: 12px 16px 16px; overflow-y: auto; }
+  .side { position: relative; display: flex; min-width: 0; min-height: 0; }
+  .stats { flex: 1; min-width: 0; border-left: 1px solid var(--line); padding: 12px 16px 16px; overflow-y: auto; }
   .side-tabs { display: flex; gap: 2px; margin: 0 -6px 12px; }
   .side-tabs button {
     flex: 1; height: 26px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--ink-3); font-size: 12px;
