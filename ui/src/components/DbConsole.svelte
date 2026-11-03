@@ -1,11 +1,10 @@
 <script lang="ts">
   import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
   import { sql, MariaSQL, PostgreSQL } from '@codemirror/lang-sql';
-  import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
   import { EditorState, Prec } from '@codemirror/state';
   import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers } from '@codemirror/view';
-  import { tags } from '@lezer/highlight';
   import { api } from '../lib/api';
+  import { robiadeTheme } from '../lib/codemirror';
   import type { DbConnection, DbConsoleHistory, DbConsoleReply, DbConsoleResult } from '../lib/types';
   import DbStatementConfirm from './DbStatementConfirm.svelte';
   import DbTable from './DbTable.svelte';
@@ -45,26 +44,6 @@
     }
   }
 
-  /** Couleurs du thème de l'application, claires comme sombres. */
-  const highlight = HighlightStyle.define([
-    { tag: tags.keyword, color: 'var(--accent)', fontWeight: '600' },
-    { tag: [tags.string, tags.special(tags.string)], color: 'var(--ok)' },
-    { tag: [tags.number, tags.bool, tags.null], color: 'var(--info)' },
-    { tag: [tags.comment, tags.lineComment, tags.blockComment], color: 'var(--ink-3)', fontStyle: 'italic' },
-    { tag: [tags.typeName, tags.standard(tags.name)], color: 'var(--attention)' },
-    { tag: tags.operator, color: 'var(--ink-2)' },
-  ]);
-
-  const theme = EditorView.theme({
-    '&': { height: '100%', fontSize: '12.5px', backgroundColor: 'var(--bg-sunken)', color: 'var(--ink)' },
-    '.cm-scroller': { fontFamily: 'var(--mono)', lineHeight: '1.55' },
-    '.cm-content': { caretColor: 'var(--ink)' },
-    '.cm-gutters': { backgroundColor: 'var(--bg-sunken)', color: 'var(--ink-3)', border: 'none' },
-    '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'var(--bg-hover)' },
-    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: 'var(--accent-soft)' },
-    '&.cm-focused': { outline: 'none' },
-  });
-
   $effect(() => {
     if (!host) return;
     const key = draftKey;
@@ -81,8 +60,7 @@
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
           sql({ dialect: connection.engine === 'mariadb' ? MariaSQL : PostgreSQL }),
-          syntaxHighlighting(highlight),
-          theme,
+          robiadeTheme,
           EditorView.updateListener.of((u) => {
             if (u.docChanged) saveDraft(key, u.state.doc.toString());
           }),
