@@ -192,12 +192,52 @@ function lineLinks(term: Terminal, id: string, activate: (event: MouseEvent, uri
  * Raccourci de Robiade tapé dans un terminal. xterm laisse passer ses trois événements (keydown,
  * keypress, keyup) sans les traiter, la vue le reçoit en keydown : rien ne part dans le PTY.
  */
-export type TerminalShortcut = 'find';
+export type TerminalShortcut = 'find' | 'bigger' | 'smaller' | 'reset';
 
 export function terminalShortcut(e: KeyboardEvent): TerminalShortcut | null {
-  if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return null;
+  if (!e.metaKey || e.ctrlKey || e.altKey) return null;
   if (e.key === 'f') return 'find';
+  if (e.key === '+' || e.key === '=') return 'bigger';
+  if (e.key === '-') return 'smaller';
+  // En AZERTY, 0 se tape avec ⇧ : la touche compte, pas le caractère.
+  if (e.key === '0' || e.code === 'Digit0') return 'reset';
   return null;
+}
+
+const FONT_SIZE_KEY = 'robiade.terminal.fontSize';
+const FONT_SIZE = { min: 9, max: 24, initial: 13 };
+
+/** Taille de police des terminaux d'agent, réglée sur ce poste. */
+let fontSize = storedFontSize();
+
+function storedFontSize(): number {
+  try {
+    const stored = Number(localStorage.getItem(FONT_SIZE_KEY));
+    return Number.isInteger(stored) && stored >= FONT_SIZE.min && stored <= FONT_SIZE.max ? stored : FONT_SIZE.initial;
+  } catch {
+    return FONT_SIZE.initial;
+  }
+}
+
+/**
+ * ⌘+, ⌘− et ⌘0 : un point de plus ou de moins, ou la taille d'origine, pour tous les terminaux
+ * d'agent. Ceux qui sont affichés se recalent tout de suite, et le PTY reçoit leur nouvelle
+ * taille ; les autres, quand `attach` les réaffiche.
+ */
+export function resizeFont(step: 'bigger' | 'smaller' | 'reset') {
+  const wanted = step === 'reset' ? FONT_SIZE.initial : fontSize + (step === 'bigger' ? 1 : -1);
+  const next = Math.min(Math.max(wanted, FONT_SIZE.min), FONT_SIZE.max);
+  if (next === fontSize) return;
+  fontSize = next;
+  try {
+    localStorage.setItem(FONT_SIZE_KEY, String(next));
+  } catch {
+    // Stockage inaccessible : la taille vaut pour la session.
+  }
+  for (const [id, h] of hosts) {
+    h.term.options.fontSize = next;
+    refit(id);
+  }
 }
 
 /** Occurrences en surbrillance, dans les couleurs du thème (xterm exige du `#RRGGBB`). */
@@ -245,7 +285,7 @@ function host(id: string): Host {
   };
   const term = new Terminal({
     fontFamily: cssVar('--mono'),
-    fontSize: 13,
+    fontSize,
     lineHeight: 1.15,
     cursorBlink: true,
     scrollback: 10000,

@@ -2,7 +2,7 @@
   import { getCurrentWebview } from '@tauri-apps/api/webview';
   import { app } from '../lib/state.svelte';
   import { api } from '../lib/api';
-  import { attach, dropPaths, refit, terminalAt, terminalShortcut } from '../lib/terminals';
+  import { attach, dropPaths, refit, resizeFont, terminalAt, terminalShortcut } from '../lib/terminals';
   import { panelDrag } from '../lib/panelDrag.svelte';
   import { linkedPath, readLinkedFile } from '../lib/links';
   import { baseName } from '../lib/fileTree';
@@ -145,7 +145,8 @@
     if (shortcut === 'find') {
       finding = true;
       search?.focus();
-    } else return;
+    } else if (shortcut) resizeFont(shortcut);
+    else return;
     e.preventDefault();
   }
 
