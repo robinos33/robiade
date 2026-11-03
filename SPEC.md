@@ -421,6 +421,12 @@ Le niveau d'exigence est celui d'un outil d'administration.
   ordinaires seulement, taille vérifiée avant lecture. Les fichiers de secrets connus (`.env*`,
   clés privées, `auth.json`…) ne sont lus qu'à ma demande ; le reste passe par le même masquage
   de jetons que l'historique.
+- Liens du terminal d'un agent (⌘+clic) : la sortie d'un agent n'est pas fiable (page, issue ou
+  fichier relu). Une seule fonction d'ouverture : `http`/`https` vers le navigateur, `file://`
+  vers le visualiseur de Robiade, jamais vers une autre app ; tout autre schéma est ignoré, sans
+  boîte de dialogue. Un `file://` est décodé et résolu (`..`, liens) côté Rust, puis lu seulement
+  s'il est un asset de l'agent ou s'il reste dans son dossier de travail, avec les règles de
+  l'onglet Code ; un fichier de secrets n'est pas affiché, même à ma demande.
 
 **Actions**
 - Toute action sortante (GitLab, DB en écriture, suppression de worktree, arrêt de conteneur)
@@ -472,6 +478,9 @@ Le niveau d'exigence est celui d'un outil d'administration.
 - **Inbox** = la vue Status (§4.5). C'est l'écran d'accueil.
 - Sélectionner un projet filtre toutes les vues ; « Global » enlève le filtre.
 - Le panneau de détail d'un agent héberge son terminal ; on peut le détacher dans une fenêtre.
+- Dans le terminal, ⌘+clic ouvre un lien, comme dans iTerm ; ⌘ enfoncé, le lien survolé est
+  souligné. Sans ⌘, un clic reste un clic dans le terminal. Claude Code y affiche ses URL en
+  clair (`FORCE_HYPERLINK=0`) : xterm 6 ne laisse pas ⌘ décider du soulignement d'un lien OSC 8.
 
 **Budgets de performance** (mesurés, pas supposés)
 | Mesure | Cible |
