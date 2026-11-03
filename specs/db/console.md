@@ -10,7 +10,7 @@ résultat borné, une annulation, et des écritures confirmées une à une.
   longue (`pg_cancel_backend`, `KILL QUERY`, `killOp`, annulation de tâche Elastic) et délai
   maximal par connexion. Une instruction à la fois, validée aussitôt (pas de `BEGIN` dans la
   console), résultat borné à 1000 lignes ; hors lecture seule, toute écriture est confirmée sur
-  l'instruction exacte et la cible. **En prod** (§10, décision du 2026-10-28) : lectures, et
+  l'instruction exacte et la cible. **En prod** (décision du 2026-10-28, détaillée pour [Postgres](postgres.md) et [MariaDB](mariadb.md)) : lectures, et
   INSERT, UPDATE ou DELETE seulement — UPDATE et DELETE avec un WHERE au niveau principal —,
   sans fonction d'administration connue ; chacun est confirmé en tapant le nom de la
   connexion, exécuté par Robiade dans une transaction qu'il ouvre lui-même, puis validé ou

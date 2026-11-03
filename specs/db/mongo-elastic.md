@@ -12,6 +12,6 @@ Elastic via `_security/_authenticate`).
 
 ## Décisions
 
-Décidé le 2026-10-28, avec Vault (voir les connexions) : pour Mongo et Elastic, qui n'ont pas de
+Décidé le 2026-10-28, avec Vault (voir les [connexions](connexions.md)) : pour Mongo et Elastic, qui n'ont pas de
 lecture seule de session, la console de prod sera limitée à une liste blanche de commandes de
 lecture.

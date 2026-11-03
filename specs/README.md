@@ -65,7 +65,7 @@ suit le même plan : « En une phrase », « Comportement », « Règles », « 
 - Agents distants, routines cloud, autres machines.
 - Sessions Claude Code lancées hors de l'ADE (iTerm, IDE) : ni affichées ni pilotées. Leur
   transcript reste consultable dans l'historique, rien de plus.
-- Édition de données dans la grille DB (cellule par cellule) en v1 : voir §4.4.
+- Édition de données dans la grille DB (cellule par cellule) en v1 : voir [explorateur et grille](db/explorateur-grille.md).
 - Éditeur de code. L'onglet Code lit, il n'édite pas (ni écriture, ni LSP) : l'ADE ouvre
   PhpStorm, il ne le remplace pas.
 - Multi-utilisateur, synchronisation, hébergement.
@@ -112,5 +112,5 @@ requête, une grille performante) et le moins lié aux agents ; DataGrip fait le
 |---|---|---|
 | Format interne de Claude Code qui change | v0 cassée à une mise à jour | Hooks en source primaire, parsing tolérant, tests de contrat sur fixtures |
 | WebView = Safari (WKWebView) | Quelques API web absentes, debug moins confortable | Cible unique macOS, pas de dépendance aux API Chromium |
-| Dérive vers un « tout-en-un » | Projet jamais fini | Hors périmètre §1 tenu ; chaque jalon a un critère de sortie |
+| Dérive vers un « tout-en-un » | Projet jamais fini | [Hors périmètre](#hors-périmètre-explicitement) tenu ; chaque jalon a un critère de sortie |
 | Secret affiché dans un transcript | Fuite par capture d'écran ou partage | Masquage heuristique des motifs de tokens connus à l'affichage (v1) : préfixes connus (GitLab, Anthropic, GitHub, Slack, AWS, Vault, JWT, `Bearer`) et blocs de clé privée, masqués avant l'IPC dans l'historique et la recherche. Un mot de passe quelconque passe ; le terminal d'un agent vivant n'est pas masqué |

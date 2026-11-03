@@ -5,7 +5,7 @@ prod n'écrit que par INSERT, UPDATE ou DELETE validés un à un.
 
 ## Décisions
 
-Décidé le 2026-10-28, avec Vault (voir les connexions) : Robiade impose la lecture seule par un
+Décidé le 2026-10-28, avec Vault (voir les [connexions](connexions.md)) : Robiade impose la lecture seule par un
 paramètre de session. Ce paramètre arrête l'écriture accidentelle, mais le serveur accepte
 qu'une instruction de la session le désactive (`SET default_transaction_read_only = off`, constaté
 le 2026-10-28) : la console Postgres refuse donc avant envoi ce qui lève le verrou (`SET`/`RESET` de

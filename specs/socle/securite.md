@@ -50,12 +50,12 @@ Le niveau d'exigence est celui d'un outil d'administration.
 - DB : connexion en lecture seule par défaut ; l'écriture se fait avec un autre utilisateur ou
   une bascule explicite, par connexion. **Prod en lecture seule, sans bascule**, sauf dans la
   console : INSERT, UPDATE ou DELETE un à un, en deux temps (nom de la connexion tapé, puis
-  validation sur le nombre de lignes) ; TLS exigé hors dev (§10).
+  validation sur le nombre de lignes) ; TLS exigé hors dev ([connexions DB](../db/connexions.md)).
 - Journal d'audit local des actions sortantes (quoi, quand, cible, résultat), sans les secrets.
 
 ### Chaîne de build
 - `cargo deny` (licences, advisories), `cargo audit`, `npm audit` en CI ; lockfiles commités.
-- **Mise à jour au lancement depuis `origin/main`** (§10, 2026-11-02) : un commit poussé sur
+- **Mise à jour au lancement depuis `origin/main`** ([décision du 2026-11-02](mise-a-jour.md)) : un commit poussé sur
   `main` est construit et installé sans relecture, au lancement suivant. C'est le dépôt perso, où
   je pousse en direct, agents compris : risque assumé. La build tourne avec le PATH de mon shell
   de login, sans hook git, dans un worktree réservé ; jamais dans ma copie de travail.

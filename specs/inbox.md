@@ -12,4 +12,4 @@ seule question : **qu'est-ce qui demande mon action maintenant ?** Par ordre de 
 4. discussion non résolue sur une de mes MR ;
 5. agent terminé dont je n'ai pas lu la fin.
 
-Le status d'une session (§4.1) est la brique de base ; l'Inbox en est l'agrégation.
+Le [status d'une session](agents/status.md) est la brique de base ; l'Inbox en est l'agrégation.

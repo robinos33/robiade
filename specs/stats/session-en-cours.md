@@ -6,4 +6,4 @@
 
 **Session en cours** (panneau latéral du terminal) : durée, tokens entrée / sortie / cache,
 contexte consommé, coût estimé, outils appelés (par type), fichiers modifiés, sous-agents lancés,
-temps passé en `AwaitingPermission`.
+temps passé en `AwaitingPermission`. Le coût est une estimation : voir la [page globale](page-globale.md).

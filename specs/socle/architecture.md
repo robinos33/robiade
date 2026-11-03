@@ -16,8 +16,8 @@ l'organisation hexagonale du code.
 | Git | `gix` | Pas de fork de process `git` pour lister worktrees et statuts. |
 | Docker | `bollard` (socket Unix) | API officielle, pas de parsing de `docker ps`. |
 | GitLab | `ureq` + `PRIVATE-TOKEN` | Règle existante : pas de `glab` en non-interactif (401 intermittents). Client synchrone comme les autres ports ; HTTPS seul, aucune redirection suivie (le token, en-tête maison, la suivrait). |
-| Terminal intégré | `portable-pty` côté Rust, xterm.js côté front | Pour héberger le vrai CLI `claude` (§4.1). |
-| Secrets | `security-framework` (Keychain macOS) | Jamais en clair sur disque, sauf le mot de passe d’une base dev locale (§4.4), déjà en clair dans le `.env` du projet. |
+| Terminal intégré | `portable-pty` côté Rust, xterm.js côté front | Pour héberger le vrai CLI `claude` ([lancement d'un agent](../agents/lancement.md)). |
+| Secrets | `security-framework` (Keychain macOS) | Jamais en clair sur disque, sauf le mot de passe d’une base dev locale ([connexions DB](../db/connexions.md)), déjà en clair dans le `.env` du projet. |
 
 Plateforme cible : **macOS arm64 uniquement** en v1. Pas de portabilité spéculative.
 

@@ -10,7 +10,7 @@ approbations ; MR des autres en attente de ma review. Une issue ou une MR se lit
 panneau, à côté de la liste : description et fils d'échanges (sans les notes système), avec leur
 état résolu ou non. Lus à l'ouverture, jamais stockés ; ⌘+clic garde le navigateur.
 
-**Actions** (toutes confirmées dans l'UI, voir §6) : commenter, approuver, rebaser, relancer un job,
+**Actions** (toutes confirmées dans l'UI, voir la [sécurité](../socle/securite.md)) : commenter, approuver, rebaser, relancer un job,
 passer draft/ready, merger.
 
 Lien Agents ↔ Forge : une session porteuse d'un `pr-link` ou dont la branche correspond à une MR

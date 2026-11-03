@@ -18,7 +18,7 @@ performance, communs à toutes les vues.
 │  forum  │                                          │                 │
 └─────────┴──────────────────────────────────────────┴─────────────────┘
 ```
-- **Inbox** = la vue Status (§4.5). C'est l'écran d'accueil.
+- **Inbox** = la [vue Status](../inbox.md). C'est l'écran d'accueil.
 - Sélectionner un projet filtre toutes les vues ; « Global » enlève le filtre.
 - Le panneau de détail d'un agent héberge son terminal ; on peut le détacher dans une fenêtre.
 - Dans le terminal, ⌘+clic ouvre un lien, comme dans iTerm ; ⌘ enfoncé, le lien survolé est
@@ -33,7 +33,7 @@ performance, communs à toutes les vues.
 - **Densité maîtrisée.** Une ligne = un objet, avec l'état lisible sans survol. Pas de cartes
   aérées façon dashboard marketing.
 - **L'état d'abord, la décoration ensuite.** Le seul code couleur fort est réservé à ce qui
-  demande une action (§4.5). Le reste est neutre.
+  demande une action ([Inbox](../inbox.md)). Le reste est neutre.
 - **Rien ne saute.** Les mises à jour en direct ne déplacent pas la ligne sous le curseur ; le
   tri ne change pas pendant qu'on lit.
 - Thème Système (par défaut, suit macOS à chaud), Clair ou Sombre, choisi par un bouton en bas
