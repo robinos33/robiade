@@ -27,6 +27,12 @@ pub enum TaskError {
     InvalidSession(String),
     #[error("tâche introuvable")]
     NotFound,
+    #[error("aucune tâche n'est liée à cette session")]
+    NoLinkedTask,
+    #[error("la tâche « {0} » est déjà terminée")]
+    AlreadyDone(String),
+    #[error("{0} tâches sont liées à cette session : fermer la bonne depuis l'onglet Tâches")]
+    SeveralLinked(usize),
     #[error("stockage des tâches indisponible : {0}")]
     Storage(String),
 }
@@ -227,6 +233,23 @@ pub trait TaskRepository: Send + Sync {
     fn delete(&self, id: &TaskId) -> Result<(), TaskError>;
 }
 
+/// Un agent ferme la tâche qui l'a lancé : celle liée à sa session, et elle seule. Refusé si aucune
+/// tâche n'y est liée, si elle est déjà terminée, ou si plusieurs le sont — à moi de choisir.
+pub fn finish_session_task(tasks: &dyn TaskRepository, session: &SessionId, now: Millis) -> Result<Task, TaskError> {
+    let mut linked: Vec<Task> = tasks.all()?.into_iter().filter(|t| t.session() == Some(session)).collect();
+    let mut task = match linked.len() {
+        0 => return Err(TaskError::NoLinkedTask),
+        1 => linked.remove(0),
+        n => return Err(TaskError::SeveralLinked(n)),
+    };
+    if task.status() == TaskStatus::Done {
+        return Err(TaskError::AlreadyDone(task.title().to_owned()));
+    }
+    task.move_to(TaskStatus::Done, now);
+    tasks.save(&task)?;
+    Ok(task)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -305,5 +328,78 @@ mod tests {
         assert_eq!(t.due_on().map(DueDate::as_str), Some("2026-11-02"));
         t.schedule(None);
         assert_eq!(t.due_on(), None);
+    }
+
+    /// Dépôt en mémoire, qui compte les écritures.
+    #[derive(Default)]
+    struct Memory {
+        tasks: std::sync::Mutex<Vec<Task>>,
+        saves: std::sync::atomic::AtomicUsize,
+    }
+
+    impl TaskRepository for Memory {
+        fn all(&self) -> Result<Vec<Task>, TaskError> {
+            Ok(self.tasks.lock().unwrap().clone())
+        }
+        fn get(&self, id: &TaskId) -> Result<Task, TaskError> {
+            self.all()?.into_iter().find(|t| t.id() == id).ok_or(TaskError::NotFound)
+        }
+        fn save(&self, task: &Task) -> Result<(), TaskError> {
+            self.saves.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let mut tasks = self.tasks.lock().unwrap();
+            tasks.retain(|t| t.id() != task.id());
+            tasks.push(task.clone());
+            Ok(())
+        }
+        fn delete(&self, id: &TaskId) -> Result<(), TaskError> {
+            self.tasks.lock().unwrap().retain(|t| t.id() != id);
+            Ok(())
+        }
+    }
+
+    const MINE: &str = "0b7f3c2e-9a41-4d3b-8e6f-1c2d3e4f5a6b";
+    const OTHER: &str = "1c8f4d3f-0b52-4e4c-9f70-2d3e4f5a6b7c";
+
+    fn started(id: &str, session: &str) -> Task {
+        let mut t = Task::create(TaskId(id.into()), id, None, 0).unwrap();
+        t.start(SessionId::parse(session).unwrap(), 5);
+        t
+    }
+
+    fn memory(tasks: Vec<Task>) -> Memory {
+        Memory { tasks: std::sync::Mutex::new(tasks), ..Memory::default() }
+    }
+
+    #[test]
+    fn an_agent_finishes_the_task_linked_to_its_session_only() {
+        let repo = memory(vec![started("mine", MINE), started("other", OTHER)]);
+        let done = finish_session_task(&repo, &SessionId::parse(MINE).unwrap(), 50).unwrap();
+        assert_eq!((done.id().0.as_str(), done.status(), done.done_at()), ("mine", TaskStatus::Done, Some(50)));
+        assert_eq!(repo.get(&TaskId("mine".into())).unwrap(), done);
+        assert_eq!(repo.get(&TaskId("other".into())).unwrap().status(), TaskStatus::Doing);
+    }
+
+    #[test]
+    fn finishing_is_refused_without_a_linked_task() {
+        let repo = memory(vec![started("other", OTHER), task()]);
+        assert_eq!(finish_session_task(&repo, &SessionId::parse(MINE).unwrap(), 50), Err(TaskError::NoLinkedTask));
+        assert_eq!(repo.saves.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn finishing_twice_is_refused_and_keeps_the_first_timestamp() {
+        let repo = memory(vec![started("mine", MINE)]);
+        let session = SessionId::parse(MINE).unwrap();
+        finish_session_task(&repo, &session, 50).unwrap();
+        assert_eq!(finish_session_task(&repo, &session, 60), Err(TaskError::AlreadyDone("mine".into())));
+        assert_eq!(repo.get(&TaskId("mine".into())).unwrap().done_at(), Some(50));
+        assert_eq!(repo.saves.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn finishing_is_refused_when_several_tasks_share_the_session() {
+        let repo = memory(vec![started("a", MINE), started("b", MINE)]);
+        assert_eq!(finish_session_task(&repo, &SessionId::parse(MINE).unwrap(), 50), Err(TaskError::SeveralLinked(2)));
+        assert_eq!(repo.saves.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 }
