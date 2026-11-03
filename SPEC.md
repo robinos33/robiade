@@ -353,6 +353,9 @@ Notification d'un agent (issue #9) : envoyée quand son status passe à `Awaitin
   « a fini son tour », « s'est arrêté sur une erreur ». Rien du transcript ;
 - clic : l'ADE passe au premier plan sur l'agent, dans l'onglet Agents. L'id de l'agent voyage dans
   les données de la notification, et l'ADE vérifie qu'il est encore là avant de l'ouvrir.
+- seule : l'agent ne reçoit aucune variable `ITERM_*` ni `IT2_*` du terminal d'où l'ADE a été lancé.
+  Sans elles, le hook global `cc-status` d'iTerm ne sait pas à quelle session s'adresser, et les
+  sessions lancées dans iTerm gardent leurs notifications.
 Le status d'une session (§4.1) est la brique de base ; l'Inbox en est l'agrégation.
 
 ---
