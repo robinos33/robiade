@@ -9,7 +9,7 @@
   import { MERGE_STATUS, PIPELINE, actionsOf } from '../lib/mergeRequests';
   import { app } from '../lib/state.svelte';
   import { threadPage } from '../lib/thread';
-  import type { IssueReading, MrAction, MrReading, ReadingTarget } from '../lib/types';
+  import type { IssueReading, MergeRequest, MrAction, MrReading, ReadingTarget } from '../lib/types';
   import MrActionConfirm from './MrActionConfirm.svelte';
 
   /**
@@ -61,6 +61,11 @@
   );
   const MR_STATE = { draft: 'Draft', opened: 'Ouverte', merged: 'Mergée', closed: 'Fermée' };
 
+  /** Statut de merge déjà dit par un autre signal de l'en-tête. */
+  const said = (m: MergeRequest) =>
+    (m.mergeStatus === 'discussions_not_resolved' && m.unresolvedDiscussions) ||
+    (m.mergeStatus === 'not_approved' && m.approvals !== null);
+
   const duration = $derived(prefersReducedMotion.current ? 0 : 200);
 
   function onkeydown(e: KeyboardEvent) {
@@ -105,7 +110,7 @@
               {a.left === 0 ? '✓ approuvée' : `${a.required - a.left}/${a.required} approbation${a.required > 1 ? 's' : ''}`}
             </span>
           {/if}
-          {#if mr.mergeStatus && mr.state !== 'merged' && mr.state !== 'closed' && !mr.hasConflicts}
+          {#if mr.mergeStatus && mr.state !== 'merged' && mr.state !== 'closed' && !mr.hasConflicts && !said(mr)}
             <span class="sig" class:good={mr.mergeStatus === 'mergeable'}>{MERGE_STATUS[mr.mergeStatus] ?? mr.mergeStatus}</span>
           {/if}
         </div>
