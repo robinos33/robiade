@@ -170,6 +170,8 @@ class AppState {
         listen<{ id: string; data: string }>('agent:output', (e) => writeOutput(e.payload.id, e.payload.data)),
         listen<QuitRequest>('app:quit-requested', (e) => (this.quitRequest = e.payload)),
         listen<Update>('app:update', (e) => (this.update = e.payload)),
+        // Clic sur une notification macOS : l'agent qui m'attend.
+        listen<string>('agent:open', (e) => this.openAgent(e.payload)),
       ])),
     );
     // Un événement arrivé pendant la lecture est plus récent qu'elle : il garde la main.
