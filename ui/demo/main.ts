@@ -39,6 +39,20 @@ if (params.get('start')) {
   const task = await find('li.task', params.get('start')!);
   task?.querySelector<HTMLElement>('.start-task')?.click();
 }
+// `?view=code&project=boutique&file=src/Cart/PromoCodePolicy.php` : déplie l'arbre et ouvre le fichier.
+if (params.get('file')) {
+  for (const dir of params.get('file')!.split('/').slice(0, -1)) await click('.tree .row', dir);
+  await click('.tree .row', params.get('file')!.split('/').pop()!);
+}
+// `?view=code&project=boutique&find=ppol` : ouvre « Aller au fichier » (⌘P) et y tape la recherche.
+if (params.get('find') !== null) {
+  app.findFile();
+  const field = await find('.dialog input', '');
+  if (field instanceof HTMLInputElement) {
+    field.value = params.get('find')!;
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+}
 // `?view=agents&asset=regles-promo.md` : ouvre un asset de l'agent affiché.
 if (params.get('asset')) await click('.asset', params.get('asset')!);
 if (params.get('explore')) {

@@ -438,6 +438,71 @@ const DEMO_UPDATES: Record<string, unknown> = {
   },
 };
 
+/** Projet Symfony de démo pour l'onglet Code ; `vendor/` et `var/` sont ignorés, comme par git. */
+const PROJECT_FILES = [
+  '.env', '.gitignore', 'README.md', 'bin/console', 'composer.json', 'composer.lock', 'phpunit.xml.dist',
+  'assets/app.ts', 'assets/styles/app.css', 'config/packages/framework.yaml', 'config/services.yaml',
+  'data/export-2026.sql', 'docker/Dockerfile', 'docs/regles-promo.md', 'migrations/Version20261102093000.php',
+  'public/favicon.ico', 'public/index.php', 'src/Cart/Cart.php', 'src/Cart/PromoCode.php',
+  'src/Cart/PromoCodePolicy.php', 'src/Controller/CartController.php', 'src/Kernel.php',
+  'templates/base.html.twig', 'templates/cart/show.html.twig', 'tests/Cart/PromoCodePolicyTest.php',
+];
+
+const SAMPLES: Record<string, string> = {
+  'src/Cart/PromoCodePolicy.php': `<?php
+
+declare(strict_types=1);
+
+namespace App\\Cart;
+
+/**
+ * Un seul code promo par commande : le deuxième est refusé, pas cumulé.
+ */
+final readonly class PromoCodePolicy
+{
+    public function __construct(private int $maxCodes = 1)
+    {
+    }
+
+    public function canApply(Cart $cart, PromoCode $code): bool
+    {
+        if ($code->isExpired(new \\DateTimeImmutable())) {
+            return false;
+        }
+
+        return \\count($cart->promoCodes()) < $this->maxCodes;
+    }
+}
+`,
+  'templates/cart/show.html.twig': `{% extends 'base.html.twig' %}
+
+{% block body %}
+    <h1>{{ 'cart.title'|trans }}</h1>
+    {% for line in cart.lines %}
+        <p>{{ line.label }} — {{ line.total|format_currency('EUR') }}</p>
+    {% endfor %}
+{% endblock %}
+`,
+  'config/services.yaml': `services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+
+    App\\:
+        resource: '../src/'
+`,
+  'docs/regles-promo.md': `# Règles des codes promo\n\n- Un seul code par commande.\n- Un code expiré est refusé.\n`,
+};
+
+function projectFile(path: string, reveal: boolean) {
+  if (path === '.env' && !reveal) return { state: 'secret' };
+  if (path === 'data/export-2026.sql') return { state: 'tooLarge', size: 38 * 1024 * 1024, limit: 1024 * 1024 };
+  if (path === 'public/favicon.ico') return { state: 'binary', size: 15086 };
+  const kind = path.endsWith('.md') ? 'markdown' : 'text';
+  const text = SAMPLES[path] ?? (path === '.env' ? 'APP_ENV=dev\nAPP_SECRET=change-me\nDATABASE_URL="postgresql://app:app@127.0.0.1:5432/boutique"\n' : `// ${path}\n`);
+  return { state: 'content', kind, text, dataUrl: null };
+}
+
 const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
   /** `?update=installing|ready|failed` : état de la mise à jour au lancement. */
   update_status: () => DEMO_UPDATES[new URLSearchParams(location.search).get('update') ?? ''] ?? null,
@@ -486,6 +551,8 @@ const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
     const name = String((args as { path: string }).path).split('/').pop();
     return { kind: 'markdown', text: `# ${name}\n\nNote de démo écrite par l'agent.`, dataUrl: null };
   },
+  project_files: () => ({ files: PROJECT_FILES, secrets: ['.env'] }),
+  read_project_file: (args) => projectFile(String(args.path), Boolean(args.reveal)),
   containers: () => containers,
   worktrees: (args) => worktrees.filter((w) => w.repository === args.repository),
   prepare_worktree_creation: (args) => ({
