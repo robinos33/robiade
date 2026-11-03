@@ -1,16 +1,17 @@
 <script lang="ts">
   import { defaultKeymap } from '@codemirror/commands';
-  import { Compartment, EditorState } from '@codemirror/state';
-  import { drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from '@codemirror/view';
+  import { Compartment, EditorState, StateEffect } from '@codemirror/state';
+  import { Decoration, drawSelection, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from '@codemirror/view';
   import { robiadeTheme } from '../lib/codemirror';
   import { languageOf } from '../lib/languages';
 
   /**
    * Texte en lecture seule, coloré d'après le nom du fichier. CodeMirror ne dessine que les lignes
    * visibles : un fichier de 1 Mo s'affiche sans ralentir. Le curseur reste, pour naviguer au
-   * clavier et sélectionner ; rien ne s'écrit.
+   * clavier et sélectionner ; rien ne s'écrit. `line` (à partir de 1) est amenée au centre et
+   * surlignée, le curseur posé dessus.
    */
-  let { text, name }: { text: string; name: string } = $props();
+  let { text, name, line }: { text: string; name: string; line?: number } = $props();
 
   let host: HTMLDivElement | undefined = $state();
 
@@ -33,6 +34,14 @@
         ],
       }),
     });
+    if (line) {
+      const at = view.state.doc.line(Math.min(line, view.state.doc.lines)).from;
+      const cited = Decoration.set(Decoration.line({ class: 'cm-citedLine' }).range(at));
+      view.dispatch({
+        selection: { anchor: at },
+        effects: [StateEffect.appendConfig.of(EditorView.decorations.of(cited)), EditorView.scrollIntoView(at, { y: 'center' })],
+      });
+    }
     // Le texte s'affiche tout de suite ; la coloration suit, une fois son langage chargé.
     let alive = true;
     languageOf(name)?.().then(

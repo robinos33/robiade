@@ -21,6 +21,8 @@ export const robiadeTheme = [
     '.cm-content': { caretColor: 'var(--ink)' },
     '.cm-gutters': { backgroundColor: 'var(--bg-sunken)', color: 'var(--ink-3)', border: 'none' },
     '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'var(--bg-hover)' },
+    // Ligne citée par un agent (`src/foo.rs:42`), ouverte depuis son terminal.
+    '.cm-citedLine': { backgroundColor: 'var(--accent-soft)', boxShadow: 'inset 2px 0 var(--accent)' },
     '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: 'var(--accent-soft)' },
     '&.cm-focused': { outline: 'none' },
   }),

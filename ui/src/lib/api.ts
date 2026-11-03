@@ -104,6 +104,11 @@ export const api = {
   readAsset: (id: string, path: string) => invoke<AssetContent>('read_asset', { id, path }),
   /** Fichier d'un lien `file://` du terminal de l'agent, s'il reste dans son dossier de travail. */
   readLinkedFile: (id: string, uri: string) => invoke<ProjectFile>('read_linked_file', { id, uri }),
+  /**
+   * Chemins cités en clair dans le terminal de l'agent (`src/foo.rs`), dans l'ordre : le chemin
+   * absolu d'un fichier que `readLinkedFile` lirait, `null` sinon.
+   */
+  resolveLinkedPaths: (id: string, cited: string[]) => invoke<(string | null)[]>('resolve_linked_paths', { id, cited }),
   /** Fichiers du projet ou du worktree `root`, hors ignorés par git. */
   projectFiles: (root: string) => invoke<ProjectFiles>('project_files', { root }),
   /** `reveal` ouvre un fichier de secrets connu, qui sinon n'est pas lu. */

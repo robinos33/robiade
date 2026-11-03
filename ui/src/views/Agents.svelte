@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { getCurrentWebview } from '@tauri-apps/api/webview';
   import { app } from '../lib/state.svelte';
   import { api } from '../lib/api';
-  import { attach, refit } from '../lib/terminals';
+  import { attach, dropPaths, refit, resizeFont, terminalAt, terminalShortcut } from '../lib/terminals';
   import { panelDrag } from '../lib/panelDrag.svelte';
   import { linkedPath, readLinkedFile } from '../lib/links';
   import { baseName } from '../lib/fileTree';
@@ -14,6 +15,7 @@
   import ChangesPanel from '../components/ChangesPanel.svelte';
   import Icon from '../components/Icon.svelte';
   import ResizeHandle from '../components/ResizeHandle.svelte';
+  import TerminalSearch from '../components/TerminalSearch.svelte';
   import type { Agent, Session } from '../lib/types';
 
   /** Sessions reprenables proposées sous les onglets, comme le fait `/resume`. */
@@ -37,7 +39,12 @@
   /** Chemin de l'asset ouvert en aperçu, pour l'agent actif. */
   let viewing = $state<string | null>(null);
   /** Lien `file://` ouvert par ⌘+clic dans le terminal d'un agent. */
-  let linked = $state<{ agentId: string; uri: string } | null>(null);
+  let linked = $state<{ agentId: string; uri: string; line?: number } | null>(null);
+  /** Barre de recherche (⌘F) ouverte sur le terminal de l'agent actif. */
+  let finding = $state(false);
+  let search: TerminalSearch | undefined = $state();
+  /** Des fichiers du Finder survolent le terminal. */
+  let dropping = $state(false);
   /** Onglet du panneau de droite. */
   let side = $state<'session' | 'diff'>('session');
 
@@ -98,7 +105,7 @@
   $effect(() => {
     const id = activeId;
     if (!id || !container) return;
-    attach(id, container, (uri) => (linked = { agentId: id, uri }));
+    attach(id, container, (uri, line) => (linked = { agentId: id, uri, line }));
     const observer = new ResizeObserver(() => { if (!panelDrag.active) refit(id); });
     observer.observe(container);
     return () => observer.disconnect();
@@ -108,6 +115,40 @@
   $effect(() => {
     if (!panelDrag.active && activeId) refit(activeId);
   });
+
+  // Un autre agent : sa recherche repart de zéro.
+  $effect(() => {
+    void activeId;
+    finding = false;
+  });
+
+  /**
+   * Fichiers déposés depuis le Finder : la webview n'en voit pas les chemins, Tauri si. Le dépôt
+   * vise le terminal sous le curseur, quel que soit l'agent actif.
+   */
+  $effect(() => {
+    const unlisten = getCurrentWebview().onDragDropEvent(({ payload }) => {
+      if (payload.type === 'leave') return void (dropping = false);
+      const { x, y } = payload.position.toLogical(window.devicePixelRatio);
+      const target = terminalAt(x, y);
+      dropping = payload.type !== 'drop' && target !== undefined;
+      if (payload.type === 'drop' && target && !dropPaths(target, payload.paths)) {
+        app.notify('Dépôt refusé : un nom de fichier contient un caractère de contrôle (retour à la ligne…).');
+      }
+    });
+    return () => void unlisten.then((stop) => stop());
+  });
+
+  function onkeydown(e: KeyboardEvent) {
+    if (!active || viewed || linked) return;
+    const shortcut = terminalShortcut(e);
+    if (shortcut === 'find') {
+      finding = true;
+      search?.focus();
+    } else if (shortcut) resizeFont(shortcut);
+    else return;
+    e.preventDefault();
+  }
 
   $effect(() => {
     if (active?.status === 'awaitingInput') void api.markAgentSeen(active.id);
@@ -147,6 +188,8 @@
     if (active) await api.killAgent(active.id).catch((e) => app.notify(String(e)));
   }
 </script>
+
+<svelte:window {onkeydown} />
 
 <section class="page">
   <header class="page-head" data-tauri-drag-region>
@@ -301,7 +344,12 @@
             {/if}
           </div>
           <GaugeBar gauges={active.gauges} />
-          <div class="term" bind:this={container}></div>
+          <div class="term-area" class:dropping>
+            <div class="term" bind:this={container}></div>
+            {#if finding}
+              <TerminalSearch bind:this={search} id={active.id} onclose={() => (finding = false)} />
+            {/if}
+          </div>
         </div>
 
         <!-- Enveloppe sans défilement : la poignée reste sur la bordure quand le panneau défile. -->
@@ -404,9 +452,9 @@
     onclose={() => (viewing = null)}
   />
 {:else if active && linked?.agentId === active.id}
-  {@const { agentId, uri } = linked}
+  {@const { agentId, uri, line } = linked}
   {@const path = linkedPath(uri)}
-  <AssetViewer name={baseName(path)} {path} load={() => readLinkedFile(agentId, uri)} onclose={() => (linked = null)} />
+  <AssetViewer name={baseName(path)} {path} {line} load={() => readLinkedFile(agentId, uri)} onclose={() => (linked = null)} />
 {/if}
 
 <style>
@@ -492,8 +540,10 @@
   .branch { display: inline-flex; align-items: center; gap: 4px; min-width: 0; color: var(--ink-2); }
   .branch :global(svg) { flex: none; }
   .tail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .term-area { flex: 1; min-height: 0; display: flex; position: relative; }
+  .term-area.dropping { outline: 2px solid var(--accent); outline-offset: -2px; }
   /* `fit` suspendu pendant un glisser : xterm garde sa taille, rognée plutôt que débordante. */
-  .term { flex: 1; min-height: 0; overflow: hidden; padding: 10px 0 4px 12px; background: #24273a; /* TERMINAL_THEME.background */ }
+  .term { flex: 1; min-width: 0; min-height: 0; overflow: hidden; padding: 10px 0 4px 12px; background: #24273a; /* TERMINAL_THEME.background */ }
   .term :global(.term-host) { height: 100%; }
   .side { position: relative; display: flex; min-width: 0; min-height: 0; }
   .stats { flex: 1; min-width: 0; border-left: 1px solid var(--line); padding: 12px 16px 16px; overflow-y: auto; }

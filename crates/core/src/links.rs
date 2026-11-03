@@ -1,6 +1,8 @@
 //! Liens du terminal d'un agent : ce qu'un ⌘+clic ouvre. La sortie d'un agent n'est pas fiable
-//! (elle reprend une page, une issue ou un fichier qu'il a lu) : ce module ne fait que lire l'URL,
-//! l'app décide ensuite si le fichier désigné peut être affiché.
+//! (elle reprend une page, une issue ou un fichier qu'il a lu) : ce module ne fait que lire l'URL
+//! ou le chemin, l'app décide ensuite si le fichier désigné peut être affiché.
+
+use std::path::{Path, PathBuf};
 
 /// Chemin absolu désigné par une URL `file://`, décodé (`%20`…). Fragment et paramètres sont
 /// ignorés. `None` pour toute autre URL, un hôte autre que cette machine, un encodage invalide,
@@ -18,6 +20,20 @@ pub fn file_url_path(uri: &str) -> Option<String> {
     let path = path.split(['?', '#']).next()?;
     let decoded = percent_decode(path)?;
     (!decoded.contains('\0')).then_some(decoded)
+}
+
+/// Chemin absolu d'un chemin cité en clair (`src/foo.rs`, `/p/a.rs`, `~/notes.md`) : relatif au
+/// dossier de l'agent `cwd`, `~/` au dossier personnel `home`. Purement lexical : l'app vérifie
+/// ensuite que le fichier existe et reste dans le dossier de l'agent. `None` pour un chemin vide,
+/// qui contient un octet nul, ou qui part de `~/` sans dossier personnel connu.
+pub fn cited_path(cwd: &Path, home: Option<&Path>, cited: &str) -> Option<PathBuf> {
+    if cited.is_empty() || cited.contains('\0') {
+        return None;
+    }
+    match cited.strip_prefix("~/") {
+        Some(rest) => Some(home?.join(rest)),
+        None => Some(cwd.join(cited)),
+    }
 }
 
 /// `%xx` remplacé par son octet ; un `%` qui n'est pas suivi de deux chiffres hexadécimaux est
@@ -53,6 +69,22 @@ mod tests {
         assert_eq!(file_url_path("file:///p/a.md?x=1").as_deref(), Some("/p/a.md"));
         // Décodé une seule fois : `%252e` reste `%2e`, pas `.`.
         assert_eq!(file_url_path("file:///p/%252e%252e/a").as_deref(), Some("/p/%2e%2e/a"));
+    }
+
+    #[test]
+    fn places_a_cited_path_in_the_agent_folder() {
+        let (cwd, home) = (Path::new("/p/projet"), Path::new("/Users/r"));
+        let cited = |c: &str| cited_path(cwd, Some(home), c);
+        assert_eq!(cited("src/foo.rs"), Some(PathBuf::from("/p/projet/src/foo.rs")));
+        assert_eq!(cited("./foo.rs"), Some(PathBuf::from("/p/projet/./foo.rs")));
+        assert_eq!(cited("../voisin/a.md"), Some(PathBuf::from("/p/projet/../voisin/a.md")));
+        assert_eq!(cited("/etc/passwd"), Some(PathBuf::from("/etc/passwd")));
+        assert_eq!(cited("~/notes.md"), Some(PathBuf::from("/Users/r/notes.md")));
+        // `~autre/` n'est pas développé : c'est un nom de dossier comme un autre.
+        assert_eq!(cited("~autre/a.md"), Some(PathBuf::from("/p/projet/~autre/a.md")));
+        assert_eq!(cited(""), None);
+        assert_eq!(cited("a\0b"), None);
+        assert_eq!(cited_path(cwd, None, "~/notes.md"), None);
     }
 
     #[test]

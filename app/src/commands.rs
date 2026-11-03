@@ -351,16 +351,38 @@ pub async fn read_linked_file(app: tauri::AppHandle, id: String, uri: String) ->
     .map_err(|e| e.to_string())?
 }
 
+/// Chemins cités en clair dans le terminal d'un agent (`src/foo.rs`, relatif à son dossier), au
+/// survol : chacun devient le chemin absolu à passer à `read_linked_file` en `file://`, ou `None`.
+/// Seuls sont rendus les fichiers que ce ⌘+clic lirait, assets de l'agent ou fichiers de son
+/// dossier : la webview ne peut pas s'en servir pour sonder le reste du disque.
+#[tauri::command]
+pub async fn resolve_linked_paths(app: tauri::AppHandle, id: String, cited: Vec<String>) -> CmdResult<Vec<Option<String>>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let id = agent_id(&id)?;
+        let root = project_dir(&state.agents.project_path(&id)?)?;
+        let home = app.path().home_dir().ok();
+        let resolve = |cited: &String| {
+            let path = links::cited_path(&root, home.as_deref(), cited)?.to_string_lossy().into_owned();
+            (state.agents.asset(&id, &path).is_ok() || is_linkable(&root, &path)).then_some(path)
+        };
+        Ok(cited.iter().map(resolve).collect())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// `path`, absolu, désigne un fichier que `read_linked` accepte de lire : dans `root`
+/// (canonique) une fois résolu, hors `.git`. Un fichier de secrets en est un : le visualiseur dira
+/// qu'il ne l'affiche pas.
+fn is_linkable(root: &Path, path: &str) -> bool {
+    linked_inside(root, path).is_ok_and(|(file, relative)| file.is_file() && code::is_plain_relative(&relative))
+}
+
 /// `path`, absolu, lu s'il reste dans `root` (canonique) une fois résolu. Un lien nommé comme un
 /// fichier de secrets en est un, quelle que soit sa cible ; `read_inside` vérifie la cible.
 fn read_linked(root: &Path, path: &str) -> CmdResult<ProjectFileDto> {
-    let outside = || "hors du projet de l'agent : non lu".to_owned();
-    let file = match Path::new(path).canonicalize() {
-        Ok(file) => file,
-        Err(_) if Path::new(path).starts_with(root) => return Err("fichier introuvable : déplacé ou supprimé ?".into()),
-        Err(_) => return Err(outside()),
-    };
-    let relative = file.strip_prefix(root).map_err(|_| outside())?.to_string_lossy().into_owned();
+    let (file, relative) = linked_inside(root, path)?;
     if code::is_secret_file(path) {
         return Ok(ProjectFileDto::Secret);
     }
@@ -368,6 +390,19 @@ fn read_linked(root: &Path, path: &str) -> CmdResult<ProjectFileDto> {
         return Err("dossier : pas d'aperçu".into());
     }
     read_inside(root, &relative, false)
+}
+
+/// `path`, absolu, une fois résolu (`..` et liens suivis), et son chemin relatif à `root`
+/// (canonique). Refusé s'il n'existe pas ou s'il sort de `root`.
+fn linked_inside(root: &Path, path: &str) -> CmdResult<(PathBuf, String)> {
+    let outside = || "hors du projet de l'agent : non lu".to_owned();
+    let file = match Path::new(path).canonicalize() {
+        Ok(file) => file,
+        Err(_) if Path::new(path).starts_with(root) => return Err("fichier introuvable : déplacé ou supprimé ?".into()),
+        Err(_) => return Err(outside()),
+    };
+    let relative = file.strip_prefix(root).map_err(|_| outside())?.to_string_lossy().into_owned();
+    Ok((file, relative))
 }
 
 /// Racine que l'onglet Code peut lire : celle d'un dépôt Git ou d'un de ses worktrees liés.
@@ -1668,6 +1703,30 @@ mod tests {
         assert!(read_linked(&root, &at(".git/config")).is_err());
         for outside in ["/etc/passwd", "/etc/absent", &at("fuite.md"), &at("../outside/secret.md")] {
             assert!(refusal(outside).contains("hors du projet"), "{outside}");
+        }
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn links_only_a_file_that_a_click_would_read() {
+        let base = std::env::temp_dir().join(format!("robiade-linkable-{}", std::process::id()));
+        let root = base.join("projet");
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        std::fs::create_dir_all(base.join("outside")).unwrap();
+        std::fs::write(root.join("src/foo.rs"), "").unwrap();
+        std::fs::write(root.join(".env"), "").unwrap();
+        std::fs::write(root.join(".git/config"), "").unwrap();
+        std::fs::write(base.join("outside/a.md"), "").unwrap();
+        std::os::unix::fs::symlink(base.join("outside/a.md"), root.join("fuite.md")).unwrap();
+        let root = root.canonicalize().unwrap();
+        let at = |p: &str| format!("{}/{p}", root.display());
+
+        assert!(is_linkable(&root, &at("src/foo.rs")));
+        assert!(is_linkable(&root, &at("./src/../src/foo.rs")));
+        assert!(is_linkable(&root, &at(".env")));
+        for refused in [at("src"), at("absent.rs"), at(".git/config"), at("fuite.md"), at("../outside/a.md"), "/etc/passwd".into()] {
+            assert!(!is_linkable(&root, &refused), "{refused}");
         }
         std::fs::remove_dir_all(&base).unwrap();
     }

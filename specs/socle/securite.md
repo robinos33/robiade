@@ -41,7 +41,9 @@ Le niveau d'exigence est celui d'un outil d'administration.
   vers le visualiseur de Robiade, jamais vers une autre app ; tout autre schéma est ignoré, sans
   boîte de dialogue. Un `file://` est décodé et résolu (`..`, liens) côté Rust, puis lu seulement
   s'il est un asset de l'agent ou s'il reste dans son dossier de travail, avec les règles de
-  l'onglet Code ; un fichier de secrets n'est pas affiché, même à ma demande.
+  l'onglet Code ; un fichier de secrets n'est pas affiché, même à ma demande. Un chemin cité sans
+  `file://` (`src/foo.rs:42`) suit la même lecture. Savoir s'il désigne un fichier, au survol,
+  passe aussi par Rust, avec les mêmes bornes : la réponse ne renseigne pas sur le reste du disque.
 
 ### Actions
 - Toute action sortante (GitLab, DB en écriture, suppression de worktree, arrêt de conteneur)
@@ -66,4 +68,5 @@ Le niveau d'exigence est celui d'un outil d'administration.
 
 - #7 — Code : onglet de navigation et lecture des fichiers d'un projet
 - #11 — Terminal : ⌘+clic sur un lien
+- #13 — Terminal : chemins cliquables, ⌘F, glisser-déposer, taille de police
 - #15 — App : mise à jour automatique depuis main au démarrage

@@ -31,6 +31,20 @@ performance, communs à toutes les vues.
   comprise. Une fin de ligne finale est retirée, et le presse-papiers n'est ni lu ni modifié.
   Avant toute sélection, le clic molette ne fait rien. Une fenêtre détachée ne voit que les
   sélections faites dans cette fenêtre.
+- ⌘+clic ouvre aussi un chemin que Claude Code cite sans `file://` (`src/foo.rs`,
+  `src/foo.rs:42:7`), relatif au dossier de l'agent, absolu ou sous `~/`. Le visualiseur s'ouvre
+  sur la ligne citée, surlignée ; un Markdown ou un HTML s'ouvre alors en source. Un mot n'est un
+  lien que s'il désigne un fichier que ce ⌘+clic lirait : la question part au survol d'une ligne,
+  jamais pour les lignes simplement affichées.
+- ⌘F ouvre une barre de recherche en haut à droite du terminal : occurrences surlignées, compteur
+  « 3 / 12 », Entrée et ⇧Entrée pour suivante et précédente, Échap pour fermer et rendre le
+  clavier au terminal.
+- Des fichiers déposés depuis le Finder sur le terminal d'un agent y insèrent leurs chemins
+  absolus, échappés par des antislashs comme dans iTerm, séparés et suivis d'une espace, sans
+  Entrée : c'est ainsi qu'on donne une capture d'écran à Claude Code. Le dépôt vise le terminal
+  sous le curseur, qu'un liseré marque pendant le glisser.
+- ⌘+, ⌘− et ⌘0 règlent la police de tous les terminaux d'agent, de 9 à 24 px, 13 par défaut ; le
+  réglage est mémorisé sur le poste, et le reste de l'interface ne zoome pas.
 - **Panneaux latéraux redimensionnables** : barre latérale, liste et panneau Session/Diff des
   agents, arbre de Code, liste de l'historique, logs d'un conteneur, arbre et détail d'une ligne
   de l'explorateur DB. Une poignée sur la bordure, surlignée au survol, se glisse ou se règle
@@ -78,6 +92,9 @@ performance, communs à toutes les vues.
   envoyer la suite.
 - **Le terminal se recale une fois, au relâchement d'une poignée.** Chaque recalage envoie un
   redimensionnement au PTY et fait redessiner tout l'écran à Claude Code.
+- Les raccourcis de Robiade (⌘F, ⌘+, ⌘−, ⌘0) ne partent jamais dans le PTY.
+- Un dépôt de fichiers dont un nom contient un caractère de contrôle, retour à la ligne compris,
+  est refusé en entier, avec un message : l'antislash ne le neutraliserait pas.
 
 ## Décisions
 
@@ -98,6 +115,16 @@ performance, communs à toutes les vues.
   panneau de droite. C'est le choix fait pendant le ticket, parce que des bornes qui dépendent
   l'une de l'autre oscillent. Je ne l'ai pas encore validé (issue #23).
 
+- Décidé le 2026-11-03 : un chemin cité est vérifié au survol de sa ligne, ⌘ enfoncé ou non,
+  alors que l'issue #13 demandait la vérification au survol avec ⌘. xterm garde les liens d'une
+  ligne tant que la souris y reste : un ⌘ enfoncé sans bouger ne relancerait pas la vérification.
+  Coût : une question à Rust par ligne survolée.
+- Décidé le 2026-11-03 : les chemins déposés sont échappés par des antislashs, comme iTerm, plutôt
+  qu'entourés de `'…'` (issue #13). Claude Code reconnaît déjà ainsi une image déposée.
+- Décidé le 2026-11-03 : la recherche du terminal surligne ses occurrences par l'API proposée
+  d'xterm 6 (`allowProposedApi`), sans laquelle ni surbrillance ni compteur (issue #13). Risque
+  résiduel : cette API peut changer à une mise à jour d'xterm.
+
 ## Écarté
 
 - Ne coller qu'une sélection encore visible, comme le demandait l'issue #12 : un titre d'issue ou
@@ -110,5 +137,6 @@ performance, communs à toutes les vues.
 - #10 — Interface : bouton de thème, système, clair, sombre
 - #11 — Terminal : ⌘+clic sur un lien
 - #12 — Terminal : clic molette colle la sélection dans le prompt
+- #13 — Terminal : chemins cliquables, ⌘F, glisser-déposer, taille de police
 - #21 — Interface : écran de démarrage
 - #23 — Interface — panneaux latéraux redimensionnables

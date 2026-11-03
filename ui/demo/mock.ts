@@ -566,11 +566,14 @@ function projectFile(path: string, reveal: boolean) {
   return { state: 'content', kind, text, dataUrl: null };
 }
 
+const LINKED_ROOT = `${HOME}/code/wt-panier-promo/`;
+
 /** Comme Rust : seuls les fichiers du worktree du premier agent se lisent. */
 function linkedFile(uri: string) {
   const path = decodeURIComponent(new URL(uri).pathname);
-  if (!path.startsWith('/Users/demo/code/wt-panier-promo/')) throw "hors du projet de l'agent : non lu";
-  if (path.endsWith('/.env')) return { state: 'secret' };
+  if (!path.startsWith(LINKED_ROOT)) throw "hors du projet de l'agent : non lu";
+  const relative = path.slice(LINKED_ROOT.length);
+  if (PROJECT_FILES.includes(relative)) return projectFile(relative, false);
   return { state: 'content', kind: 'markdown', text: `# ${path.split('/').pop()}\n\nRapport de démo, ouvert par **⌘+clic** dans le terminal.`, dataUrl: null };
 }
 
@@ -642,6 +645,11 @@ const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
     return { kind: 'markdown', text: `# ${name}\n\nNote de démo écrite par l'agent.`, dataUrl: null };
   },
   read_linked_file: (args) => linkedFile(String(args.uri)),
+  /** Chemins cités par l'agent de démo : seuls ceux de `PROJECT_FILES` existent. */
+  resolve_linked_paths: (args) => (args.cited as string[]).map((cited) => {
+    const path = cited.startsWith('/') ? cited : LINKED_ROOT + cited.replace(/^\.\//, '');
+    return PROJECT_FILES.includes(path.slice(LINKED_ROOT.length)) ? path : null;
+  }),
   project_files: () => ({ files: PROJECT_FILES, secrets: ['.env'] }),
   read_project_file: (args) => projectFile(String(args.path), Boolean(args.reveal)),
   containers: () => containers,
@@ -721,6 +729,8 @@ export function install() {
       },
       unregisterCallback: (id: number) => callbacks.delete(id),
       convertFileSrc: (p: string) => p,
+      // Lu par `getCurrentWebview()` ; un dépôt de fichiers se simule par `emit('tauri://drag-drop', …)`.
+      metadata: { currentWindow: { label: 'main' }, currentWebview: { windowLabel: 'main', label: 'main' } },
       async invoke(cmd: string, args: Record<string, unknown> = {}) {
         if (cmd === 'plugin:event|listen') {
           const event = args.event as string;

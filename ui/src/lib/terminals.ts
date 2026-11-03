@@ -1,7 +1,8 @@
 import { Terminal, type IBuffer, type ILink, type ILinkProvider } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { SearchAddon, type ISearchOptions } from '@xterm/addon-search';
 import { api } from './api';
-import { LINK_PATTERN, openLink } from './links';
+import { citedPaths, fileUrl, LINK_PATTERN, openLink } from './links';
 
 /**
  * Un terminal xterm par agent, conservé hors du DOM quand on change de vue :
@@ -10,11 +11,17 @@ import { LINK_PATTERN, openLink } from './links';
 interface Host {
   term: Terminal;
   fit: FitAddon;
+  search: SearchAddon;
   el: HTMLDivElement;
   opened: boolean;
-  /** Ouvre un lien `file://` cliqué dans ce terminal ; fourni par la vue qui l'affiche. */
-  onfile?: (uri: string) => void;
+  /**
+   * Ouvre un lien `file://` cliqué dans ce terminal, à la ligne citée s'il y en a une ; fourni par
+   * la vue qui l'affiche.
+   */
+  onfile?: OpenFile;
 }
+
+type OpenFile = (uri: string, line?: number) => void;
 
 const hosts = new Map<string, Host>();
 
@@ -131,32 +138,143 @@ function logicalLine(buffer: IBuffer, y: number): { text: string; cells: [number
   return { text, cells };
 }
 
-/** URL affichées en clair, web ou `file://`. */
-function plainLinks(term: Terminal, activate: (event: MouseEvent, uri: string) => void): ILinkProvider {
+/**
+ * Liens d'une ligne : URL affichées en clair, web ou `file://`, et chemins de fichier cités sans
+ * `file://` (`src/foo.rs:42`). Un chemin n'est un lien que si Rust dit qu'il désigne un fichier
+ * lisible : la question ne part qu'au survol d'une ligne, et xterm garde la réponse tant que la
+ * souris y reste.
+ */
+function lineLinks(term: Terminal, id: string, activate: (event: MouseEvent, uri: string) => void): ILinkProvider {
   return {
     provideLinks(y, callback) {
       const { text, cells } = logicalLine(term.buffer.active, y - 1);
-      const links = [...text.matchAll(LINK_PATTERN)].flatMap((m): ILink[] => {
-        const start = cells[m.index];
-        const end = cells[m.index + m[0].length - 1];
+      const link = (index: number, length: number, open: (event: MouseEvent, text: string) => void): ILink[] => {
+        const start = cells[index];
+        const end = cells[index + length - 1];
         if (!start || !end) return [];
         const link: ILink = {
           range: { start: { x: start[0] + 1, y: start[1] + 1 }, end: { x: end[0] + 1, y: end[1] + 1 } },
-          text: m[0],
+          text: text.slice(index, index + length),
           // Lues par xterm à l'arrivée sur le lien ; `setMeta` les change ensuite.
           decorations: {
             get underline() { return meta; },
             get pointerCursor() { return meta; },
           },
-          activate,
+          activate: open,
           hover: () => void hovered.add(link),
           leave: () => void hovered.delete(link),
         };
         return [link];
-      });
-      callback(links.length ? links : undefined);
+      };
+      const urls = [...text.matchAll(LINK_PATTERN)];
+      const found = urls.flatMap((m) => link(m.index, m[0].length, activate));
+      const cited = citedPaths(text, urls);
+      const done = (links: ILink[]) => callback(links.length ? links : undefined);
+      if (!cited.length) return done(found);
+      api.resolveLinkedPaths(id, cited.map((c) => c.path)).then(
+        (resolved) => done([
+          ...found,
+          ...cited.flatMap(({ index, length, line }, i) => {
+            const path = resolved[i];
+            if (!path) return [];
+            return link(index, length, (event) => {
+              if (event.metaKey) hosts.get(id)?.onfile?.(fileUrl(path), line);
+            });
+          }),
+        ]),
+        () => done(found),
+      );
     },
   };
+}
+
+/**
+ * Raccourci de Robiade tapé dans un terminal. xterm laisse passer ses trois événements (keydown,
+ * keypress, keyup) sans les traiter, la vue le reçoit en keydown : rien ne part dans le PTY.
+ */
+export type TerminalShortcut = 'find' | 'bigger' | 'smaller' | 'reset';
+
+export function terminalShortcut(e: KeyboardEvent): TerminalShortcut | null {
+  if (!e.metaKey || e.ctrlKey || e.altKey) return null;
+  if (e.key === 'f') return 'find';
+  if (e.key === '+' || e.key === '=') return 'bigger';
+  if (e.key === '-') return 'smaller';
+  // En AZERTY, 0 se tape avec ⇧ : la touche compte, pas le caractère.
+  if (e.key === '0' || e.code === 'Digit0') return 'reset';
+  return null;
+}
+
+const FONT_SIZE_KEY = 'robiade.terminal.fontSize';
+const FONT_SIZE = { min: 9, max: 24, initial: 13 };
+
+/** Taille de police des terminaux d'agent, réglée sur ce poste. */
+let fontSize = storedFontSize();
+
+function storedFontSize(): number {
+  try {
+    const stored = Number(localStorage.getItem(FONT_SIZE_KEY));
+    return Number.isInteger(stored) && stored >= FONT_SIZE.min && stored <= FONT_SIZE.max ? stored : FONT_SIZE.initial;
+  } catch {
+    return FONT_SIZE.initial;
+  }
+}
+
+/**
+ * ⌘+, ⌘− et ⌘0 : un point de plus ou de moins, ou la taille d'origine, pour tous les terminaux
+ * d'agent. Ceux qui sont affichés se recalent tout de suite, et le PTY reçoit leur nouvelle
+ * taille ; les autres, quand `attach` les réaffiche.
+ */
+export function resizeFont(step: 'bigger' | 'smaller' | 'reset') {
+  const wanted = step === 'reset' ? FONT_SIZE.initial : fontSize + (step === 'bigger' ? 1 : -1);
+  const next = Math.min(Math.max(wanted, FONT_SIZE.min), FONT_SIZE.max);
+  if (next === fontSize) return;
+  fontSize = next;
+  try {
+    localStorage.setItem(FONT_SIZE_KEY, String(next));
+  } catch {
+    // Stockage inaccessible : la taille vaut pour la session.
+  }
+  for (const [id, h] of hosts) {
+    h.term.options.fontSize = next;
+    refit(id);
+  }
+}
+
+/** Occurrences en surbrillance, dans les couleurs du thème (xterm exige du `#RRGGBB`). */
+const FIND_OPTIONS: ISearchOptions = {
+  decorations: {
+    matchBackground: '#494d64',
+    matchBorder: '#8aadf4',
+    matchOverviewRuler: '#8aadf4',
+    activeMatchBackground: '#7a6a45',
+    activeMatchBorder: '#eed49f',
+    activeMatchColorOverviewRuler: '#eed49f',
+  },
+};
+
+/**
+ * Cherche `text` dans l'historique du terminal : `typing` étend l'occurrence courante pendant la
+ * frappe, `next` et `previous` passent à la suivante ou à la précédente.
+ */
+export function find(id: string, text: string, move: 'typing' | 'next' | 'previous') {
+  const search = hosts.get(id)?.search;
+  if (!search) return;
+  if (!text) return search.clearDecorations();
+  if (move === 'previous') search.findPrevious(text, FIND_OPTIONS);
+  else search.findNext(text, { ...FIND_OPTIONS, incremental: move === 'typing' });
+}
+
+/** Position de l'occurrence courante (-1 au-delà de 1 000 occurrences) et nombre d'occurrences. */
+export function onFindResults(id: string, listener: (index: number, count: number) => void): () => void {
+  const subscription = hosts.get(id)?.search.onDidChangeResults((r) => listener(r.resultIndex, r.resultCount));
+  return () => subscription?.dispose();
+}
+
+/** Fin de recherche : surbrillances effacées, le clavier revient au terminal. */
+export function endFind(id: string, focus: boolean) {
+  const h = hosts.get(id);
+  h?.search.clearDecorations();
+  if (focus) h?.term.focus();
 }
 
 function host(id: string): Host {
@@ -167,11 +285,12 @@ function host(id: string): Host {
   };
   const term = new Terminal({
     fontFamily: cssVar('--mono'),
-    fontSize: 13,
+    fontSize,
     lineHeight: 1.15,
     cursorBlink: true,
     scrollback: 10000,
-    allowProposedApi: false,
+    // Les surbrillances de la recherche (`registerDecoration`) font encore partie de l'API proposée.
+    allowProposedApi: true,
     macOptionIsMeta: true,
     theme: TERMINAL_THEME,
     // Liens OSC 8 : Claude Code n'en émet pas dans notre PTY (`FORCE_HYPERLINK=0`), mais un autre
@@ -179,9 +298,12 @@ function host(id: string): Host {
     // Les autres schémas sont reçus pour être refusés par `openLink`, sans boîte de dialogue.
     linkHandler: { activate, allowNonHttpProtocols: true },
   });
-  term.registerLinkProvider(plainLinks(term, activate));
+  term.registerLinkProvider(lineLinks(term, id, activate));
   const fit = new FitAddon();
   term.loadAddon(fit);
+  const search = new SearchAddon();
+  term.loadAddon(search);
+  term.attachCustomKeyEventHandler((e) => !terminalShortcut(e));
   term.onData((data) => void api.writeAgent(id, data).catch(() => {}));
   term.onResize(({ cols, rows }) => void api.resizeAgent(id, cols, rows).catch(() => {}));
   // Le texte est lu pendant le glisser : un clic ultérieur dans le terminal efface la surbrillance,
@@ -191,6 +313,7 @@ function host(id: string): Host {
   });
   const el = document.createElement('div');
   el.className = 'term-host';
+  el.dataset.agent = id;
   // ⌘ enfoncé avant que la fenêtre ait le focus : le premier mouvement de souris le dit.
   el.addEventListener('mousemove', (e) => setMeta(e.metaKey));
   // Clic molette, intercepté avant xterm : si le programme suit la souris, xterm lui transmettrait
@@ -204,9 +327,41 @@ function host(id: string): Host {
   el.addEventListener('mousedown', (e) => void (middle(e) && pastePrimary(term)), true);
   el.addEventListener('mouseup', middle, true);
   el.addEventListener('auxclick', middle, true);
-  h = { term, fit, el, opened: false };
+  h = { term, fit, search, el, opened: false };
   hosts.set(id, h);
   return h;
+}
+
+/** Agent dont le terminal est sous ce point de la fenêtre, en pixels CSS. */
+export function terminalAt(x: number, y: number): string | undefined {
+  return document.elementFromPoint(x, y)?.closest<HTMLElement>('.term-host')?.dataset.agent;
+}
+
+/**
+ * Chemin échappé pour le shell comme le fait iTerm, par des antislashs : Claude Code reconnaît
+ * ainsi une image déposée. Seuls les blancs et les caractères spéciaux du shell sont échappés.
+ */
+function shellEscape(path: string): string {
+  return path.replace(/[\s\\'"`$&;|*?[\]{}()<>#~!^]/g, '\\$&');
+}
+
+/** Un caractère de contrôle C0 ou C1, retour à la ligne et tabulation compris. */
+const ANY_CONTROL = /[\x00-\x1f\x7f-\x9f]/;
+
+/**
+ * Fichiers déposés sur le terminal : leurs chemins vont au prompt, séparés et suivis d'une espace
+ * pour enchaîner un autre dépôt, sans Entrée. Collés et non tapés : Claude Code reçoit un collage.
+ * Un nom de fichier peut contenir un retour à la ligne ou un `ESC`, que l'antislash ne neutralise
+ * pas : il validerait le prompt ou sortirait du collage. Le dépôt est alors refusé, en entier ;
+ * renvoie `false`.
+ */
+export function dropPaths(id: string, paths: string[]): boolean {
+  const h = hosts.get(id);
+  if (!h || !paths.length) return true;
+  if (paths.some((p) => ANY_CONTROL.test(p))) return false;
+  h.term.paste(`${paths.map(shellEscape).join(' ')} `);
+  h.term.focus();
+  return true;
 }
 
 export function writeOutput(id: string, base64: string) {
@@ -216,7 +371,7 @@ export function writeOutput(id: string, base64: string) {
   host(id).term.write(bytes);
 }
 
-export function attach(id: string, container: HTMLElement, onfile: (uri: string) => void) {
+export function attach(id: string, container: HTMLElement, onfile: OpenFile) {
   const h = host(id);
   h.onfile = onfile;
   container.replaceChildren(h.el);

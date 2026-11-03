@@ -10,6 +10,44 @@ import type { AssetContent } from './types';
  */
 export const LINK_PATTERN = /(?:https?|file):\/\/[^\s"'!*(){}|\\^<>`]*[^\s"':,.!?{}|\\^~[\]`()<>]/gi;
 
+/** Chemin de fichier cité en clair dans un texte (`src/foo.rs:42:7`), et sa place dans ce texte. */
+export interface CitedPath {
+  index: number;
+  /** Longueur du texte cité, ligne et colonne comprises. */
+  length: number;
+  path: string;
+  line?: number;
+}
+
+/**
+ * Suite de caractères de chemin, suivie de `:ligne` ou `:ligne:colonne`. Elle ne finit pas par un
+ * point : celui qui clôt une phrase n'en fait pas partie.
+ */
+const CITED_PATH = /(?<![\p{L}\p{N}_.@+~/-])[\p{L}\p{N}_.@+~/-]*[\p{L}\p{N}_@+~/-](?::(\d+)(?::\d+)?)?/gu;
+
+/** Un chemin a un dossier (`src/a`) ou une extension faite de lettres (`a.rs`, pas `1.5`). */
+const LOOKS_LIKE_PATH = /^(?=.*[\p{L}\p{N}]).*\/|\.\p{L}[\p{L}\p{N}]*$/u;
+
+/**
+ * Chemins que Claude Code cite sans `file://` : relatifs à son dossier (`src/foo.rs:42`), absolus
+ * ou sous `~/`. Seul l'aspect compte ici, quitte à prendre `et/ou` : Rust dit ensuite lesquels
+ * désignent un fichier. Ce qui chevauche une URL de `urls` lui appartient.
+ */
+export function citedPaths(text: string, urls: { index: number; 0: string }[]): CitedPath[] {
+  return [...text.matchAll(CITED_PATH)].flatMap((m): CitedPath[] => {
+    const path = m[1] === undefined ? m[0] : m[0].slice(0, m[0].indexOf(':'));
+    const end = m.index + m[0].length;
+    const inUrl = urls.some((u) => m.index < u.index + u[0].length && u.index < end);
+    if (inUrl || !LOOKS_LIKE_PATH.test(path)) return [];
+    return [{ index: m.index, length: m[0].length, path, line: m[1] === undefined ? undefined : Number(m[1]) }];
+  });
+}
+
+/** URL `file://` d'un chemin absolu, que `linkedPath` et Rust décodent à l'identique. */
+export function fileUrl(path: string): string {
+  return `file://${encodeURI(path).replace(/[?#]/g, encodeURIComponent)}`;
+}
+
 /**
  * Seule sortie d'un lien cliqué dans un terminal. La sortie d'un agent n'est pas fiable (page,
  * issue ou fichier relu) : le web part au navigateur, un `file://` au visualiseur de Robiade, qui
