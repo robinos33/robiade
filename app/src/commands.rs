@@ -354,13 +354,7 @@ pub async fn read_linked_file(app: tauri::AppHandle, id: String, uri: String) ->
 /// `path`, absolu, lu s'il reste dans `root` (canonique) une fois résolu. Un lien nommé comme un
 /// fichier de secrets en est un, quelle que soit sa cible ; `read_inside` vérifie la cible.
 fn read_linked(root: &Path, path: &str) -> CmdResult<ProjectFileDto> {
-    let outside = || "hors du projet de l'agent : non lu".to_owned();
-    let file = match Path::new(path).canonicalize() {
-        Ok(file) => file,
-        Err(_) if Path::new(path).starts_with(root) => return Err("fichier introuvable : déplacé ou supprimé ?".into()),
-        Err(_) => return Err(outside()),
-    };
-    let relative = file.strip_prefix(root).map_err(|_| outside())?.to_string_lossy().into_owned();
+    let (file, relative) = linked_inside(root, path)?;
     if code::is_secret_file(path) {
         return Ok(ProjectFileDto::Secret);
     }
@@ -368,6 +362,19 @@ fn read_linked(root: &Path, path: &str) -> CmdResult<ProjectFileDto> {
         return Err("dossier : pas d'aperçu".into());
     }
     read_inside(root, &relative, false)
+}
+
+/// `path`, absolu, une fois résolu (`..` et liens suivis), et son chemin relatif à `root`
+/// (canonique). Refusé s'il n'existe pas ou s'il sort de `root`.
+fn linked_inside(root: &Path, path: &str) -> CmdResult<(PathBuf, String)> {
+    let outside = || "hors du projet de l'agent : non lu".to_owned();
+    let file = match Path::new(path).canonicalize() {
+        Ok(file) => file,
+        Err(_) if Path::new(path).starts_with(root) => return Err("fichier introuvable : déplacé ou supprimé ?".into()),
+        Err(_) => return Err(outside()),
+    };
+    let relative = file.strip_prefix(root).map_err(|_| outside())?.to_string_lossy().into_owned();
+    Ok((file, relative))
 }
 
 /// Racine que l'onglet Code peut lire : celle d'un dépôt Git ou d'un de ses worktrees liés.
