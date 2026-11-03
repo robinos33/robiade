@@ -13,7 +13,7 @@ use robiade_core::tasks::{finish_session_task, SessionId, TaskError};
 pub const ENV_SESSION_ID: &str = "ROBIADE_SESSION_ID";
 /// `robiade.db` de l'instance qui a lancé l'agent (installée ou `tauri dev`).
 pub const ENV_DB: &str = "ROBIADE_DB";
-/// Ce binaire : il n'est pas dans le PATH de l'agent.
+/// Ce binaire : il n'est pas dans le PATH de l'agent. Nommé tel quel dans le prompt de `task_start`.
 pub const ENV_BIN: &str = "ROBIADE_BIN";
 
 const USAGE: &str = "usage : robiade task done";

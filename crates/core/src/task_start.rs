@@ -40,8 +40,14 @@ pub fn initial_prompt(task: &Task, issue: Option<&Issue>, branch: &str) -> Strin
         prompt.push_str("\n\nMes notes sur cette tâche :\n");
         prompt.push_str(&kept);
     }
+    prompt.push_str(CLOSING_LINE);
     prompt
 }
+
+/// La commande existe, mais c'est moi qui décide que la tâche est finie. `ROBIADE_BIN` : posé par
+/// l'app au lancement de l'agent (`task_cli::ENV_BIN`).
+const CLOSING_LINE: &str = "\n\nQuand je te dirai que la tâche est finie, ferme-la avec `\"$ROBIADE_BIN\" task done` ; \
+     ne la lance jamais sans que je te le demande.";
 
 #[cfg(test)]
 mod tests {
@@ -91,7 +97,16 @@ mod tests {
         let prompt = initial_prompt(&task("Notifs", "  Commencer par le spike.  "), None, "tache-notifs");
         assert!(prompt.starts_with("Travaille sur ma tâche : « Notifs »."));
         assert!(prompt.contains("`tache-notifs`"));
-        assert!(prompt.ends_with("Mes notes sur cette tâche :\nCommencer par le spike."));
+        assert!(prompt.contains("Mes notes sur cette tâche :\nCommencer par le spike.\n\n"));
         assert!(!initial_prompt(&task("Notifs", " "), None, "b").contains("Mes notes"));
+    }
+
+    #[test]
+    fn the_prompt_ends_with_how_to_close_the_task_on_request() {
+        for issue in [None, Some(issue())] {
+            let prompt = initial_prompt(&task("Notifs", "Mes notes."), issue.as_ref(), "b");
+            assert!(prompt.ends_with(CLOSING_LINE), "{prompt}");
+            assert!(prompt.contains("`\"$ROBIADE_BIN\" task done`"));
+        }
     }
 }
