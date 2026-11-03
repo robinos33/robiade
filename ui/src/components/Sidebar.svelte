@@ -4,8 +4,12 @@
   import type { Worktree } from '../lib/types';
   import Icon from './Icon.svelte';
   import Logo from './Logo.svelte';
+  import ResizeHandle from './ResizeHandle.svelte';
   import UpdateStatus from './UpdateStatus.svelte';
   import WorktreeRemoveDialog from './WorktreeRemoveDialog.svelte';
+
+  /** Largeur choisie à la poignée ; `null` garde celle de la feuille de style. */
+  let width = $state<number | null>(null);
 
   const NAV: { view: View; label: string; icon: string; key: string }[] = [
     { view: 'inbox', label: 'Inbox', icon: 'inbox', key: '1' },
@@ -68,7 +72,8 @@
 
 <svelte:window onclick={closeMenu} onkeydown={closeMenu} onblur={() => (menu = null)} />
 
-<nav>
+<nav style:--sidebar-w={width ? `${width}px` : null}>
+  <ResizeHandle id="sidebar" edge="right" min={180} max={360} label="Largeur de la barre latérale" bind:width />
   <div class="titlebar" data-tauri-drag-region></div>
 
   <div class="brand" data-tauri-drag-region>
@@ -172,8 +177,8 @@
 
 <style>
   nav {
-    display: flex; flex-direction: column; min-height: 0;
-    width: 232px; flex: none; padding: 0 10px 10px;
+    position: relative; display: flex; flex-direction: column; min-height: 0;
+    width: var(--sidebar-w, 232px); flex: none; padding: 0 10px 10px;
     background: var(--bg-raised); border-right: 1px solid var(--line);
   }
   .titlebar { height: 30px; flex: none; }

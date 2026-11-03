@@ -4,6 +4,7 @@
   import { listen } from '@tauri-apps/api/event';
   import { api } from '../lib/api';
   import { TERMINAL_THEME } from '../lib/terminals';
+  import { panelDrag } from '../lib/panelDrag.svelte';
 
   let { id }: { id: string } = $props();
   // La liste est relue toutes les 5 s et `id` vient d'un objet neuf à chaque fois : sans ce
@@ -42,8 +43,13 @@
     term.loadAddon(fit);
     term.open(host);
     fit.fit();
-    const observer = new ResizeObserver(() => fit.fit());
+    const observer = new ResizeObserver(() => { if (!panelDrag.active) fit.fit(); });
     observer.observe(host);
+    // Pendant le glisser d'une poignée, un seul `fit`, au relâchement. Effet imbriqué : il suit
+    // `panelDrag` sans faire repartir le suivi des logs, et meurt avec le terminal.
+    $effect(() => {
+      if (!panelDrag.active) fit.fit();
+    });
 
     let stream: number | null = null;
     let closed = false;
@@ -84,7 +90,8 @@
 
 <style>
   .logs { display: flex; flex-direction: column; min-height: 0; flex: 1; background: #24273a; border-radius: var(--radius); overflow: hidden; }
-  .term { flex: 1; min-height: 0; padding: 6px 0 0 8px; }
+  /* `fit` suspendu pendant un glisser : xterm garde sa taille, rognée plutôt que débordante. */
+  .term { flex: 1; min-height: 0; overflow: hidden; padding: 6px 0 0 8px; }
   .note { margin: 0; padding: 6px 10px; font-size: 12px; background: var(--bg-raised); }
   .error { color: var(--danger); }
 </style>

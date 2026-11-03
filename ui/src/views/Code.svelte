@@ -9,12 +9,17 @@
   import FileFinder from '../components/FileFinder.svelte';
   import FilePreview, { copySource } from '../components/FilePreview.svelte';
   import Icon from '../components/Icon.svelte';
+  import ResizeHandle from '../components/ResizeHandle.svelte';
 
   const root = $derived(app.codeRoot);
   const rootName = $derived.by(() => {
     if (app.worktree) return app.worktrees.find((w) => w.path === app.worktree)?.name ?? baseName(app.worktree);
     return app.projects.find((p) => p.root === app.project)?.name ?? baseName(app.project ?? '');
   });
+
+  /** Largeur de l'arbre choisie à la poignée ; `null` garde celle de la feuille de style. */
+  let treeWidth = $state<number | null>(null);
+  let splitW = $state(0);
 
   let files = $state<string[] | null>(null);
   let secrets = $state(new Set<string>());
@@ -140,42 +145,53 @@
       </div>
     </div>
   {:else}
-    <div class="split">
-      <ul class="tree" role="tree" bind:this={list} tabindex="0" {onkeydown} aria-label="Fichiers de {rootName}">
-        {#if listError}
-          <li class="empty" role="none">{listError}</li>
-        {:else if !files}
-          <li class="empty" role="none">Lecture des fichiers…</li>
-        {:else if files.length === 0}
-          <li class="empty" role="none">Aucun fichier suivi ni à suivre.</li>
-        {/if}
-        {#each rows as row (row.path)}
-          <li role="none">
-            <button
-              class="row"
-              role="treeitem"
-              aria-selected={row.path === opened}
-              aria-expanded={row.dir ? expanded.has(row.path) : undefined}
-              class:cursor={row.path === cursor}
-              class:opened={row.path === opened}
-              style:padding-left="{8 + row.depth * 14}px"
-              data-path={row.path}
-              tabindex="-1"
-              onclick={() => (row.dir ? toggle(row.path) : open(row.path))}
-              title={row.path}
-            >
-              {#if row.dir}
-                <span class="chevron" class:open={expanded.has(row.path)}><Icon name="next" size={12} /></span>
-                <Icon name="folder" size={14} />
-              {:else}
-                <span class="chevron"></span>
-                <Icon name={secrets.has(row.path) ? 'lock' : 'file'} size={14} />
-              {/if}
-              <span class="name">{row.name}</span>
-            </button>
-          </li>
-        {/each}
-      </ul>
+    <div class="split" bind:clientWidth={splitW} style:--tree-w={treeWidth ? `${treeWidth}px` : null}>
+      <!-- Enveloppe sans défilement : la poignée reste sur la bordure quand l'arbre défile. -->
+      <div class="pane">
+        <ResizeHandle
+          id="code.tree"
+          edge="right"
+          min={180}
+          max={splitW ? splitW - 400 : Infinity}
+          label="Largeur de l'arbre des fichiers"
+          bind:width={treeWidth}
+        />
+        <ul class="tree" role="tree" bind:this={list} tabindex="0" {onkeydown} aria-label="Fichiers de {rootName}">
+          {#if listError}
+            <li class="empty" role="none">{listError}</li>
+          {:else if !files}
+            <li class="empty" role="none">Lecture des fichiers…</li>
+          {:else if files.length === 0}
+            <li class="empty" role="none">Aucun fichier suivi ni à suivre.</li>
+          {/if}
+          {#each rows as row (row.path)}
+            <li role="none">
+              <button
+                class="row"
+                role="treeitem"
+                aria-selected={row.path === opened}
+                aria-expanded={row.dir ? expanded.has(row.path) : undefined}
+                class:cursor={row.path === cursor}
+                class:opened={row.path === opened}
+                style:padding-left="{8 + row.depth * 14}px"
+                data-path={row.path}
+                tabindex="-1"
+                onclick={() => (row.dir ? toggle(row.path) : open(row.path))}
+                title={row.path}
+              >
+                {#if row.dir}
+                  <span class="chevron" class:open={expanded.has(row.path)}><Icon name="next" size={12} /></span>
+                  <Icon name="folder" size={14} />
+                {:else}
+                  <span class="chevron"></span>
+                  <Icon name={secrets.has(row.path) ? 'lock' : 'file'} size={14} />
+                {/if}
+                <span class="name">{row.name}</span>
+              </button>
+            </li>
+          {/each}
+        </ul>
+      </div>
 
       <div class="detail">
         {#if opened}
@@ -224,9 +240,10 @@
 
 <style>
   .page { display: flex; flex-direction: column; min-height: 0; flex: 1; }
-  .split { display: grid; grid-template-columns: minmax(240px, 26%) 1fr; min-height: 0; flex: 1; }
+  .split { display: grid; grid-template-columns: var(--tree-w, minmax(240px, 26%)) 1fr; min-height: 0; flex: 1; }
+  .pane { position: relative; display: flex; min-width: 0; min-height: 0; }
   .tree {
-    list-style: none; margin: 0; padding: 6px; overflow: auto; border-right: 1px solid var(--line);
+    flex: 1; min-width: 0; list-style: none; margin: 0; padding: 6px; overflow: auto; border-right: 1px solid var(--line);
     outline: none;
   }
   .row {

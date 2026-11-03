@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { DbCell, DbColumn, DbSort } from '../lib/types';
+  import ResizeHandle from './ResizeHandle.svelte';
 
   let {
     columns,
@@ -26,6 +27,10 @@
   const COL_W = 200;
 
   /** Cellule ouverte dans le panneau de détail. */
+  /** Largeur du détail choisie à la poignée ; `null` garde celle de la feuille de style. */
+  let detailWidth = $state<number | null>(null);
+  let bodyW = $state(0);
+
   let detail = $state<{ column: DbColumn; cell: DbCell | null } | null>(null);
 
   let scroller: HTMLDivElement | undefined = $state();
@@ -71,7 +76,7 @@
   }
 </script>
 
-<div class="body">
+<div class="body" bind:clientWidth={bodyW}>
   <div class="scroller" bind:this={scroller} {onscroll} bind:clientHeight={viewport}>
     <div class="row head" style:grid-template-columns={template}>
       <span class="cell index"></span>
@@ -104,7 +109,15 @@
 
   {#if detail}
     {@const d = detail}
-    <aside class="detail">
+    <aside class="detail" style:--detail-w={detailWidth ? `${detailWidth}px` : null}>
+      <ResizeHandle
+        id="db.detail"
+        edge="left"
+        min={260}
+        max={bodyW ? bodyW - 300 : Infinity}
+        label="Largeur du détail de la valeur"
+        bind:width={detailWidth}
+      />
       <header>
         <strong class="ellipsis">{d.column.name}</strong>
         <span class="muted mono type">{d.column.dataType}</span>
@@ -149,7 +162,7 @@
   .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
   .empty { padding: 16px; position: absolute; top: 34px; }
   .detail {
-    width: 380px; flex: none; border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0;
+    position: relative; width: var(--detail-w, 380px); flex: none; border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0;
     background: var(--bg-raised);
   }
   .detail header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); }

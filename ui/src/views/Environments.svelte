@@ -5,8 +5,13 @@
   import type { Container, ContainerAction, Worktree } from '../lib/types';
   import ContainerActionConfirm from '../components/ContainerActionConfirm.svelte';
   import ContainerLogs from '../components/ContainerLogs.svelte';
+  import ResizeHandle from '../components/ResizeHandle.svelte';
   import WorktreeCreateDialog from '../components/WorktreeCreateDialog.svelte';
   import WorktreeRemoveDialog from '../components/WorktreeRemoveDialog.svelte';
+
+  /** Largeur des logs choisie à la poignée ; `null` garde celle de la feuille de style. */
+  let logsWidth = $state<number | null>(null);
+  let bodyW = $state(0);
 
   let containers = $state<Container[] | null>(null);
   let error = $state<string | null>(null);
@@ -108,7 +113,12 @@
     </button>
   </header>
 
-  <div class="body" class:split={selected !== null}>
+  <div
+    class="body"
+    class:split={selected !== null}
+    bind:clientWidth={bodyW}
+    style:--logs-w={logsWidth ? `${logsWidth}px` : null}
+  >
     <div class="scroll">
       {#if app.worktrees.length > 0}
         <div class="block">
@@ -178,6 +188,15 @@
 
     {#if selected}
       <aside class="side">
+        <!-- La liste garde ses 420px minimum, comme avant la poignée. -->
+        <ResizeHandle
+          id="environments.logs"
+          edge="left"
+          min={320}
+          max={bodyW ? bodyW - 420 : Infinity}
+          label="Largeur des logs du conteneur"
+          bind:width={logsWidth}
+        />
         <header class="side-head">
           <strong class="ellipsis">{selected.name}</strong>
           <span class="mono muted ellipsis">{selected.image}</span>
@@ -207,7 +226,7 @@
 <style>
   .page { display: flex; flex-direction: column; min-height: 0; flex: 1; }
   .body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr; }
-  .body.split { grid-template-columns: minmax(420px, 1fr) minmax(420px, 1.2fr); }
+  .body.split { grid-template-columns: minmax(420px, 1fr) var(--logs-w, minmax(420px, 1.2fr)); }
   .scroll { overflow-y: auto; padding: 22px 24px 40px; display: flex; flex-direction: column; gap: 24px; max-width: 1100px; }
   .section-title { display: flex; align-items: baseline; gap: 10px; }
   .origin { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--ink-3); }
@@ -231,7 +250,7 @@
   .actions { display: flex; justify-content: flex-end; gap: 4px; flex: none; width: 190px; padding-right: 8px; opacity: 0; }
   .row:hover .actions, .row:focus-within .actions { opacity: 1; }
   .small { height: 24px; padding: 0 8px; font-size: 12px; }
-  .side { display: flex; flex-direction: column; min-height: 0; padding: 12px 16px 16px; gap: 8px; border-left: 1px solid var(--line); }
+  .side { position: relative; display: flex; flex-direction: column; min-height: 0; padding: 12px 16px 16px; gap: 8px; border-left: 1px solid var(--line); }
   .side-head { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
   .spacer { flex: 1; }
   .error {
