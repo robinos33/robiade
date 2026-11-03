@@ -34,8 +34,9 @@ impl AgentProcess {
             .map_err(|e| e.to_string())?;
         let mut cmd = CommandBuilder::new(spec.claude);
         // Un Robiade lancé depuis Claude Code ferait de l'agent un sous-agent sans transcript (#16).
+        // Lancé depuis iTerm, il ferait croire à Claude Code qu'il tourne dans iTerm.
         for (name, _) in std::env::vars_os() {
-            if name.to_str().is_some_and(is_leaked_claude_var) {
+            if name.to_str().is_some_and(|n| is_leaked_claude_var(n) || is_parent_terminal_var(n)) {
                 cmd.env_remove(&name);
             }
         }
@@ -103,9 +104,14 @@ fn is_leaked_claude_var(name: &str) -> bool {
     name == "CLAUDECODE" || name.starts_with("CLAUDE_")
 }
 
+/// Variable qui décrit le terminal d'où Robiade a été lancé : le PTY d'un agent n'en est pas un.
+fn is_parent_terminal_var(name: &str) -> bool {
+    matches!(name, "TERM_PROGRAM" | "TERM_PROGRAM_VERSION" | "LC_TERMINAL" | "LC_TERMINAL_VERSION")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::is_leaked_claude_var;
+    use super::{is_leaked_claude_var, is_parent_terminal_var};
 
     #[test]
     fn strips_inherited_claude_code_variables_and_keeps_the_others() {
@@ -115,5 +121,13 @@ mod tests {
         assert!(!is_leaked_claude_var("ROBIADE_AGENT_ID"));
         assert!(!is_leaked_claude_var("PATH"));
         assert!(!is_leaked_claude_var("ANTHROPIC_API_KEY"));
+    }
+
+    #[test]
+    fn strips_the_identity_of_the_terminal_robiade_was_launched_from() {
+        assert!(is_parent_terminal_var("TERM_PROGRAM"));
+        assert!(is_parent_terminal_var("LC_TERMINAL"));
+        assert!(!is_parent_terminal_var("TERM"));
+        assert!(!is_parent_terminal_var("COLORTERM"));
     }
 }
