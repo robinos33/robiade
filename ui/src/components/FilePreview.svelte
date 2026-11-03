@@ -14,6 +14,7 @@
 <script lang="ts">
   import type { AssetContent } from '../lib/types';
   import { marked } from 'marked';
+  import CodeView from './CodeView.svelte';
 
   /** Feuille de style du Markdown rendu : l'iframe n'hérite pas de celle de Robiade. */
   const MARKDOWN_STYLE = `<style>
@@ -30,8 +31,8 @@
   </style>`;
 
   /**
-   * Aperçu d'un fichier déjà lu : image, HTML ou Markdown rendus, sinon texte. Le chargement et la
-   * barre d'outils restent à l'appelant (modale des assets, onglet Code).
+   * Aperçu d'un fichier déjà lu : image, HTML ou Markdown rendus, sinon texte coloré d'après
+   * `name`. Le chargement et la barre d'outils restent à l'appelant (modale des assets, onglet Code).
    */
   let { name, content, error = null, source = false }: {
     name: string;
@@ -62,7 +63,7 @@
          Le HTML brut d'un Markdown y est donc inoffensif, sans nettoyage à maintenir. -->
     <iframe title={name} sandbox="" srcdoc={rendered} class:md={content.kind === 'markdown'}></iframe>
   {:else}
-    <pre class="selectable">{content.text}</pre>
+    <CodeView text={content.text ?? ''} {name} />
   {/if}
 </div>
 
@@ -76,8 +77,4 @@
   img { max-width: 100%; max-height: 100%; object-fit: contain; }
   iframe { flex: 1; border: 0; background: #fff; }
   iframe.md { background: var(--bg); }
-  pre {
-    flex: 1; margin: 0; padding: 16px 20px; overflow: auto; font: 12.5px/1.55 var(--mono);
-    white-space: pre-wrap; word-break: break-word;
-  }
 </style>
