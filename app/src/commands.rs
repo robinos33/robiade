@@ -18,6 +18,7 @@ use robiade_core::stats;
 use robiade_core::tasks::{DueDate, SessionId, Task, TaskId, TaskRepository};
 use robiade_core::assets::{Asset, AssetKind};
 use robiade_core::code::{self, Peek};
+use robiade_core::links;
 use robiade_core::vcs::FileChange;
 use secrecy::ExposeSecret;
 use tauri::{Manager, State};
@@ -330,6 +331,43 @@ fn read_asset_file(asset: &Asset) -> CmdResult<AssetContentDto> {
     }
     let bytes = std::fs::read(&asset.path).map_err(|e| e.to_string())?;
     Ok(AssetContentDto::new(asset, bytes))
+}
+
+/// Fichier d'un lien `file://` du terminal d'un agent (⌘+clic). Le lien vient de la sortie de
+/// l'agent, qui n'est pas fiable : seuls ses assets et les fichiers de son dossier de travail
+/// (projet ou worktree) sont lus, avec les règles de l'onglet Code.
+#[tauri::command]
+pub async fn read_linked_file(app: tauri::AppHandle, id: String, uri: String) -> CmdResult<ProjectFileDto> {
+    let path = links::file_url_path(&uri).ok_or("lien de fichier illisible")?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let id = agent_id(&id)?;
+        if let Ok(asset) = state.agents.asset(&id, &path) {
+            return read_asset_file(&asset).map(ProjectFileDto::Content);
+        }
+        read_linked(&project_dir(&state.agents.project_path(&id)?)?, &path)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// `path`, absolu, lu s'il reste dans `root` (canonique) une fois résolu. Un lien nommé comme un
+/// fichier de secrets en est un, quelle que soit sa cible ; `read_inside` vérifie la cible.
+fn read_linked(root: &Path, path: &str) -> CmdResult<ProjectFileDto> {
+    let outside = || "hors du projet de l'agent : non lu".to_owned();
+    let file = match Path::new(path).canonicalize() {
+        Ok(file) => file,
+        Err(_) if Path::new(path).starts_with(root) => return Err("fichier introuvable : déplacé ou supprimé ?".into()),
+        Err(_) => return Err(outside()),
+    };
+    let relative = file.strip_prefix(root).map_err(|_| outside())?.to_string_lossy().into_owned();
+    if code::is_secret_file(path) {
+        return Ok(ProjectFileDto::Secret);
+    }
+    if file.is_dir() {
+        return Err("dossier : pas d'aperçu".into());
+    }
+    read_inside(root, &relative, false)
 }
 
 /// Racine que l'onglet Code peut lire : celle d'un dépôt Git ou d'un de ses worktrees liés.
@@ -1595,6 +1633,39 @@ mod tests {
         assert!(text(read_inside(&root, "alias.rs", false).unwrap()).starts_with("let t"));
         for refused in ["fuite", "../outside/secret", "/etc/hosts", "src/../../outside/secret", ".git/config", ".GIT/config", "config.ini", "src"] {
             assert!(read_inside(&root, refused, false).is_err(), "{refused}");
+        }
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn reads_a_linked_file_only_inside_the_agent_project() {
+        let base = std::env::temp_dir().join(format!("robiade-link-{}", std::process::id()));
+        let root = base.join("projet");
+        std::fs::create_dir_all(root.join("docs")).unwrap();
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        std::fs::create_dir_all(base.join("outside")).unwrap();
+        std::fs::write(root.join("docs/rapport.md"), "# Rapport").unwrap();
+        std::fs::write(root.join("config.txt"), "x").unwrap();
+        std::fs::write(root.join(".env"), "APP_SECRET=1").unwrap();
+        std::fs::write(root.join(".git/config"), "[remote]").unwrap();
+        std::fs::write(base.join("outside/secret.md"), "").unwrap();
+        std::os::unix::fs::symlink(base.join("outside/secret.md"), root.join("fuite.md")).unwrap();
+        std::os::unix::fs::symlink(root.join("config.txt"), root.join(".env.local")).unwrap();
+        let root = root.canonicalize().unwrap();
+        let at = |p: &str| format!("{}/{p}", root.display());
+        let refusal = |p: &str| read_linked(&root, p).err().expect("refus attendu");
+
+        match read_linked(&root, &at("docs/rapport.md")).unwrap() {
+            ProjectFileDto::Content(c) => assert_eq!(c.text.as_deref(), Some("# Rapport")),
+            _ => panic!("contenu attendu"),
+        }
+        assert!(matches!(read_linked(&root, &at(".env")).unwrap(), ProjectFileDto::Secret));
+        assert!(matches!(read_linked(&root, &at(".env.local")).unwrap(), ProjectFileDto::Secret));
+        assert!(refusal(&at("docs")).contains("dossier"));
+        assert!(refusal(&at("absent.md")).contains("introuvable"));
+        assert!(read_linked(&root, &at(".git/config")).is_err());
+        for outside in ["/etc/passwd", "/etc/absent", &at("fuite.md"), &at("../outside/secret.md")] {
+            assert!(refusal(outside).contains("hors du projet"), "{outside}");
         }
         std::fs::remove_dir_all(&base).unwrap();
     }
