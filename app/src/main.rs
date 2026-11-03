@@ -7,6 +7,7 @@ mod containers;
 mod db_sessions;
 mod dto;
 mod forge;
+mod task_cli;
 mod updates;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -131,10 +132,17 @@ fn own_dir(dir: std::path::PathBuf) -> std::path::PathBuf {
 }
 
 fn main() {
-    // Le même binaire sert de relais aux hooks et à la statusline de Claude Code.
+    // Le même binaire sert de relais aux hooks et à la statusline de Claude Code, et de commande
+    // aux agents pour fermer leur tâche.
     match std::env::args().nth(1).as_deref() {
         Some("hook") => return hooks::relay_from_stdin(),
         Some("statusline") => return hooks::relay_status_from_stdin(),
+        Some("task") => {
+            let args: Vec<String> = std::env::args().skip(2).collect();
+            let (code, message) = task_cli::run(&args, |name| std::env::var(name).ok(), now());
+            if code == 0 { println!("{message}") } else { eprintln!("{message}") }
+            std::process::exit(code);
+        }
         _ => {}
     }
 
