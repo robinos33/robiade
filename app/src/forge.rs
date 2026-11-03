@@ -136,7 +136,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use robiade_core::contributions::ContributionKind;
-    use robiade_core::forge::{Issue, IssueRef, MergeRequest};
+    use robiade_core::forge::{Approvals, Discussion, Issue, IssueRef, MergeRequest};
     use robiade_core::issue_actions::{IssuePlanned, NewIssue};
     use robiade_core::merge_actions::Planned;
 
@@ -169,6 +169,15 @@ mod tests {
             unreachable!()
         }
         fn issue(&self, _: &IssueRef) -> Result<Issue, ForgeError> {
+            unreachable!()
+        }
+        fn approvals(&self, _: &MrRef) -> Result<Approvals, ForgeError> {
+            unreachable!()
+        }
+        fn merge_request_discussions(&self, _: &MrRef) -> Result<Vec<Discussion>, ForgeError> {
+            unreachable!()
+        }
+        fn issue_discussions(&self, _: &IssueRef) -> Result<Vec<Discussion>, ForgeError> {
             unreachable!()
         }
         fn project_issues(&self, _: &str) -> Result<Vec<Issue>, ForgeError> {

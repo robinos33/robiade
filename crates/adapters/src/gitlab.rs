@@ -8,8 +8,8 @@ use std::time::Duration;
 use rayon::prelude::*;
 use robiade_core::contributions::Contribution;
 use robiade_core::forge::{
-    is_project_path, is_username, Approvals, Forge, ForgeError, Issue, IssueRef, IssueState, MergeRequest, MrRef, MrState, PipelineStatus,
-    GITLAB_HOST,
+    is_project_path, is_username, readable, Approvals, Discussion, Forge, ForgeError, Issue, IssueRef, IssueState, MergeRequest,
+    MrRef, MrState, Note, PipelineStatus, GITLAB_HOST,
 };
 use robiade_core::issue_actions::{IssuePlanned, NewIssue};
 use robiade_core::merge_actions::Planned;
@@ -26,6 +26,8 @@ const TOKEN_SERVICE: &str = "gitlab-api-token";
 const PER_PAGE: &str = "100";
 /// Pages d'événements lues au plus pour une plage : au-delà, la plage est trop large pour un appel.
 const MAX_EVENT_PAGES: usize = 50;
+/// Pages de discussions lues au plus : chaque note système en compte une, une MR active en a vite 100.
+const MAX_DISCUSSION_PAGES: usize = 10;
 
 pub struct GitLab {
     http: ureq::Agent,
@@ -150,14 +152,20 @@ impl GitLab {
             .ok_or_else(|| ForgeError::Api(format!("utilisateur GitLab inconnu : {username}")))
     }
 
-    fn approvals(&self, project: &str, iid: u64) -> Result<Approvals, ForgeError> {
-        let path = format!("/projects/{}/merge_requests/{iid}/approvals", project.replace('/', "%2F"));
-        let a: ApiApprovals = self.get(&path)?;
-        Ok(Approvals {
-            required: a.approvals_required,
-            left: a.approvals_left,
-            by: a.approved_by.into_iter().map(|b| b.user.username).collect(),
-        })
+    /// Fils d'échanges sous `item` (`/projects/…/issues/12`), toutes pages lues, sans notes système.
+    fn discussions(&self, item: &str) -> Result<Vec<Discussion>, ForgeError> {
+        let mut found = vec![];
+        for page in 1..=MAX_DISCUSSION_PAGES {
+            let listed: Vec<ApiDiscussion> = self.get(&format!("{item}/discussions?per_page={PER_PAGE}&page={page}"))?;
+            let last = listed.len() < 100;
+            found.extend(listed.into_iter().map(discussion_to_domain));
+            if last {
+                let mut found = readable(found);
+                found.sort_by_key(|d| d.notes[0].created_at);
+                return Ok(found);
+            }
+        }
+        Err(ForgeError::Api(format!("plus de {MAX_DISCUSSION_PAGES} pages de discussions GitLab")))
     }
 }
 
@@ -231,7 +239,7 @@ impl Forge for GitLab {
                 let r = MrRef::from_url(&m.web_url)?;
                 let detailed = self.single(&r.project, r.iid).ok();
                 let mut mr = to_domain(detailed.unwrap_or(m))?;
-                mr.approvals = self.approvals(&r.project, r.iid).ok();
+                mr.approvals = self.approvals(&r).ok();
                 Some(mr)
             })
             .collect();
@@ -251,6 +259,33 @@ impl Forge for GitLab {
     fn merge_request(&self, mr: &MrRef) -> Result<MergeRequest, ForgeError> {
         let found = self.single(&mr.project, mr.iid)?;
         to_domain(found).ok_or_else(|| ForgeError::Api("MR hors de l'instance configurée".into()))
+    }
+
+    fn approvals(&self, mr: &MrRef) -> Result<Approvals, ForgeError> {
+        if !is_project_path(&mr.project) {
+            return Err(ForgeError::NotFound);
+        }
+        let path = format!("/projects/{}/merge_requests/{}/approvals", mr.project.replace('/', "%2F"), mr.iid);
+        let a: ApiApprovals = self.get(&path)?;
+        Ok(Approvals {
+            required: a.approvals_required,
+            left: a.approvals_left,
+            by: a.approved_by.into_iter().map(|b| b.user.username).collect(),
+        })
+    }
+
+    fn merge_request_discussions(&self, mr: &MrRef) -> Result<Vec<Discussion>, ForgeError> {
+        if !is_project_path(&mr.project) {
+            return Err(ForgeError::NotFound);
+        }
+        self.discussions(&format!("/projects/{}/merge_requests/{}", mr.project.replace('/', "%2F"), mr.iid))
+    }
+
+    fn issue_discussions(&self, issue: &IssueRef) -> Result<Vec<Discussion>, ForgeError> {
+        if !is_project_path(&issue.project) {
+            return Err(ForgeError::NotFound);
+        }
+        self.discussions(&format!("/projects/{}/issues/{}", issue.project.replace('/', "%2F"), issue.iid))
     }
 
     fn my_issues(&self) -> Result<Vec<Issue>, ForgeError> {
@@ -341,6 +376,45 @@ fn issue_to_domain(i: ApiIssue) -> Option<Issue> {
         due_date: i.due_date,
         merge_requests: i.merge_requests_count,
     })
+}
+
+#[derive(Deserialize)]
+struct ApiDiscussion {
+    #[serde(default)]
+    notes: Vec<ApiNote>,
+}
+
+#[derive(Deserialize)]
+struct ApiNote {
+    #[serde(default)]
+    body: String,
+    author: ApiUser,
+    created_at: String,
+    #[serde(default)]
+    system: bool,
+    #[serde(default)]
+    resolvable: bool,
+    #[serde(default)]
+    resolved: bool,
+}
+
+/// Un fil est résolu quand toutes ses notes résolvables le sont. Une note mal datée est écartée.
+fn discussion_to_domain(d: ApiDiscussion) -> Discussion {
+    let resolvable: Vec<bool> = d.notes.iter().filter(|n| n.resolvable).map(|n| n.resolved).collect();
+    let resolved = (!resolvable.is_empty()).then(|| resolvable.iter().all(|r| *r));
+    let notes = d
+        .notes
+        .into_iter()
+        .filter_map(|n| {
+            Some(Note {
+                created_at: chrono::DateTime::parse_from_rfc3339(&n.created_at).ok()?.timestamp_millis(),
+                author: n.author.username,
+                body: n.body,
+                system: n.system,
+            })
+        })
+        .collect();
+    Discussion { notes, resolved }
 }
 
 /// `message` d'une réponse d'erreur GitLab (texte, liste ou objet), ramené à une ligne courte.
@@ -568,6 +642,23 @@ mod tests {
         let merged = mr(r#"{"iid":2805,"merged_at":"2026-10-28T17:23:38.850Z","merged_by":{"username":"x"}}"#);
         assert_eq!(merged, Some(Contribution::merged(1_793_208_218_850)));
         assert_eq!(mr(r#"{"iid":1,"merged_at":null}"#), None);
+    }
+
+    #[test]
+    fn a_thread_is_resolved_when_all_its_resolvable_notes_are() {
+        let thread = |json: &str| discussion_to_domain(serde_json::from_str(json).unwrap());
+        let note = |resolvable: bool, resolved: bool| {
+            format!(
+                r#"{{"body":"ok","author":{{"username":"a"}},"created_at":"2026-10-26T13:43:40Z","system":false,
+                    "resolvable":{resolvable},"resolved":{resolved}}}"#
+            )
+        };
+        let open = thread(&format!(r#"{{"notes":[{},{}]}}"#, note(true, true), note(true, false)));
+        assert_eq!((open.notes.len(), open.resolved), (2, Some(false)));
+        let done = thread(&format!(r#"{{"notes":[{},{}]}}"#, note(true, true), note(false, false)));
+        assert_eq!(done.resolved, Some(true));
+        let comment = thread(&format!(r#"{{"individual_note":true,"notes":[{}]}}"#, note(false, false)));
+        assert_eq!((comment.resolved, comment.notes[0].created_at), (None, 1_793_022_220_000));
     }
 
     #[test]

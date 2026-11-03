@@ -187,6 +187,36 @@ impl MergeRequest {
     }
 }
 
+/// Un message d'un fil d'échanges.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Note {
+    pub author: String,
+    /// Markdown de GitLab, non fiable.
+    pub body: String,
+    pub created_at: Millis,
+    /// Note écrite par GitLab lui-même (« a changé le label », « a ajouté 1 commit »).
+    pub system: bool,
+}
+
+/// Un fil d'échanges sur une issue ou une MR : un commentaire et ses réponses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Discussion {
+    pub notes: Vec<Note>,
+    /// `None` pour un fil qui ne se résout pas (commentaire d'issue, note simple).
+    pub resolved: Option<bool>,
+}
+
+/// Les fils tels qu'on les lit : sans les notes système, et sans les fils qu'elles laissent vides.
+pub fn readable(discussions: impl IntoIterator<Item = Discussion>) -> Vec<Discussion> {
+    discussions
+        .into_iter()
+        .filter_map(|mut d| {
+            d.notes.retain(|n| !n.system);
+            (!d.notes.is_empty()).then_some(d)
+        })
+        .collect()
+}
+
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ForgeError {
     #[error("aucun token GitLab dans le trousseau (service gitlab-api-token)")]
@@ -214,8 +244,14 @@ pub trait Forge: Send + Sync {
     fn merge_request(&self, mr: &MrRef) -> Result<MergeRequest, ForgeError>;
     /// Issues ouvertes qui me sont assignées, tous projets confondus.
     fn my_issues(&self) -> Result<Vec<Issue>, ForgeError>;
+    /// Approbations d'une MR.
+    fn approvals(&self, mr: &MrRef) -> Result<Approvals, ForgeError>;
+    /// Fils d'échanges d'une MR, dans l'ordre chronologique, sans les notes système.
+    fn merge_request_discussions(&self, mr: &MrRef) -> Result<Vec<Discussion>, ForgeError>;
     /// Une issue précise, avec sa description.
     fn issue(&self, issue: &IssueRef) -> Result<Issue, ForgeError>;
+    /// Fils d'échanges d'une issue, dans l'ordre chronologique, sans les notes système.
+    fn issue_discussions(&self, issue: &IssueRef) -> Result<Vec<Discussion>, ForgeError>;
     /// Issues ouvertes d'un projet (chemin complet, validé par `is_project_path`).
     fn project_issues(&self, project: &str) -> Result<Vec<Issue>, ForgeError>;
     /// Envoie une action planifiée sur une MR.
@@ -318,6 +354,19 @@ mod tests {
         assert!(mr.is_intermediate_wagon());
         mr.target_branch = "staging".into();
         assert!(!mr.is_intermediate_wagon());
+    }
+
+    #[test]
+    fn a_thread_is_read_without_the_notes_written_by_gitlab() {
+        let note = |author: &str, system| Note { author: author.into(), body: String::new(), created_at: 0, system };
+        let discussions = vec![
+            Discussion { notes: vec![note("gitlab", true)], resolved: None },
+            Discussion { notes: vec![note("a", false), note("gitlab", true), note("b", false)], resolved: Some(false) },
+        ];
+        let read = readable(discussions);
+        assert_eq!(read.len(), 1);
+        let authors: Vec<_> = read[0].notes.iter().map(|n| n.author.as_str()).collect();
+        assert_eq!((authors, read[0].resolved), (vec!["a", "b"], Some(false)));
     }
 
     #[test]
