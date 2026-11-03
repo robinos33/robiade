@@ -77,6 +77,12 @@ export function mrNumber(url: string): string | null {
   return url.match(/merge_requests\/(\d+)/)?.[1] ?? null;
 }
 
+/** Projet et numéro d'une URL de MR ; le Rust revalide tout ce qui en sort. */
+export function mrRefOf(url: string): { project: string; iid: number } | null {
+  const m = url.match(/^https:\/\/[^/]+\/(.+?)\/-\/merge_requests\/(\d+)/);
+  return m?.[1] && m[2] ? { project: m[1], iid: Number(m[2]) } : null;
+}
+
 const sizeFmt = new Intl.NumberFormat('fr', { maximumFractionDigits: 1 });
 
 /** Taille d'un fichier en octets, Ko ou Mo (base 1024, comme le Rust qui la borne). */

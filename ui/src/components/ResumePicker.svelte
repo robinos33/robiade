@@ -103,7 +103,7 @@
             <div class="line">
               <span class="title">{s.title}</span>
               {#if tab}<span class="open">onglet ouvert</span>{/if}
-              {#if s.mergeRequestUrl}<MrBadge url={s.mergeRequestUrl} />{/if}
+              {#if s.mergeRequestUrl}<MrBadge url={s.mergeRequestUrl} external />{/if}
               <span class="when num">{ago(s.lastActivityAt, app.now)}</span>
             </div>
             <div class="line sub">

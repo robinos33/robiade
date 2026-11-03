@@ -2,7 +2,6 @@
   import { onMount } from 'svelte';
   import { app } from '../lib/state.svelte';
   import { api } from '../lib/api';
-  import { openUrl } from '@tauri-apps/plugin-opener';
   import { ago } from '../lib/format';
   import type { Issue, IssueAction, Task, TaskStatus } from '../lib/types';
   import Icon from '../components/Icon.svelte';
@@ -166,7 +165,12 @@
                     <span class="links">
                       {#if t.issue && t.issueUrl}
                         {@const url = t.issueUrl}
-                        <button class="chip mono" title={issueTitle(t) ?? 'Ouvrir l’issue dans GitLab'} onclick={() => void openUrl(url)}>{issueLabel(t)}</button>
+                        {@const issue = t.issue}
+                        <button
+                          class="chip mono"
+                          title="{issueTitle(t) ?? 'Lire l’issue'} (⌘+clic : GitLab)"
+                          onclick={(e) => app.read({ kind: 'issue', project: issue.project, iid: issue.iid, webUrl: url }, e)}
+                        >{issueLabel(t)}</button>
                       {/if}
                       {#if t.sessionId}
                         {@const session = linkedSession(t)}
@@ -220,7 +224,11 @@
             <li class="issue" class:closed={i.state === 'closed'}>
               <span class="ref mono">#{i.iid}</span>
               <div class="body">
-                <button class="t link" title="Ouvrir dans GitLab" onclick={() => void openUrl(i.webUrl)}>{i.title}</button>
+                <button
+                  class="t link"
+                  title="Lire dans Robiade (⌘+clic : GitLab)"
+                  onclick={(e) => app.read({ kind: 'issue', project: i.project, iid: i.iid, webUrl: i.webUrl }, e)}
+                >{i.title}</button>
                 <span class="meta">
                   {#if issuesScope === 'assigned'}<span class="scope" title={i.project}>{i.project.split('/').pop()}</span>{/if}
                   {#each i.labels as l (l)}<span class="label">{l}</span>{/each}

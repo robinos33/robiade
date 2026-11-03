@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { openUrl } from '@tauri-apps/plugin-opener';
   import { app } from '../lib/state.svelte';
   import { api } from '../lib/api';
   import { ago } from '../lib/format';
@@ -42,7 +41,11 @@
       {mr.pipeline ? PIPELINE[mr.pipeline].glyph : '·'}
     </span>
     <div class="main">
-      <button class="title ellipsis" title="Ouvrir dans GitLab" onclick={() => void openUrl(mr.webUrl)}>{mr.title}</button>
+      <button
+        class="title ellipsis"
+        title="Lire dans Robiade (⌘+clic : GitLab)"
+        onclick={(e) => app.read({ kind: 'mr', project: mr.project, iid: mr.iid, webUrl: mr.webUrl }, e)}
+      >{mr.title}</button>
       <div class="meta">
         <span class="proj" title={mr.project}>{shortProject(mr.project)}</span>
         <span class="mono branches ellipsis" title="{mr.sourceBranch} → {mr.targetBranch}">

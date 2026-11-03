@@ -77,7 +77,7 @@
         <ul class="cards">
           {#each app.mrAttention as mr (mr.webUrl)}
             <li>
-              <button class="card failed" onclick={() => (app.view = 'mr')}>
+              <button class="card failed" onclick={(e) => app.read({ kind: 'mr', project: mr.project, iid: mr.iid, webUrl: mr.webUrl }, e)}>
                 <MrBadge url={mr.webUrl} state={mr.state} />
                 <span class="what">
                   <strong>{mr.title}</strong>
@@ -92,7 +92,7 @@
           {/each}
           {#each app.pendingReviews as mr (mr.webUrl)}
             <li>
-              <button class="card awaitingInput" onclick={() => (app.view = 'mr')}>
+              <button class="card awaitingInput" onclick={(e) => app.read({ kind: 'mr', project: mr.project, iid: mr.iid, webUrl: mr.webUrl }, e)}>
                 <MrBadge url={mr.webUrl} state={mr.state} />
                 <span class="what"><strong>{mr.title}</strong> attend ta review ({mr.author})</span>
                 <span class="muted num">{ago(mr.updatedAt, app.now)}</span>

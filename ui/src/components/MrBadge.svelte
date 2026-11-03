@@ -1,23 +1,29 @@
 <script lang="ts">
   import { openUrl } from '@tauri-apps/plugin-opener';
-  import { mrNumber } from '../lib/format';
+  import { mrNumber, mrRefOf } from '../lib/format';
   import { app } from '../lib/state.svelte';
   import type { MrState } from '../lib/types';
 
-  /** Sans `state`, l'état lu sur GitLab pour cette URL ; neutre tant qu'il n'est pas connu. */
-  let { url, state: given }: { url: string; state?: MrState } = $props();
+  /**
+   * Sans `state`, l'état lu sur GitLab pour cette URL ; neutre tant qu'il n'est pas connu.
+   * Un clic lit la MR dans le panneau ; `external` (dans une modale, qui le cacherait) et ⌘+clic
+   * l'ouvrent dans le navigateur.
+   */
+  let { url, state: given, external = false }: { url: string; state?: MrState; external?: boolean } = $props();
   const state = $derived(given ?? app.mrStates[url] ?? 'unknown');
 
   const LABELS = { unknown: 'MR liée', draft: 'Draft', opened: 'Ouverte', merged: 'Mergée', closed: 'Fermée' };
   const number = $derived(mrNumber(url));
+  const ref = $derived(external ? null : mrRefOf(url));
 </script>
 
 <button
   class="mr {state}"
-  title="{LABELS[state]} — ouvrir dans GitLab"
+  title="{LABELS[state]} — {ref ? 'lire (⌘+clic : GitLab)' : 'ouvrir dans GitLab'}"
   onclick={(e) => {
     e.stopPropagation();
-    void openUrl(url);
+    if (ref) app.read({ kind: 'mr', ...ref, webUrl: url }, e);
+    else void openUrl(url);
   }}
 >
   <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
