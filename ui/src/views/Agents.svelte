@@ -132,7 +132,9 @@
       const { x, y } = payload.position.toLogical(window.devicePixelRatio);
       const target = terminalAt(x, y);
       dropping = payload.type !== 'drop' && target !== undefined;
-      if (payload.type === 'drop' && target) dropPaths(target, payload.paths);
+      if (payload.type === 'drop' && target && !dropPaths(target, payload.paths)) {
+        app.notify('Dépôt refusé : un nom de fichier contient un caractère de contrôle (retour à la ligne…).');
+      }
     });
     return () => void unlisten.then((stop) => stop());
   });

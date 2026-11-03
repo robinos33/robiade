@@ -305,15 +305,23 @@ function shellEscape(path: string): string {
   return path.replace(/[\s\\'"`$&;|*?[\]{}()<>#~!^]/g, '\\$&');
 }
 
+/** Un caractère de contrôle C0 ou C1, retour à la ligne et tabulation compris. */
+const ANY_CONTROL = /[\x00-\x1f\x7f-\x9f]/;
+
 /**
  * Fichiers déposés sur le terminal : leurs chemins vont au prompt, séparés et suivis d'une espace
  * pour enchaîner un autre dépôt, sans Entrée. Collés et non tapés : Claude Code reçoit un collage.
+ * Un nom de fichier peut contenir un retour à la ligne ou un `ESC`, que l'antislash ne neutralise
+ * pas : il validerait le prompt ou sortirait du collage. Le dépôt est alors refusé, en entier ;
+ * renvoie `false`.
  */
-export function dropPaths(id: string, paths: string[]) {
+export function dropPaths(id: string, paths: string[]): boolean {
   const h = hosts.get(id);
-  if (!h || !paths.length) return;
+  if (!h || !paths.length) return true;
+  if (paths.some((p) => ANY_CONTROL.test(p))) return false;
   h.term.paste(`${paths.map(shellEscape).join(' ')} `);
   h.term.focus();
+  return true;
 }
 
 export function writeOutput(id: string, base64: string) {
