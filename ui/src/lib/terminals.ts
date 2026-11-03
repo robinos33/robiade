@@ -1,7 +1,7 @@
 import { Terminal, type IBuffer, type ILink, type ILinkProvider } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { api } from './api';
-import { LINK_PATTERN, openLink } from './links';
+import { citedPaths, fileUrl, LINK_PATTERN, openLink } from './links';
 
 /**
  * Un terminal xterm par agent, conservé hors du DOM quand on change de vue :
@@ -12,9 +12,14 @@ interface Host {
   fit: FitAddon;
   el: HTMLDivElement;
   opened: boolean;
-  /** Ouvre un lien `file://` cliqué dans ce terminal ; fourni par la vue qui l'affiche. */
-  onfile?: (uri: string) => void;
+  /**
+   * Ouvre un lien `file://` cliqué dans ce terminal, à la ligne citée s'il y en a une ; fourni par
+   * la vue qui l'affiche.
+   */
+  onfile?: OpenFile;
 }
+
+type OpenFile = (uri: string, line?: number) => void;
 
 const hosts = new Map<string, Host>();
 
@@ -131,30 +136,52 @@ function logicalLine(buffer: IBuffer, y: number): { text: string; cells: [number
   return { text, cells };
 }
 
-/** URL affichées en clair, web ou `file://`. */
-function plainLinks(term: Terminal, activate: (event: MouseEvent, uri: string) => void): ILinkProvider {
+/**
+ * Liens d'une ligne : URL affichées en clair, web ou `file://`, et chemins de fichier cités sans
+ * `file://` (`src/foo.rs:42`). Un chemin n'est un lien que si Rust dit qu'il désigne un fichier
+ * lisible : la question ne part qu'au survol d'une ligne, et xterm garde la réponse tant que la
+ * souris y reste.
+ */
+function lineLinks(term: Terminal, id: string, activate: (event: MouseEvent, uri: string) => void): ILinkProvider {
   return {
     provideLinks(y, callback) {
       const { text, cells } = logicalLine(term.buffer.active, y - 1);
-      const links = [...text.matchAll(LINK_PATTERN)].flatMap((m): ILink[] => {
-        const start = cells[m.index];
-        const end = cells[m.index + m[0].length - 1];
+      const link = (index: number, length: number, open: (event: MouseEvent, text: string) => void): ILink[] => {
+        const start = cells[index];
+        const end = cells[index + length - 1];
         if (!start || !end) return [];
         const link: ILink = {
           range: { start: { x: start[0] + 1, y: start[1] + 1 }, end: { x: end[0] + 1, y: end[1] + 1 } },
-          text: m[0],
+          text: text.slice(index, index + length),
           // Lues par xterm à l'arrivée sur le lien ; `setMeta` les change ensuite.
           decorations: {
             get underline() { return meta; },
             get pointerCursor() { return meta; },
           },
-          activate,
+          activate: open,
           hover: () => void hovered.add(link),
           leave: () => void hovered.delete(link),
         };
         return [link];
-      });
-      callback(links.length ? links : undefined);
+      };
+      const urls = [...text.matchAll(LINK_PATTERN)];
+      const found = urls.flatMap((m) => link(m.index, m[0].length, activate));
+      const cited = citedPaths(text, urls);
+      const done = (links: ILink[]) => callback(links.length ? links : undefined);
+      if (!cited.length) return done(found);
+      api.resolveLinkedPaths(id, cited.map((c) => c.path)).then(
+        (resolved) => done([
+          ...found,
+          ...cited.flatMap(({ index, length, line }, i) => {
+            const path = resolved[i];
+            if (!path) return [];
+            return link(index, length, (event) => {
+              if (event.metaKey) hosts.get(id)?.onfile?.(fileUrl(path), line);
+            });
+          }),
+        ]),
+        () => done(found),
+      );
     },
   };
 }
@@ -179,7 +206,7 @@ function host(id: string): Host {
     // Les autres schémas sont reçus pour être refusés par `openLink`, sans boîte de dialogue.
     linkHandler: { activate, allowNonHttpProtocols: true },
   });
-  term.registerLinkProvider(plainLinks(term, activate));
+  term.registerLinkProvider(lineLinks(term, id, activate));
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.onData((data) => void api.writeAgent(id, data).catch(() => {}));
@@ -216,7 +243,7 @@ export function writeOutput(id: string, base64: string) {
   host(id).term.write(bytes);
 }
 
-export function attach(id: string, container: HTMLElement, onfile: (uri: string) => void) {
+export function attach(id: string, container: HTMLElement, onfile: OpenFile) {
   const h = host(id);
   h.onfile = onfile;
   container.replaceChildren(h.el);

@@ -37,7 +37,7 @@
   /** Chemin de l'asset ouvert en aperçu, pour l'agent actif. */
   let viewing = $state<string | null>(null);
   /** Lien `file://` ouvert par ⌘+clic dans le terminal d'un agent. */
-  let linked = $state<{ agentId: string; uri: string } | null>(null);
+  let linked = $state<{ agentId: string; uri: string; line?: number } | null>(null);
   /** Onglet du panneau de droite. */
   let side = $state<'session' | 'diff'>('session');
 
@@ -98,7 +98,7 @@
   $effect(() => {
     const id = activeId;
     if (!id || !container) return;
-    attach(id, container, (uri) => (linked = { agentId: id, uri }));
+    attach(id, container, (uri, line) => (linked = { agentId: id, uri, line }));
     const observer = new ResizeObserver(() => { if (!panelDrag.active) refit(id); });
     observer.observe(container);
     return () => observer.disconnect();
@@ -404,9 +404,9 @@
     onclose={() => (viewing = null)}
   />
 {:else if active && linked?.agentId === active.id}
-  {@const { agentId, uri } = linked}
+  {@const { agentId, uri, line } = linked}
   {@const path = linkedPath(uri)}
-  <AssetViewer name={baseName(path)} {path} load={() => readLinkedFile(agentId, uri)} onclose={() => (linked = null)} />
+  <AssetViewer name={baseName(path)} {path} {line} load={() => readLinkedFile(agentId, uri)} onclose={() => (linked = null)} />
 {/if}
 
 <style>
