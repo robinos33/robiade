@@ -273,6 +273,7 @@ function host(id: string): Host {
   });
   const el = document.createElement('div');
   el.className = 'term-host';
+  el.dataset.agent = id;
   // ⌘ enfoncé avant que la fenêtre ait le focus : le premier mouvement de souris le dit.
   el.addEventListener('mousemove', (e) => setMeta(e.metaKey));
   // Clic molette, intercepté avant xterm : si le programme suit la souris, xterm lui transmettrait
@@ -289,6 +290,30 @@ function host(id: string): Host {
   h = { term, fit, search, el, opened: false };
   hosts.set(id, h);
   return h;
+}
+
+/** Agent dont le terminal est sous ce point de la fenêtre, en pixels CSS. */
+export function terminalAt(x: number, y: number): string | undefined {
+  return document.elementFromPoint(x, y)?.closest<HTMLElement>('.term-host')?.dataset.agent;
+}
+
+/**
+ * Chemin échappé pour le shell comme le fait iTerm, par des antislashs : Claude Code reconnaît
+ * ainsi une image déposée. Seuls les blancs et les caractères spéciaux du shell sont échappés.
+ */
+function shellEscape(path: string): string {
+  return path.replace(/[\s\\'"`$&;|*?[\]{}()<>#~!^]/g, '\\$&');
+}
+
+/**
+ * Fichiers déposés sur le terminal : leurs chemins vont au prompt, séparés et suivis d'une espace
+ * pour enchaîner un autre dépôt, sans Entrée. Collés et non tapés : Claude Code reçoit un collage.
+ */
+export function dropPaths(id: string, paths: string[]) {
+  const h = hosts.get(id);
+  if (!h || !paths.length) return;
+  h.term.paste(`${paths.map(shellEscape).join(' ')} `);
+  h.term.focus();
 }
 
 export function writeOutput(id: string, base64: string) {

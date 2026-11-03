@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { getCurrentWebview } from '@tauri-apps/api/webview';
   import { app } from '../lib/state.svelte';
   import { api } from '../lib/api';
-  import { attach, refit, terminalShortcut } from '../lib/terminals';
+  import { attach, dropPaths, refit, terminalAt, terminalShortcut } from '../lib/terminals';
   import { panelDrag } from '../lib/panelDrag.svelte';
   import { linkedPath, readLinkedFile } from '../lib/links';
   import { baseName } from '../lib/fileTree';
@@ -42,6 +43,8 @@
   /** Barre de recherche (⌘F) ouverte sur le terminal de l'agent actif. */
   let finding = $state(false);
   let search: TerminalSearch | undefined = $state();
+  /** Des fichiers du Finder survolent le terminal. */
+  let dropping = $state(false);
   /** Onglet du panneau de droite. */
   let side = $state<'session' | 'diff'>('session');
 
@@ -117,6 +120,21 @@
   $effect(() => {
     void activeId;
     finding = false;
+  });
+
+  /**
+   * Fichiers déposés depuis le Finder : la webview n'en voit pas les chemins, Tauri si. Le dépôt
+   * vise le terminal sous le curseur, quel que soit l'agent actif.
+   */
+  $effect(() => {
+    const unlisten = getCurrentWebview().onDragDropEvent(({ payload }) => {
+      if (payload.type === 'leave') return void (dropping = false);
+      const { x, y } = payload.position.toLogical(window.devicePixelRatio);
+      const target = terminalAt(x, y);
+      dropping = payload.type !== 'drop' && target !== undefined;
+      if (payload.type === 'drop' && target) dropPaths(target, payload.paths);
+    });
+    return () => void unlisten.then((stop) => stop());
   });
 
   function onkeydown(e: KeyboardEvent) {
@@ -323,7 +341,7 @@
             {/if}
           </div>
           <GaugeBar gauges={active.gauges} />
-          <div class="term-area">
+          <div class="term-area" class:dropping>
             <div class="term" bind:this={container}></div>
             {#if finding}
               <TerminalSearch bind:this={search} id={active.id} onclose={() => (finding = false)} />
@@ -520,6 +538,7 @@
   .branch :global(svg) { flex: none; }
   .tail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .term-area { flex: 1; min-height: 0; display: flex; position: relative; }
+  .term-area.dropping { outline: 2px solid var(--accent); outline-offset: -2px; }
   /* `fit` suspendu pendant un glisser : xterm garde sa taille, rognée plutôt que débordante. */
   .term { flex: 1; min-width: 0; min-height: 0; overflow: hidden; padding: 10px 0 4px 12px; background: #24273a; /* TERMINAL_THEME.background */ }
   .term :global(.term-host) { height: 100%; }
