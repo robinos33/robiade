@@ -24,6 +24,9 @@ struct Live {
     process: Option<Arc<AgentProcess>>,
 }
 
+/// Clé, dans les données d'une notification, de l'agent qu'un clic doit ouvrir.
+pub const NOTIFIED_AGENT: &str = "agent";
+
 /// Les onglets inactifs depuis plus longtemps ne sont pas rouverts au démarrage.
 const REOPEN_WITHIN_MS: i64 = 7 * 24 * 3600 * 1000;
 
@@ -207,19 +210,24 @@ impl AgentRegistry {
                 .map(|body| (notification_title(entry.workspace.project_name(), entry.agent.name()), body))
         };
         if let Some((title, body)) = notification {
-            self.notify(&title, body);
+            self.notify(id, &title, body);
         }
         self.publish();
     }
 
     /// Notification macOS quand un agent se met à m'attendre et que je regarde ailleurs.
-    fn notify(&self, title: &str, body: &str) {
+    /// Elle porte l'id de l'agent : un clic dessus l'ouvre (`main::open_agent_from_notification`).
+    fn notify(&self, id: &AgentId, title: &str, body: &str) {
         let focused = tauri::Manager::get_webview_window(&self.app, "main")
             .is_some_and(|w| w.is_focused().unwrap_or(false));
         if focused {
             return;
         }
-        let _ = self.app.notification().builder().title(title).body(body).show();
+        let _ = self.app.notification().builder().title(title).body(body).extra(NOTIFIED_AGENT, id.as_str()).show();
+    }
+
+    pub fn contains(&self, id: &AgentId) -> bool {
+        self.live.lock().is_ok_and(|live| live.contains_key(id))
     }
 
     pub fn rename(&self, id: &AgentId, name: &str) -> Result<(), String> {

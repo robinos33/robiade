@@ -33,6 +33,7 @@ use robiade_core::forge::Forge;
 use robiade_core::merge_actions::AuditLog;
 use robiade_core::vcs::{WorkingTree, Worktrees};
 use tauri::{Emitter, Manager};
+use tauri_plugin_notification::{ActionPerformed, NotificationExt};
 
 pub struct AppState {
     pub transcripts: Arc<TranscriptStore>,
@@ -101,6 +102,28 @@ pub fn hold_quit(app: &tauri::AppHandle, relaunch: bool) -> bool {
     true
 }
 
+/// Clic sur une notification d'agent : Robiade passe au premier plan et l'interface ouvre l'agent,
+/// s'il est encore là. L'id vient de la notification, jamais de l'interface.
+fn open_agent_from_notification(app: &tauri::AppHandle, performed: &ActionPerformed) {
+    if performed.action_id() != "tap" {
+        return;
+    }
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+    let agent = performed
+        .notification()
+        .and_then(|n| n.extra().get(agents::NOTIFIED_AGENT))
+        .and_then(|v| v.as_str())
+        .and_then(|id| robiade_core::agents::AgentId::parse(id).ok());
+    let Some(agent) = agent else { return };
+    if app.state::<AppState>().agents.contains(&agent) {
+        let _ = app.emit("agent:open", agent.as_str());
+    }
+}
+
 /// Un `tauri dev` range ses données à part : il tourne à côté de l'application installée,
 /// qui garde la base, le socket des hooks et l'index de recherche du dossier principal.
 fn own_dir(dir: std::path::PathBuf) -> std::path::PathBuf {
@@ -120,6 +143,9 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             main_window(app)?;
+            // Avant toute notification : celles montrées sans handler ne remontent pas le clic.
+            let clicked = app.handle().clone();
+            app.notification().on_action(move |performed| open_agent_from_notification(&clicked, performed))?;
             let data_dir = own_dir(app.path().app_data_dir()?);
             std::fs::create_dir_all(&data_dir)?;
             let home = app.path().home_dir()?;
