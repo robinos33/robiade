@@ -177,7 +177,8 @@ impl AgentRegistry {
         viewed_image: Option<&str>,
     ) {
         let ended = matches!(event, AgentEvent::ProcessExited);
-        let now_waiting = {
+        let asks_reply = matches!(event, AgentEvent::WaitingForInput);
+        let notification = {
             let Ok(mut live) = self.live.lock() else { return };
             // Un événement d'un agent inconnu (session hors Robiade, agent déjà retiré) est ignoré.
             let Some(entry) = live.get_mut(id) else { return };
@@ -202,27 +203,23 @@ impl AgentRegistry {
             if after != before {
                 let _ = self.journal.save(&entry.agent, now());
             }
-            (after != before && after.is_waiting_on_me()).then(|| (after, entry.workspace.project_name().to_owned()))
+            attention_body(before, after, asks_reply)
+                .map(|body| (notification_title(entry.workspace.project_name(), entry.agent.name()), body))
         };
-        if let Some((status, project)) = now_waiting {
-            self.notify_waiting(status, &project);
+        if let Some((title, body)) = notification {
+            self.notify(&title, body);
         }
         self.publish();
     }
 
     /// Notification macOS quand un agent se met à m'attendre et que je regarde ailleurs.
-    /// Le texte ne reprend rien du transcript : seulement le projet et la raison.
-    fn notify_waiting(&self, status: AgentStatus, project: &str) {
+    fn notify(&self, title: &str, body: &str) {
         let focused = tauri::Manager::get_webview_window(&self.app, "main")
             .is_some_and(|w| w.is_focused().unwrap_or(false));
         if focused {
             return;
         }
-        let reason = match status {
-            AgentStatus::AwaitingPermission => "attend ta permission",
-            _ => "a fini son tour",
-        };
-        let _ = self.app.notification().builder().title(project).body(reason).show();
+        let _ = self.app.notification().builder().title(title).body(body).show();
     }
 
     pub fn rename(&self, id: &AgentId, name: &str) -> Result<(), String> {
@@ -370,5 +367,57 @@ impl AgentRegistry {
         if let Some(window) = tauri::Manager::get_webview_window(&self.app, "main") {
             let _ = window.set_badge_count((attention > 0).then_some(attention as i64));
         }
+    }
+}
+
+/// Titre d'une notification : le projet, puis le nom de l'onglet s'il en a un.
+fn notification_title(project: &str, agent: Option<&str>) -> String {
+    match agent {
+        Some(name) => format!("{project} · {name}"),
+        None => project.to_owned(),
+    }
+}
+
+/// Corps d'une notification, seulement quand l'agent se met à demander mon action.
+/// Le texte ne reprend rien du transcript : seulement la raison.
+/// `asks_reply` : la transition vient d'une notification d'inactivité, pas d'une fin de tour.
+fn attention_body(before: AgentStatus, after: AgentStatus, asks_reply: bool) -> Option<&'static str> {
+    if after == before || !after.needs_attention() {
+        return None;
+    }
+    Some(match after {
+        AgentStatus::AwaitingPermission => "attend ta permission",
+        AgentStatus::Failed => "s'est arrêté sur une erreur",
+        _ if asks_reply => "attend ta réponse",
+        _ => "a fini son tour",
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use AgentStatus as S;
+
+    #[test]
+    fn title_names_the_project_then_the_agent() {
+        assert_eq!(notification_title("robiade", Some("notifs")), "robiade · notifs");
+        assert_eq!(notification_title("robiade", None), "robiade");
+    }
+
+    #[test]
+    fn body_tells_why_the_agent_waits_on_me() {
+        assert_eq!(attention_body(S::Running, S::AwaitingPermission, false), Some("attend ta permission"));
+        assert_eq!(attention_body(S::Running, S::AwaitingInput, false), Some("a fini son tour"));
+        assert_eq!(attention_body(S::Running, S::AwaitingInput, true), Some("attend ta réponse"));
+        assert_eq!(attention_body(S::Running, S::Failed, false), Some("s'est arrêté sur une erreur"));
+    }
+
+    #[test]
+    fn nothing_when_the_status_does_not_change_or_needs_nothing() {
+        // `PermissionRequest` puis la notification `permission_prompt` : une seule notification.
+        assert_eq!(attention_body(S::AwaitingPermission, S::AwaitingPermission, false), None);
+        assert_eq!(attention_body(S::AwaitingInput, S::AwaitingInput, true), None);
+        assert_eq!(attention_body(S::AwaitingPermission, S::Running, false), None);
+        assert_eq!(attention_body(S::Running, S::Ended, false), None);
     }
 }
