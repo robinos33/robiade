@@ -262,6 +262,7 @@ fn main() {
             commands::forget_agent,
             commands::read_asset,
             commands::read_linked_file,
+            commands::resolve_linked_paths,
             commands::project_files,
             commands::read_project_file,
             commands::working_changes,
