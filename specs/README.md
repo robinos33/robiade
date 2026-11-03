@@ -7,7 +7,8 @@
 > GitLab, Git, Docker, DB), le rend lisible d'un coup d'œil et permet d'agir dessus.
 > Tauri 2 (cœur Rust hexagonal + front Svelte), secrets dans le Keychain, aucun port réseau ouvert.
 
-Statut : brouillon du 2026-10-27. Les points marqués **[À trancher]** sont regroupés en §10.
+Statut : brouillon du 2026-10-27. Une question ouverte est marquée **[À trancher]** dans la
+feature qu'elle concerne ; `grep -rn 'À trancher' specs` les liste.
 
 ## Index des features
 
@@ -113,13 +114,3 @@ requête, une grille performante) et le moins lié aux agents ; DataGrip fait le
 | WebView = Safari (WKWebView) | Quelques API web absentes, debug moins confortable | Cible unique macOS, pas de dépendance aux API Chromium |
 | Dérive vers un « tout-en-un » | Projet jamais fini | Hors périmètre §1 tenu ; chaque jalon a un critère de sortie |
 | Secret affiché dans un transcript | Fuite par capture d'écran ou partage | Masquage heuristique des motifs de tokens connus à l'affichage (v1) : préfixes connus (GitLab, Anthropic, GitHub, Slack, AWS, Vault, JWT, `Bearer`) et blocs de clé privée, masqués avant l'IPC dans l'historique et la recherche. Un mot de passe quelconque passe ; le terminal d'un agent vivant n'est pas masqué |
-
-## À trancher
-
-Aucun point ouvert.
-
-Décidé le 2026-10-27 : pilotage par CLI intégré (PTY) ; seules les sessions lancées par l'ADE
-sont vivantes dans l'ADE ; status par session (§4.1) ; tâches = issues GitLab ; client DB avec
-console et grille sur PostgreSQL, MariaDB, MongoDB, Elasticsearch ; page de stats + stats de la
-session en cours ; deux types de tâches (perso dans l'ADE, équipe dans GitLab) ; stats GitLab ;
-historique antérieur à l'ADE consultable en lecture seule ; prod accessible via Vault.

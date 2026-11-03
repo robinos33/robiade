@@ -14,7 +14,7 @@ la lecture seule, `SET ROLE`, `SESSION AUTHORIZATION`, `set_config`, `RESET ALL`
 instruction et ferme la session s'il a changé. Une fonction côté serveur qui lèverait le verrou
 échappe à cette analyse.
 
-Décidé le 2026-10-28 (remplace « prod toujours en lecture seule » pour la console) : **en prod,
+Décidé le 2026-10-28 : **en prod,
 la console lit, et écrit par INSERT, UPDATE ou DELETE validés un à un ; rien d'autre.** MERGE,
 COPY, TRUNCATE, DDL, droits, VACUUM, LOCK, `EXPLAIN ANALYZE` d'une écriture et les CTE qui écrivent
 sont refusés ; un UPDATE ou un DELETE sans WHERE au niveau principal aussi. Les fonctions

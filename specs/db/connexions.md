@@ -34,7 +34,8 @@ Il liste les noms des secrets d'un montage et je choisis la clé de chaque champ
 sont lues qu'au moment de se connecter, en mémoire, et ne remontent jamais à l'interface.
 Conséquence : **la prod passe par les identifiants applicatifs**, donc en lecture-écriture côté
 serveur. Robiade impose la lecture seule (paramètre de session, vérifié sur le serveur au test),
-sans bascule possible en prod. TLS exigé hors dev,
+sans bascule possible en prod : seule la console y écrit, par INSERT, UPDATE ou DELETE validés un
+à un (voir la console Postgres). TLS exigé hors dev,
 certificat et nom d'hôte vérifiés ; en dev, clair accepté seulement vers localhost. **Risque
 résiduel assumé** : ces protections tiennent contre une fausse manipulation, pas contre un bug de
 Robiade ; un compte en lecture seule côté serveur reste la cible quand il sera disponible.
