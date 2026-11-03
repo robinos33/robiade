@@ -1,7 +1,7 @@
 //! Modifications en cours lues avec la CLI `git`, en lecture seule et sans prendre de verrou :
 //! l'agent peut écrire dans le même dépôt au même moment.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
@@ -252,6 +252,21 @@ impl WorkingTree for GitCli {
         let diff = self.run(&root, &[&["diff"], SAFE_DIFF, &[base, "--", path]].concat())?;
         Ok(truncate(diff))
     }
+
+    fn files(&self, dir: &str) -> Result<Vec<String>, VcsError> {
+        let listed = self.run(dir, &["ls-files", "-z", "--cached", "--others", "--exclude-standard"])?;
+        let deleted = self.run(dir, &["ls-files", "-z", "--deleted"])?;
+        let deleted: HashSet<&[u8]> = deleted.split(|b| *b == 0).collect();
+        let mut files: Vec<String> = listed
+            .split(|b| *b == 0)
+            .filter(|path| !path.is_empty() && !deleted.contains(path))
+            .map(|path| String::from_utf8_lossy(path).into_owned())
+            .collect();
+        // Un fichier en conflit apparaît une fois par version : il n'en faut qu'une.
+        files.sort();
+        files.dedup();
+        Ok(files)
+    }
 }
 
 impl Worktrees for GitCli {
@@ -384,6 +399,28 @@ worktree /tmp/y\0HEAD c\0detached\0prunable gitdir file points to non-existent l
         assert!(repo.diff(d, "a.txt").unwrap().contains("+trois"));
         assert!(repo.diff(d, "b.md").unwrap().contains("+# titre"));
         assert_eq!(repo.diff(d, "../etc/passwd"), Err(VcsError::UnknownFile));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn lists_the_files_of_a_repository_without_the_ignored_ones() {
+        let dir = std::env::temp_dir().join(format!("robiade-git-files-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("vendor/lib")).unwrap();
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        git(&dir, &["init", "-q"]);
+        std::fs::write(dir.join(".gitignore"), "vendor/\n.env.local\n").unwrap();
+        std::fs::write(dir.join("vendor/lib/a.php"), "").unwrap();
+        std::fs::write(dir.join(".env.local"), "").unwrap();
+        std::fs::write(dir.join("src/kept.rs"), "").unwrap();
+        std::fs::write(dir.join("src/gone.rs"), "").unwrap();
+        git(&dir, &["add", ".gitignore", "src"]);
+        git(&dir, &["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init"]);
+        std::fs::remove_file(dir.join("src/gone.rs")).unwrap();
+        std::fs::write(dir.join("src/nouveau é.rs"), "").unwrap();
+
+        let files = GitCli::default().files(dir.to_str().unwrap()).unwrap();
+        assert_eq!(files, [".gitignore", "src/kept.rs", "src/nouveau é.rs"]);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

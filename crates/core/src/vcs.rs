@@ -38,6 +38,9 @@ pub trait WorkingTree: Send + Sync {
     fn changes(&self, dir: &str) -> Result<Vec<FileChange>, VcsError>;
     /// Diff unifié d'un fichier de `changes` ; tout autre chemin est refusé.
     fn diff(&self, dir: &str, path: &str) -> Result<String, VcsError>;
+    /// Fichiers sous `dir`, relatifs à lui et triés : suivis et non suivis, hors
+    /// ignorés (`.gitignore`, exclusions globales) et hors fichiers suivis supprimés du disque.
+    fn files(&self, dir: &str) -> Result<Vec<String>, VcsError>;
 }
 
 /// Un worktree lié d'un dépôt, tel que `git worktree list` le décrit.
