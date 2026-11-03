@@ -23,6 +23,8 @@ class AppState {
   selectedSessionId = $state<string | null>(null);
   newAgentOpen = $state(false);
   paletteOpen = $state(false);
+  /** « Aller au fichier » (⌘P) de l'onglet Code. */
+  fileFinderOpen = $state(false);
   /** Fenêtre « Reprendre une session », l'équivalent visuel de `/resume`. */
   resumeOpen = $state(false);
   /** Agents qu'une fermeture, ou une relance, interromprait ; non nul tant que la confirmation est affichée. */
@@ -277,6 +279,12 @@ class AppState {
   /** Racine que l'onglet Code parcourt : le worktree sélectionné, sinon le projet. */
   get codeRoot(): string | null {
     return this.worktree ?? this.project;
+  }
+
+  /** ⌘P, depuis n'importe quelle vue : l'onglet Code, et sa recherche s'il a un projet. */
+  findFile() {
+    this.view = 'code';
+    this.fileFinderOpen = this.codeRoot !== null;
   }
 
   /** Comme pour un projet : filtre sur le worktree et ouvre son premier agent s'il en a un. */

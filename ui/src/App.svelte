@@ -30,6 +30,7 @@
     else if (e.key === 'N') app.newAgentOpen = true; // Shift met la touche en capitale
     else if (e.key === 'n' || e.key === 't') app.newAgent(); // ⌘T, comme un onglet de terminal
     else if (e.key === 'o') app.resumeOpen = !app.resumeOpen;
+    else if (e.key === 'p') app.findFile();
     else return;
     e.preventDefault();
   }

@@ -9,7 +9,7 @@
 
   const VIEWS: [View, string][] = [
     ['inbox', 'Inbox'], ['agents', 'Agents'], ['history', 'Historique'], ['tasks', 'Tâches'], ['stats', 'Statistiques'],
-    ['env', 'Environnements'], ['db', 'Bases de données'],
+    ['env', 'Environnements'], ['db', 'Bases de données'], ['code', 'Code'],
   ];
 
   const commands = $derived.by<Command[]>(() => {
@@ -17,6 +17,7 @@
       { label: 'Nouvel agent', hint: '⌘N · ⌘T', run: () => app.newAgent() },
       { label: 'Nouvel agent dans…', hint: '⇧⌘N', run: () => (app.newAgentOpen = true) },
       { label: 'Reprendre une session…', hint: '⌘O', run: () => (app.resumeOpen = true) },
+      { label: 'Aller au fichier…', hint: '⌘P', run: () => app.findFile() },
       ...VIEWS.map(([v, label]) => ({ label: `Aller à ${label}`, hint: 'vue', run: () => (app.view = v) })),
       { label: 'Vue globale', hint: 'projet', run: () => (app.project = null) },
       ...app.projects.map((p) => ({ label: p.name, hint: 'projet', run: () => (app.project = p.root) })),

@@ -6,6 +6,7 @@
   import { count, fileSize } from '../lib/format';
   import { app } from '../lib/state.svelte';
   import type { ProjectFile } from '../lib/types';
+  import FileFinder from '../components/FileFinder.svelte';
   import FilePreview, { copySource } from '../components/FilePreview.svelte';
   import Icon from '../components/Icon.svelte';
 
@@ -29,6 +30,8 @@
   let file = $state<ProjectFile | null>(null);
   let fileError = $state<string | null>(null);
   let source = $state(false);
+  /** Derniers fichiers ouverts dans ce projet, le plus récent en tête : ce que ⌘P propose d'abord. */
+  let recent = $state<string[]>([]);
   let list: HTMLUListElement | undefined = $state();
 
   async function loadFiles(current: string) {
@@ -50,6 +53,7 @@
       files = null;
       expanded.clear();
       cursor = opened = null;
+      recent = [];
       file = null;
       fileError = null;
       if (current) void loadFiles(current);
@@ -60,6 +64,7 @@
     const current = root;
     if (!current) return;
     cursor = opened = path;
+    recent = [path, ...recent.filter((p) => p !== path)].slice(0, 10);
     file = null;
     fileError = null;
     source = false;
@@ -76,7 +81,7 @@
   }
 
   /** Ouvre `path` depuis l'extérieur de l'arbre : ses dossiers se déplient, la ligne vient à l'écran. */
-  export async function reveal(path: string) {
+  async function reveal(path: string) {
     for (const dir of ancestors(path)) expanded.add(dir);
     open(path);
     await tick();
@@ -120,6 +125,9 @@
     {/if}
     <span class="spacer"></span>
     {#if root}
+      <button class="btn ghost" onclick={() => (app.fileFinderOpen = true)} disabled={!files}>
+        <Icon name="search" size={14} /> Aller au fichier <kbd>⌘P</kbd>
+      </button>
       <button class="btn ghost" onclick={() => root && void loadFiles(root)} title="Relire la liste des fichiers">Recharger</button>
     {/if}
   </header>
@@ -202,13 +210,17 @@
           {/if}
         {:else}
           <div class="empty">
-            <div><strong>Choisis un fichier.</strong>Lecture seule : rien ne s'écrit depuis Robiade.</div>
+            <div><strong>Choisis un fichier.</strong>Ou cherche-le par son nom avec <kbd>⌘P</kbd>. Lecture seule : rien ne s'écrit depuis Robiade.</div>
           </div>
         {/if}
       </div>
     </div>
   {/if}
 </section>
+
+{#if app.fileFinderOpen && files}
+  <FileFinder {files} {secrets} {recent} onpick={(path) => void reveal(path)} onclose={() => (app.fileFinderOpen = false)} />
+{/if}
 
 <style>
   .page { display: flex; flex-direction: column; min-height: 0; flex: 1; }
