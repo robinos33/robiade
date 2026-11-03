@@ -105,8 +105,12 @@ fn is_leaked_claude_var(name: &str) -> bool {
 }
 
 /// Variable qui décrit le terminal d'où Robiade a été lancé : le PTY d'un agent n'en est pas un.
+/// Celles d'iTerm désignent sa session : le hook global `cc-status` d'iTerm y notifierait
+/// l'agent, en double de la notification de Robiade (#9).
 fn is_parent_terminal_var(name: &str) -> bool {
     matches!(name, "TERM_PROGRAM" | "TERM_PROGRAM_VERSION" | "LC_TERMINAL" | "LC_TERMINAL_VERSION")
+        || name.starts_with("ITERM_")
+        || name.starts_with("IT2_")
 }
 
 #[cfg(test)]
@@ -127,6 +131,9 @@ mod tests {
     fn strips_the_identity_of_the_terminal_robiade_was_launched_from() {
         assert!(is_parent_terminal_var("TERM_PROGRAM"));
         assert!(is_parent_terminal_var("LC_TERMINAL"));
+        assert!(is_parent_terminal_var("ITERM_SESSION_ID"));
+        assert!(is_parent_terminal_var("ITERM_PROFILE"));
+        assert!(is_parent_terminal_var("IT2_SOCKET"));
         assert!(!is_parent_terminal_var("TERM"));
         assert!(!is_parent_terminal_var("COLORTERM"));
     }
