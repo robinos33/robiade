@@ -257,12 +257,12 @@
             <span class="spacer"></span>
             {#if active.status !== 'ended'}
               <button class="btn ghost" onclick={restart} title="Relance claude sur la même session : prend une mise à jour installée (« Restart to update »)">
-                <Icon name="resume" size={12} /> Redémarrer
+                <Icon name="resume" size={12} /><span class="label">Redémarrer</span>
               </button>
-              <button class="btn ghost" onclick={stop} title="Arrêter le process"><Icon name="stop" size={13} /> Arrêter</button>
+              <button class="btn ghost" onclick={stop} title="Arrêter le process"><Icon name="stop" size={13} /><span class="label">Arrêter</span></button>
             {:else}
-              <button class="btn" onclick={() => app.spawn(active.projectPath, active.resumedFrom ?? active.id)}>
-                <Icon name="resume" size={12} /> Reprendre
+              <button class="btn" onclick={() => app.spawn(active.projectPath, active.resumedFrom ?? active.id)} title="Reprendre la session">
+                <Icon name="resume" size={12} /><span class="label">Reprendre</span>
               </button>
             {/if}
           </div>
@@ -431,13 +431,17 @@
   .term-wrap { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg-sunken); }
   .term-bar {
     display: flex; align-items: center; gap: 12px; height: 40px; padding: 0 12px; flex: none;
-    border-bottom: 1px solid var(--line); background: var(--bg);
+    border-bottom: 1px solid var(--line); background: var(--bg); container-type: inline-size;
   }
   .spacer { flex: 1; }
   /* Quand la place manque, le chemin cède d'abord, puis branche et titre de MR, le nom en dernier ; les actions jamais. */
   .term-bar .btn { flex: none; }
   .path { flex-shrink: 100; }
   .name { flex-shrink: 0.25; }
+  /* Barre étroite : les actions passent en icône seule, leur libellé reste au survol. */
+  @container (max-width: 720px) {
+    .term-bar .btn .label { display: none; }
+  }
   .branch { display: inline-flex; align-items: center; gap: 4px; min-width: 0; color: var(--ink-2); }
   .branch :global(svg) { flex: none; }
   .tail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
