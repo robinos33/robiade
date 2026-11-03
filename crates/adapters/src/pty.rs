@@ -44,6 +44,9 @@ impl AgentProcess {
         cmd.env("PATH", spec.path_env);
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
+        // Sans OSC 8, Claude Code affiche les URL en clair : xterm les reconnaît, et ⌘ décide seul
+        // de leur soulignement (#11). Sinon tout dépendrait de l'environnement hérité.
+        cmd.env("FORCE_HYPERLINK", "0");
         for (k, v) in spec.env {
             cmd.env(k, v);
         }
