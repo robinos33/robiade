@@ -394,13 +394,14 @@ struct ApiNote {
     system: bool,
     #[serde(default)]
     resolvable: bool,
+    /// `null` sur une note qui ne se résout pas (vérifié le 2026-11-03), pas absent.
     #[serde(default)]
-    resolved: bool,
+    resolved: Option<bool>,
 }
 
 /// Un fil est résolu quand toutes ses notes résolvables le sont. Une note mal datée est écartée.
 fn discussion_to_domain(d: ApiDiscussion) -> Discussion {
-    let resolvable: Vec<bool> = d.notes.iter().filter(|n| n.resolvable).map(|n| n.resolved).collect();
+    let resolvable: Vec<bool> = d.notes.iter().filter(|n| n.resolvable).map(|n| n.resolved.unwrap_or(false)).collect();
     let resolved = (!resolvable.is_empty()).then(|| resolvable.iter().all(|r| *r));
     let notes = d
         .notes
@@ -661,7 +662,11 @@ mod tests {
         assert_eq!((open.notes.len(), open.resolved), (2, Some(false)));
         let done = thread(&format!(r#"{{"notes":[{},{}]}}"#, note(true, true), note(false, false)));
         assert_eq!(done.resolved, Some(true));
-        let comment = thread(&format!(r#"{{"individual_note":true,"notes":[{}]}}"#, note(false, false)));
+        // Forme réelle d'une note simple : `resolved` vaut `null`.
+        let comment = thread(
+            r#"{"individual_note":true,"notes":[{"body":"ok","author":{"username":"a"},
+                "created_at":"2026-10-26T13:43:40Z","system":false,"resolvable":false,"resolved":null}]}"#,
+        );
         assert_eq!((comment.resolved, comment.notes[0].created_at), (None, 1_793_022_220_000));
     }
 
