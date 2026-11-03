@@ -1,8 +1,9 @@
 import { listen } from '@tauri-apps/api/event';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { api } from './api';
 import { localDay } from './format';
 import { writeOutput } from './terminals';
-import type { Agent, Environment, Forge, GitWorktree, MergeRequest, MrState, Project, QuitRequest, Session, Task, Update, Workspace, Worktree } from './types';
+import type { Agent, Environment, Forge, GitWorktree, MergeRequest, MrState, Project, QuitRequest, ReadingTarget, Session, Task, Update, Workspace, Worktree } from './types';
 
 export type View = 'inbox' | 'agents' | 'history' | 'mr' | 'tasks' | 'stats' | 'env' | 'db' | 'code';
 
@@ -39,6 +40,8 @@ class AppState {
   forgeLoading = $state(false);
   /** État GitLab des MR liées aux sessions, par URL ; absente = pas encore lue ou illisible. */
   mrStates = $state<Record<string, MrState>>({});
+  /** Issue ou MR affichée dans le panneau de lecture ; `null` : panneau fermé. */
+  reading = $state<ReadingTarget | null>(null);
   /** Worktrees lus par git, par dépôt ; un dépôt absent n'a pas encore été relu. */
   gitWorktrees = $state<Record<string, GitWorktree[]>>({});
 
@@ -312,6 +315,12 @@ class AppState {
     this.activeAgentId = id;
     this.view = 'agents';
     void api.markAgentSeen(id);
+  }
+
+  /** Ouvre une issue ou une MR dans le panneau de lecture ; avec ⌘, dans le navigateur, comme avant. */
+  read(target: ReadingTarget, e?: MouseEvent) {
+    if (e?.metaKey) void openUrl(target.webUrl);
+    else this.reading = target;
   }
 
   openSession(id: string) {

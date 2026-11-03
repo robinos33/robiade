@@ -15,6 +15,7 @@
   import Environments from './views/Environments.svelte';
   import Databases from './views/Databases.svelte';
   import Code from './views/Code.svelte';
+  import ReadingPanel from './components/ReadingPanel.svelte';
 
   const KEYS: Record<string, View> = { '1': 'inbox', '2': 'agents', '3': 'history', '4': 'tasks', '5': 'stats', '6': 'mr', '7': 'env', '8': 'code' };
 
@@ -51,6 +52,7 @@
     {:else if app.view === 'code'}<Code />
     {:else}<Stats />{/if}
   </main>
+  {#if app.reading}<ReadingPanel target={app.reading} />{/if}
 </div>
 
 {#if app.newAgentOpen}<NewAgent />{/if}

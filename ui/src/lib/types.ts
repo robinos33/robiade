@@ -247,6 +247,16 @@ export interface IssueStart {
 
 export interface Forge { mine: MergeRequest[]; reviews: MergeRequest[] }
 
+/** Un message d'un fil d'échanges GitLab ; `body` est du Markdown non fiable. */
+export interface Note { author: string; body: string; createdAt: number }
+/** `resolved` à `null` : un fil qui ne se résout pas. */
+export interface Discussion { notes: Note[]; resolved: boolean | null }
+/** Descriptions et fils : Markdown non fiable, rendu dans une iframe sandboxée seulement. */
+export interface MrReading { mr: MergeRequest; mine: boolean; description: string; discussions: Discussion[] }
+export interface IssueReading { issue: Issue; description: string; discussions: Discussion[] }
+/** Issue ou MR affichée dans le panneau de lecture. */
+export interface ReadingTarget extends MrRef { kind: 'issue' | 'mr'; webUrl: string }
+
 /** Regroupement de l'activité GitLab. */
 export type Granularity = 'day' | 'week' | 'month' | 'year';
 /** Mes contributions GitLab sur une période ; `startDay` : premier jour local, compté depuis l'epoch. */

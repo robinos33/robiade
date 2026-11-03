@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
-  Agent, AssetContent, ProjectFile, ProjectFiles, Container, ContributionBucket, Granularity, DbConnection, DbConnectionInput, DbConsoleHistory, DbConsoleReply, DbFinishedWrite, DbOverview, DbPage, DbPageRequest, DbProbe, DbTarget, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, SearchHit, Session, Task, TaskStatus, GitWorktree, Update, WorktreeCreation, WorktreeRemoval,
+  Agent, AssetContent, IssueReading, MrReading, ProjectFile, ProjectFiles, Container, ContributionBucket, Granularity, DbConnection, DbConnectionInput, DbConsoleHistory, DbConsoleReply, DbFinishedWrite, DbOverview, DbPage, DbPageRequest, DbProbe, DbTarget, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, SearchHit, Session, Task, TaskStatus, GitWorktree, Update, WorktreeCreation, WorktreeRemoval,
 } from './types';
 
 export const api = {
@@ -39,6 +39,8 @@ export const api = {
   workingChanges: (id: string) => invoke<FileChange[]>('working_changes', { id }),
   workingDiff: (id: string, path: string) => invoke<string>('working_diff', { id, path }),
   mergeRequests: () => invoke<Forge>('merge_requests'),
+  readMergeRequest: (target: MrRef) => invoke<MrReading>('read_merge_request', { target }),
+  readIssue: (target: MrRef) => invoke<IssueReading>('read_issue', { target }),
   previewMrAction: (target: MrRef, action: MrAction) => invoke<ActionPreview>('preview_mr_action', { target, action }),
   runMrAction: (target: MrRef, action: MrAction) => invoke<string>('run_mr_action', { target, action }),
   previewIssueAction: (target: MrRef, action: IssueAction) =>
