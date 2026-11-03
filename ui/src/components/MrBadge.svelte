@@ -7,9 +7,14 @@
   /**
    * Sans `state`, l'état lu sur GitLab pour cette URL ; neutre tant qu'il n'est pas connu.
    * Un clic lit la MR dans le panneau ; `external` (dans une modale, qui le cacherait) et ⌘+clic
-   * l'ouvrent dans le navigateur.
+   * l'ouvrent dans le navigateur. Avec `title`, il suit le numéro, coupé par la fin.
    */
-  let { url, state: given, external = false }: { url: string; state?: MrState; external?: boolean } = $props();
+  let {
+    url,
+    state: given,
+    title,
+    external = false,
+  }: { url: string; state?: MrState; title?: string; external?: boolean } = $props();
   const state = $derived(given ?? app.mrStates[url] ?? 'unknown');
 
   const LABELS = { unknown: 'MR liée', draft: 'Draft', opened: 'Ouverte', merged: 'Mergée', closed: 'Fermée' };
@@ -19,7 +24,7 @@
 
 <button
   class="mr {state}"
-  title="{LABELS[state]} — {ref ? 'lire (⌘+clic : GitLab)' : 'ouvrir dans GitLab'}"
+  title="{title ? `!${number} ${title}\n` : ''}{LABELS[state]} — {ref ? 'lire (⌘+clic : GitLab)' : 'ouvrir dans GitLab'}"
   onclick={(e) => {
     e.stopPropagation();
     if (ref) app.read({ kind: 'mr', ...ref, webUrl: url }, e);
@@ -37,6 +42,7 @@
     {/if}
   </svg>
   {#if number}<span class="num">!{number}</span>{/if}
+  {#if title}<span class="title">{title}</span>{/if}
 </button>
 
 <style>
@@ -48,6 +54,9 @@
     background: color-mix(in srgb, var(--c) 10%, transparent);
     color: var(--c); font: 11.5px var(--mono);
   }
+  .mr:has(.title) { max-width: 240px; min-width: 0; overflow: hidden; }
+  .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; font-family: var(--font); }
+  svg, .num { flex: none; }
   .mr:hover { background: color-mix(in srgb, var(--c) 18%, transparent); }
   .draft { --c: var(--mr-draft); }
   .opened { --c: var(--mr-open); }
