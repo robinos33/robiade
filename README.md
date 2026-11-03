@@ -18,10 +18,14 @@ visible d'un coup d'œil, et les MR GitLab qu'ils produisent juste à côté.
   relire. Toute action d'écriture est confirmée et tracée dans un journal.
 - **Ce que coûtent les agents.** Tokens, coût par modèle et outils utilisés, par session et au global.
 - **Tâches perso** par projet, à côté des issues d'équipe.
+- **Lire le code sans ouvrir l'IDE.** L'onglet Code parcourt le projet ou le worktree sélectionné,
+  sans ce que `.gitignore` exclut ; ⌘P retrouve un fichier par son nom. Lecture seule, avec
+  coloration ; les `.env` et les clés ne s'ouvrent qu'à la demande.
 
 ![Reprendre une session](docs/screens/resume.png)
 ![Merge requests](docs/screens/mr.png)
 ![Statistiques](docs/screens/stats.png)
+![Onglet Code](docs/screens/code.png)
 
 ## Sécurisé par conception
 
