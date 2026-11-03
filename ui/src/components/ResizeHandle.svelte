@@ -100,7 +100,9 @@
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
     e.preventDefault();
     // Les flèches déplacent la poignée : → élargit un panneau de gauche et rétrécit un panneau de droite.
-    chosen = clamp((width ?? actual) + sign * (e.key === 'ArrowRight' ? STEP : -STEP));
+    // Depuis `chosen` et non `width`, que l'effet ne recopie qu'après : deux appuis rapprochés comptent double.
+    const from = chosen === null ? actual : clamp(chosen);
+    chosen = clamp(from + sign * (e.key === 'ArrowRight' ? STEP : -STEP));
     save(chosen);
   }
 </script>
