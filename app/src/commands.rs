@@ -16,7 +16,7 @@ use robiade_core::history::{SessionSearch, TranscriptReader};
 use robiade_core::contributions::{self, Granularity};
 use robiade_core::stats;
 use robiade_core::tasks::{DueDate, SessionId, Task, TaskId, TaskRepository};
-use robiade_core::assets::AssetKind;
+use robiade_core::assets::{Asset, AssetKind};
 use robiade_core::code::{self, Peek};
 use robiade_core::vcs::FileChange;
 use secrecy::ExposeSecret;
@@ -319,17 +319,17 @@ const MAX_ASSET_BYTES: u64 = 20 * 1024 * 1024;
 #[tauri::command]
 pub async fn read_asset(state: State<'_, AppState>, id: String, path: String) -> CmdResult<AssetContentDto> {
     let asset = state.agents.asset(&agent_id(&id)?, &path)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        let missing = |_| "fichier introuvable : déplacé ou supprimé ?".to_owned();
-        let size = std::fs::metadata(&asset.path).map_err(missing)?.len();
-        if size > MAX_ASSET_BYTES {
-            return Err(format!("fichier trop lourd pour l'aperçu ({} Mo)", size / (1024 * 1024)));
-        }
-        let bytes = std::fs::read(&asset.path).map_err(|e| e.to_string())?;
-        Ok(AssetContentDto::new(&asset, bytes))
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || read_asset_file(&asset)).await.map_err(|e| e.to_string())?
+}
+
+fn read_asset_file(asset: &Asset) -> CmdResult<AssetContentDto> {
+    let missing = |_| "fichier introuvable : déplacé ou supprimé ?".to_owned();
+    let size = std::fs::metadata(&asset.path).map_err(missing)?.len();
+    if size > MAX_ASSET_BYTES {
+        return Err(format!("fichier trop lourd pour l'aperçu ({} Mo)", size / (1024 * 1024)));
+    }
+    let bytes = std::fs::read(&asset.path).map_err(|e| e.to_string())?;
+    Ok(AssetContentDto::new(asset, bytes))
 }
 
 /// Racine que l'onglet Code peut lire : celle d'un dépôt Git ou d'un de ses worktrees liés.
