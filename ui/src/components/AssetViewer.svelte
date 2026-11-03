@@ -1,21 +1,24 @@
 <script lang="ts">
-  import { api } from '../lib/api';
+  import { untrack } from 'svelte';
   import { shortPath } from '../lib/format';
   import { app } from '../lib/state.svelte';
   import type { Asset, AssetContent } from '../lib/types';
   import FilePreview, { copySource } from './FilePreview.svelte';
   import Icon from './Icon.svelte';
 
-  let { agentId, asset, assets, onnavigate, onclose }: {
-    agentId: string;
-    asset: Asset;
+  let { name, path, load, assets, onnavigate, onclose }: {
+    name: string;
+    /** Chemin absolu du fichier ; en changer recharge l'aperçu. */
+    path: string;
+    /** Lit le fichier ; un rejet porte le message à afficher. */
+    load: (path: string) => Promise<AssetContent>;
     /** Assets de l'agent, dans l'ordre de la liste : ← et → passent de l'un à l'autre. */
     assets: Asset[];
     onnavigate: (path: string) => void;
     onclose: () => void;
   } = $props();
 
-  const index = $derived(assets.findIndex((a) => a.path === asset.path));
+  const index = $derived(assets.findIndex((a) => a.path === path));
   const prev = $derived(index > 0 ? assets[index - 1] : undefined);
   const next = $derived(index >= 0 && index < assets.length - 1 ? assets[index + 1] : undefined);
 
@@ -25,15 +28,13 @@
   let source = $state(false);
   let close: HTMLButtonElement | undefined = $state();
 
-  /** Les agents sont republiés à chaque événement, `asset` avec eux : seul un changement de chemin recharge. */
-  const path = $derived(asset.path);
-
+  /** Les agents sont republiés à chaque événement, `load` avec eux : seul un changement de chemin recharge. */
   $effect(() => {
     const current = path;
     content = null;
     error = null;
     source = false;
-    api.readAsset(agentId, current).then(
+    untrack(() => load)(current).then(
       (c) => path === current && (content = c),
       (e) => (error = String(e)),
     );
@@ -56,8 +57,8 @@
 <div class="scrim" role="presentation" onclick={(e) => e.target === e.currentTarget && onclose()}>
   <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="asset-title">
     <header>
-      <h2 id="asset-title" class="ellipsis">{asset.name}</h2>
-      <span class="mono muted ellipsis path selectable">{shortPath(asset.path, app.env?.home ?? '')}</span>
+      <h2 id="asset-title" class="ellipsis">{name}</h2>
+      <span class="mono muted ellipsis path selectable">{shortPath(path, app.env?.home ?? '')}</span>
       {#if assets.length > 1}
         <div class="nav">
           <button class="btn ghost icon" disabled={!prev} onclick={() => prev && onnavigate(prev.path)} title="Précédent (←)"><Icon name="prev" size={14} /></button>
@@ -65,7 +66,7 @@
           <button class="btn ghost icon" disabled={!next} onclick={() => next && onnavigate(next.path)} title="Suivant (→)"><Icon name="next" size={14} /></button>
         </div>
       {/if}
-      {#if asset.kind === 'html' || asset.kind === 'markdown'}
+      {#if content?.kind === 'html' || content?.kind === 'markdown'}
         <button class="btn ghost" onclick={() => (source = !source)}>{source ? 'Rendu' : 'Source'}</button>
       {/if}
       {#if content?.text}
@@ -74,7 +75,7 @@
       {/if}
       <button class="btn ghost icon" bind:this={close} onclick={onclose} title="Fermer (Échap)"><Icon name="close" size={14} /></button>
     </header>
-    <FilePreview name={asset.name} {content} {error} {source} />
+    <FilePreview {name} {content} {error} {source} />
   </div>
 </div>
 

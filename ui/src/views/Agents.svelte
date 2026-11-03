@@ -342,7 +342,15 @@
 </section>
 
 {#if active && viewed}
-  <AssetViewer agentId={active.id} asset={viewed} assets={active.assets} onnavigate={(path) => (viewing = path)} onclose={() => (viewing = null)} />
+  {@const id = active.id}
+  <AssetViewer
+    name={viewed.name}
+    path={viewed.path}
+    load={(path) => api.readAsset(id, path)}
+    assets={active.assets}
+    onnavigate={(path) => (viewing = path)}
+    onclose={() => (viewing = null)}
+  />
 {/if}
 
 <style>
