@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { fade } from 'svelte/transition';
   import { app, type View } from './lib/state.svelte';
+  import Logo from './components/Logo.svelte';
   import Sidebar from './components/Sidebar.svelte';
   import NewAgent from './components/NewAgent.svelte';
   import Palette from './components/Palette.svelte';
@@ -19,8 +21,17 @@
 
   const KEYS: Record<string, View> = { '1': 'inbox', '2': 'agents', '3': 'history', '4': 'tasks', '5': 'stats', '6': 'mr', '7': 'env', '8': 'code' };
 
+  /**
+   * Écran de démarrage, posé sur l'interface qui se remplit dessous. Il reste le temps de l'`init`,
+   * au moins un tour du point (900 ms) pour ne pas flasher, et jamais plus de 5 s, quoi qu'il arrive.
+   */
+  let booting = $state(true);
+
   onMount(() => {
-    app.init().catch((e) => app.notify(`Démarrage incomplet : ${e}`));
+    const ready = app.init().catch((e) => app.notify(`Démarrage incomplet : ${e}`));
+    const turn = new Promise((r) => setTimeout(r, 900));
+    const ceiling = new Promise((r) => setTimeout(r, 5000));
+    void Promise.race([Promise.all([ready, turn]), ceiling]).then(() => (booting = false));
   });
 
   function onkeydown(e: KeyboardEvent) {
@@ -59,9 +70,17 @@
 {#if app.paletteOpen}<Palette />{/if}
 {#if app.resumeOpen}<ResumePicker />{/if}
 {#if app.quitRequest}<QuitConfirm />{/if}
+{#if booting}
+  <div class="splash" out:fade={{ duration: 200 }} data-tauri-drag-region><Logo size={96} orbit="loop" /></div>
+{/if}
 {#if app.toast}<div class="toast" role="status">{app.toast}</div>{/if}
 
 <style>
+  /* Sous le toast, pour qu'un « Démarrage incomplet » se lise tout de suite, et sous les dialogues (80). */
+  .splash {
+    position: fixed; inset: 0; z-index: 65; display: grid; place-items: center;
+    background: var(--bg); --logo-halo: var(--bg);
+  }
   .shell { display: flex; height: 100%; }
   main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .toast {
