@@ -64,7 +64,9 @@ performance, communs à toutes les vues.
 ### Terminal
 - **Rien ne part sans Entrée.** Un collage n'ajoute jamais de retour chariot et passe en bracketed
   paste. Si le programme ne l'a pas activé, un texte sur plusieurs lignes n'est pas collé : chaque
-  ligne serait envoyée.
+  ligne serait envoyée. Les caractères de contrôle sont retirés avant le collage, sauf tabulation
+  et fins de ligne : un titre d'issue venu de GitLab pourrait sinon fermer le bracketed paste et
+  envoyer la suite.
 
 ## Décisions
 
