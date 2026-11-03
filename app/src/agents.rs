@@ -17,6 +17,7 @@ use tauri_plugin_notification::NotificationExt;
 
 use crate::dto::{AgentDto, AgentOutput};
 use crate::now;
+use crate::task_cli;
 
 struct Live {
     agent: Agent,
@@ -36,6 +37,8 @@ pub struct AgentRegistry {
     journal: Arc<dyn AgentJournal>,
     login: LoginEnv,
     socket: PathBuf,
+    /// Base des tâches, donnée aux agents pour `robiade task done`.
+    tasks_db: PathBuf,
     live: Mutex<HashMap<AgentId, Live>>,
 }
 
@@ -52,6 +55,7 @@ impl AgentRegistry {
         journal: Arc<dyn AgentJournal>,
         login: LoginEnv,
         socket: PathBuf,
+        tasks_db: PathBuf,
     ) -> Self {
         let reopened = journal.recent(now() - REOPEN_WITHIN_MS).unwrap_or_default();
         let live = reopened
@@ -61,7 +65,7 @@ impl AgentRegistry {
                 (agent.id().clone(), Live { agent, workspace, process: None })
             })
             .collect();
-        Self { app, workspaces, journal, login, socket, live: Mutex::new(live) }
+        Self { app, workspaces, journal, login, socket, tasks_db, live: Mutex::new(live) }
     }
 
     pub fn socket(&self) -> &Path {
@@ -112,6 +116,10 @@ impl AgentRegistry {
                 env: vec![
                     (hooks::ENV_SOCKET, self.socket.to_string_lossy().into_owned()),
                     (hooks::ENV_AGENT_ID, id.as_str().to_owned()),
+                    // Une reprise garde la session d'origine, à laquelle sa tâche est liée.
+                    (task_cli::ENV_SESSION_ID, resume.as_ref().unwrap_or(&id).as_str().to_owned()),
+                    (task_cli::ENV_DB, self.tasks_db.to_string_lossy().into_owned()),
+                    (task_cli::ENV_BIN, exe.to_string_lossy().into_owned()),
                 ],
                 cols,
                 rows,

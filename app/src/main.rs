@@ -169,6 +169,7 @@ fn main() {
                 Arc::new(SqliteAgentJournal::open(&data_dir.join("robiade.db"))?),
                 login,
                 data_dir.join("hooks.sock"),
+                data_dir.join("robiade.db"),
             ));
             let on_event = registry.clone();
             hooks::serve(registry.socket(), move |id, observation| on_event.observe(&id, observation))?;
