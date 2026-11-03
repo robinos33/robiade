@@ -96,6 +96,7 @@ function linkLines(): string[] {
     `  Pièges : file:///etc/passwd · x-apple.systempreferences://com.apple.preference.security · javascript:alert(1)`,
     `  OSC 8 : ${osc8(`${mr}/diffs`, 'diff de la MR')} · ${osc8('x-apple.systempreferences:com.apple.preference.security', 'réglages')}`,
     `  Repliée : ${mr}/diffs?commit_id=${'0123456789abcdef'.repeat(8)}`,
+    `  Chemins : src/Cart/PromoCodePolicy.php:14, ./README.md, src/Absent.php, et/ou, ${'/Users/demo/code/wt-panier-promo/src/Kernel.php'}`,
     '',
   ];
 }
