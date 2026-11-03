@@ -248,7 +248,10 @@
             <ModeBadge mode={active.permissionMode} permissive={active.permissive} />
             <span class="mono muted ellipsis">{shortPath(active.projectPath, app.env?.home ?? '')}</span>
             {#if session?.gitBranch}
-              <span class="branch mono"><Icon name="branch" size={12} /> {session.gitBranch}</span>
+              <!-- Coupée par le début : la fin distingue les branches. `bdi` garde les `/` en place dans le `rtl`. -->
+              <span class="branch mono" title={session.gitBranch}>
+                <Icon name="branch" size={12} /><span class="tail" dir="rtl"><bdi>{session.gitBranch}</bdi></span>
+              </span>
             {/if}
             {#if mr}<MrBadge url={mr.url} state={mr.state} />{/if}
             <span class="spacer"></span>
@@ -431,7 +434,9 @@
     border-bottom: 1px solid var(--line); background: var(--bg);
   }
   .spacer { flex: 1; }
-  .branch { display: inline-flex; align-items: center; gap: 4px; color: var(--ink-2); }
+  .branch { display: inline-flex; align-items: center; gap: 4px; min-width: 0; color: var(--ink-2); }
+  .branch :global(svg) { flex: none; }
+  .tail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .term { flex: 1; min-height: 0; padding: 10px 0 4px 12px; background: #24273a; /* TERMINAL_THEME.background */ }
   .term :global(.term-host) { height: 100%; }
   .stats { border-left: 1px solid var(--line); padding: 12px 16px 16px; overflow-y: auto; }
