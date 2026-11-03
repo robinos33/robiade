@@ -52,4 +52,5 @@ base, son socket de hooks et son index dans un sous-dossier `dev/`. Modifier le 
 donc plus l'application de tous les jours ; une nouvelle version se prend en relançant
 `scripts/install.sh`, puis l'application.
 
-La spécification, avec les décisions et les jalons, est dans [SPEC.md](SPEC.md).
+La spécification est dans [specs/](specs/README.md), un fichier par feature, avec ses décisions ;
+l'index, le périmètre et les jalons sont dans [specs/README.md](specs/README.md).
