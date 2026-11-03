@@ -1,5 +1,6 @@
 import { Marked } from 'marked';
-import { MARKDOWN_STYLE } from './markdown';
+import { markdownStyle } from './markdown';
+import type { ColorScheme } from './theme.svelte';
 import { dateTime } from './format';
 import type { Discussion } from './types';
 
@@ -50,7 +51,7 @@ const THREAD_STYLE = `<style>
  * s'affiche dans une iframe `sandbox=""` : rien ne s'y exécute. L'échappement des auteurs sert au
  * rendu, pas à la sécurité.
  */
-export function threadPage(project: string, description: string, discussions: Discussion[]): string {
+export function threadPage(project: string, description: string, discussions: Discussion[], scheme: ColorScheme): string {
   const md = gitlabMarkdown(project);
   const render = (text: string) => md.parse(text) as string;
   const intro = description.trim() ? render(description) : '<p class="empty">Pas de description.</p>';
@@ -70,5 +71,5 @@ export function threadPage(project: string, description: string, discussions: Di
   const exchanges = threads.length
     ? `<h2 class="exchanges">Échanges · ${threads.length}</h2>${threads.join('')}`
     : '<h2 class="exchanges">Échanges</h2><p class="empty">Aucun échange.</p>';
-  return MARKDOWN_STYLE + THREAD_STYLE + intro + exchanges;
+  return markdownStyle(scheme) + THREAD_STYLE + intro + exchanges;
 }

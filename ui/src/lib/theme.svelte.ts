@@ -3,6 +3,7 @@
  * Réglage d'affichage propre au poste, rangé dans localStorage comme les brouillons de la console DB.
  */
 export type ThemeChoice = 'system' | 'light' | 'dark';
+export type ColorScheme = 'light' | 'dark';
 
 /** Même clé que `public/theme.js`, qui pose le thème avant le premier rendu. */
 const KEY = 'robiade.theme';
@@ -17,7 +18,18 @@ function stored(): ThemeChoice {
   }
 }
 
-export const theme = $state({ choice: stored() });
+const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
+export const theme = $state({ choice: stored(), systemDark: systemDark.matches });
+systemDark.addEventListener('change', (e) => (theme.systemDark = e.matches));
+
+/**
+ * Thème effectif, pour ce que `color-scheme` n'atteint pas : les iframes `srcdoc`.
+ * WebKit ne leur transmet pas celui de la page ; laissées à `light dark`, elles suivraient le système.
+ */
+export function colorScheme(): ColorScheme {
+  if (theme.choice !== 'system') return theme.choice;
+  return theme.systemDark ? 'dark' : 'light';
+}
 
 /** Système → Clair → Sombre → Système. L'attribut `data-theme` fixe `color-scheme` (app.css). */
 export function cycleTheme(): void {

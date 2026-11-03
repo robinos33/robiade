@@ -14,6 +14,7 @@
 <script lang="ts">
   import type { AssetContent } from '../lib/types';
   import { markdownPage } from '../lib/markdown';
+  import { colorScheme } from '../lib/theme.svelte';
   import CodeView from './CodeView.svelte';
 
   /**
@@ -32,7 +33,7 @@
   const rendered = $derived.by(() => {
     if (!content?.text || source) return null;
     if (content.kind === 'html') return content.text;
-    if (content.kind === 'markdown') return markdownPage(content.text);
+    if (content.kind === 'markdown') return markdownPage(content.text, colorScheme());
     return null;
   });
 </script>

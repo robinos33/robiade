@@ -8,6 +8,7 @@
   import { ago } from '../lib/format';
   import { MERGE_STATUS, PIPELINE, actionsOf } from '../lib/mergeRequests';
   import { app } from '../lib/state.svelte';
+  import { colorScheme } from '../lib/theme.svelte';
   import { threadPage } from '../lib/thread';
   import type { IssueReading, MergeRequest, MrAction, MrReading, ReadingTarget } from '../lib/types';
   import MrActionConfirm from './MrActionConfirm.svelte';
@@ -51,7 +52,7 @@
   const page = $derived.by(() => {
     if (!reading) return null;
     const r = reading.mr ?? reading.issue;
-    return r && threadPage(target.project, r.description, r.discussions);
+    return r && threadPage(target.project, r.description, r.discussions, colorScheme());
   });
 
   const mr = $derived(reading?.mr?.mr ?? null);

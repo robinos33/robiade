@@ -1,8 +1,9 @@
 import { marked } from 'marked';
+import type { ColorScheme } from './theme.svelte';
 
-/** Feuille de style du Markdown rendu : l'iframe n'hérite pas de celle de Robiade. */
-export const MARKDOWN_STYLE = `<style>
-  :root { color-scheme: light dark; }
+/** Feuille de style du Markdown rendu : l'iframe n'hérite ni de celle de Robiade, ni de son thème. */
+export const markdownStyle = (scheme: ColorScheme) => `<style>
+  :root { color-scheme: ${scheme}; }
   body { font: 14px/1.6 -apple-system, BlinkMacSystemFont, sans-serif; max-width: 78ch; margin: 24px auto; padding: 0 24px; }
   h1, h2, h3 { line-height: 1.25; margin: 1.4em 0 0.5em; }
   h1 { font-size: 1.6em; } h2 { font-size: 1.3em; } h3 { font-size: 1.1em; }
@@ -15,6 +16,6 @@ export const MARKDOWN_STYLE = `<style>
 </style>`;
 
 /** Page HTML d'un Markdown, à afficher dans une iframe `sandbox=""` : rien de ce qu'il contient ne s'exécute. */
-export function markdownPage(text: string): string {
-  return MARKDOWN_STYLE + marked.parse(text, { async: false, gfm: true });
+export function markdownPage(text: string, scheme: ColorScheme): string {
+  return markdownStyle(scheme) + marked.parse(text, { async: false, gfm: true });
 }
