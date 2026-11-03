@@ -6,10 +6,12 @@
   import FilePreview, { copySource } from './FilePreview.svelte';
   import Icon from './Icon.svelte';
 
-  let { name, path, load, assets = [], onnavigate, onclose }: {
+  let { name, path, line, load, assets = [], onnavigate, onclose }: {
     name: string;
     /** Chemin absolu du fichier ; en changer recharge l'aperçu. */
     path: string;
+    /** Ligne citée (`src/foo.rs:42`) : le texte s'ouvre sur elle, la source plutôt que le rendu. */
+    line?: number;
     /** Lit le fichier ; un rejet porte le message à afficher. */
     load: (path: string) => Promise<AssetContent>;
     /**
@@ -31,12 +33,15 @@
   let source = $state(false);
   let close: HTMLButtonElement | undefined = $state();
 
-  /** Les agents sont republiés à chaque événement, `load` avec eux : seul un changement de chemin recharge. */
+  /**
+   * Les agents sont republiés à chaque événement, `load` avec eux : seul un changement de chemin
+   * ou de ligne recharge.
+   */
   $effect(() => {
     const current = path;
     content = null;
     error = null;
-    source = false;
+    source = line !== undefined;
     untrack(() => load)(current).then(
       (c) => path === current && (content = c),
       (e) => (error = String(e)),
@@ -78,7 +83,7 @@
       {/if}
       <button class="btn ghost icon" bind:this={close} onclick={onclose} title="Fermer (Échap)"><Icon name="close" size={14} /></button>
     </header>
-    <FilePreview {name} {content} {error} {source} />
+    <FilePreview {name} {content} {error} {source} {line} />
   </div>
 </div>
 

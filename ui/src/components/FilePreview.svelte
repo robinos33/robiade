@@ -21,13 +21,15 @@
    * Aperçu d'un fichier déjà lu : image, HTML ou Markdown rendus, sinon texte coloré d'après
    * `name`. Le chargement et la barre d'outils restent à l'appelant (modale des assets, onglet Code).
    */
-  let { name, content, error = null, source = false }: {
+  let { name, content, error = null, source = false, line }: {
     name: string;
     /** `null` tant que le fichier se charge. */
     content: AssetContent | null;
     error?: string | null;
     /** HTML et Markdown se lisent rendus ; leur source reste consultable. */
     source?: boolean;
+    /** Ligne de texte à montrer, à partir de 1 ; sans effet sur un aperçu rendu. */
+    line?: number;
   } = $props();
 
   const rendered = $derived.by(() => {
@@ -50,7 +52,7 @@
          Le HTML brut d'un Markdown y est donc inoffensif, sans nettoyage à maintenir. -->
     <iframe title={name} sandbox="" srcdoc={rendered} class:md={content.kind === 'markdown'}></iframe>
   {:else}
-    <CodeView text={content.text ?? ''} {name} />
+    <CodeView text={content.text ?? ''} {name} {line} />
   {/if}
 </div>
 
