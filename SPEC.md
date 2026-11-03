@@ -463,6 +463,11 @@ Le niveau d'exigence est celui d'un outil d'administration.
 - Thème Système (par défaut, suit macOS à chaud), Clair ou Sombre, choisi par un bouton en bas
   de la barre latérale et mémorisé sur le poste ; le terminal garde Catppuccin Macchiato dans les
   deux. Respect de « Réduire les animations ».
+- **Écran de démarrage** : le logo en grand, le point qui en fait le tour, sans texte. Il couvre
+  l'interface pendant qu'elle se remplit dessous (environnement, agents, tâches, historique), au
+  moins un tour du point (900 ms, pour ne pas flasher) et **jamais plus de 5 s** : un démarrage
+  lent ou bloqué rend la main quand même. Un échec le retire aussi, « Démarrage incomplet » dit
+  pourquoi.
 
 **Structure de l'écran**
 ```
@@ -487,7 +492,7 @@ Le niveau d'exigence est celui d'un outil d'administration.
 **Budgets de performance** (mesurés, pas supposés)
 | Mesure | Cible |
 |---|---|
-| Démarrage à froid jusqu'à l'Inbox affichée | < 500 ms |
+| Démarrage à froid jusqu'à l'interface prête (fin de `init()`, minimum de l'écran de démarrage exclu) | < 500 ms |
 | RAM au repos, 10 sessions suivies | < 200 Mo (process Rust + WebView) |
 | Latence d'un événement de hook jusqu'à l'écran | < 100 ms |
 | Scroll d'une liste de 5 000 éléments | 60 i/s sans saccade |
