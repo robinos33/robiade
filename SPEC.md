@@ -233,6 +233,10 @@ C'est le seul contexte où l'ADE porte de l'état, donc le seul où un agrégat 
   l'issue, de sa branche `ticket-<iid>-…` et de son prompt ; sinon, du dépôt de son projet et
   d'une branche `tache-<titre>`. Mes notes s'ajoutent au prompt. Une fois l'agent lancé, la tâche
   est liée à sa session et passe en cours. Une tâche globale, sans dépôt, n'en propose pas.
+- **Un agent ferme sa tâche, quand je le lui demande** : `robiade task done`, sans argument, passe
+  en `Done` la tâche liée à sa session, et elle seule. Refusé (sortie ≠ 0) si aucune tâche n'y
+  est liée, si elle est déjà finie ou si plusieurs le sont. La vue Tâches se relit à son ouverture
+  et au retour dans l'app.
 - Vue unifiée : la liste des tâches d'un projet montre les deux types côte à côte, typés
   visuellement ; seules les tâches perso sont éditables en place.
 
@@ -601,3 +605,14 @@ restent dans l'arbre, marqués, et leur contenu ne se charge que sur « Afficher
 `.env` d'un projet Symfony est commité et utile à lire. **Risque résiduel** : la racine acceptée
 est tout dépôt ou worktree Git du disque, Robiade ne tenant pas de liste de projets côté Rust ; une
 WebView compromise pourrait donc lire un autre dépôt que ceux de l'interface.
+
+Décidé le 2026-11-03 : **un agent ferme sa tâche par `robiade task done`** (issue #17), plutôt
+qu'un `UPDATE` à la main dans `robiade.db` qui contournait l'agrégat. La tâche se cherche par
+**session**, pas par agent : un agent repris reçoit un identifiant neuf, mais garde la session
+d'origine à laquelle sa tâche est liée. L'app pose au lancement `ROBIADE_SESSION_ID`, `ROBIADE_DB`
+(la base de l'instance, installée ou `tauri dev`) et `ROBIADE_BIN` (le binaire n'est pas dans le
+PATH de l'agent) ; le prompt d'une tâche nomme la commande et dit de ne la lancer qu'à ma demande.
+Rien ne ferme une tâche tout seul, et le socket des hooks reste en lecture seule. Ces variables
+évitent une erreur, elles n'arrêtent pas un agent : il tourne sous mon utilisateur et peut écrire
+dans la base. L'app et la commande écrivent la même ligne sans verrou applicatif : la dernière
+écriture l'emporte si je modifie la tâche à l'instant où l'agent la ferme.
