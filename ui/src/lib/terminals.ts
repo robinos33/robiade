@@ -1,5 +1,6 @@
 import { Terminal, type IBuffer, type ILink, type ILinkProvider } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { SearchAddon, type ISearchOptions } from '@xterm/addon-search';
 import { api } from './api';
 import { citedPaths, fileUrl, LINK_PATTERN, openLink } from './links';
 
@@ -10,6 +11,7 @@ import { citedPaths, fileUrl, LINK_PATTERN, openLink } from './links';
 interface Host {
   term: Terminal;
   fit: FitAddon;
+  search: SearchAddon;
   el: HTMLDivElement;
   opened: boolean;
   /**
@@ -186,6 +188,55 @@ function lineLinks(term: Terminal, id: string, activate: (event: MouseEvent, uri
   };
 }
 
+/**
+ * Raccourci de Robiade tapé dans un terminal. xterm laisse passer ses trois événements (keydown,
+ * keypress, keyup) sans les traiter, la vue le reçoit en keydown : rien ne part dans le PTY.
+ */
+export type TerminalShortcut = 'find';
+
+export function terminalShortcut(e: KeyboardEvent): TerminalShortcut | null {
+  if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return null;
+  if (e.key === 'f') return 'find';
+  return null;
+}
+
+/** Occurrences en surbrillance, dans les couleurs du thème (xterm exige du `#RRGGBB`). */
+const FIND_OPTIONS: ISearchOptions = {
+  decorations: {
+    matchBackground: '#494d64',
+    matchBorder: '#8aadf4',
+    matchOverviewRuler: '#8aadf4',
+    activeMatchBackground: '#7a6a45',
+    activeMatchBorder: '#eed49f',
+    activeMatchColorOverviewRuler: '#eed49f',
+  },
+};
+
+/**
+ * Cherche `text` dans l'historique du terminal : `typing` étend l'occurrence courante pendant la
+ * frappe, `next` et `previous` passent à la suivante ou à la précédente.
+ */
+export function find(id: string, text: string, move: 'typing' | 'next' | 'previous') {
+  const search = hosts.get(id)?.search;
+  if (!search) return;
+  if (!text) return search.clearDecorations();
+  if (move === 'previous') search.findPrevious(text, FIND_OPTIONS);
+  else search.findNext(text, { ...FIND_OPTIONS, incremental: move === 'typing' });
+}
+
+/** Position de l'occurrence courante (-1 au-delà de 1 000 occurrences) et nombre d'occurrences. */
+export function onFindResults(id: string, listener: (index: number, count: number) => void): () => void {
+  const subscription = hosts.get(id)?.search.onDidChangeResults((r) => listener(r.resultIndex, r.resultCount));
+  return () => subscription?.dispose();
+}
+
+/** Fin de recherche : surbrillances effacées, le clavier revient au terminal. */
+export function endFind(id: string, focus: boolean) {
+  const h = hosts.get(id);
+  h?.search.clearDecorations();
+  if (focus) h?.term.focus();
+}
+
 function host(id: string): Host {
   let h = hosts.get(id);
   if (h) return h;
@@ -198,7 +249,8 @@ function host(id: string): Host {
     lineHeight: 1.15,
     cursorBlink: true,
     scrollback: 10000,
-    allowProposedApi: false,
+    // Les surbrillances de la recherche (`registerDecoration`) font encore partie de l'API proposée.
+    allowProposedApi: true,
     macOptionIsMeta: true,
     theme: TERMINAL_THEME,
     // Liens OSC 8 : Claude Code n'en émet pas dans notre PTY (`FORCE_HYPERLINK=0`), mais un autre
@@ -209,6 +261,9 @@ function host(id: string): Host {
   term.registerLinkProvider(lineLinks(term, id, activate));
   const fit = new FitAddon();
   term.loadAddon(fit);
+  const search = new SearchAddon();
+  term.loadAddon(search);
+  term.attachCustomKeyEventHandler((e) => !terminalShortcut(e));
   term.onData((data) => void api.writeAgent(id, data).catch(() => {}));
   term.onResize(({ cols, rows }) => void api.resizeAgent(id, cols, rows).catch(() => {}));
   // Le texte est lu pendant le glisser : un clic ultérieur dans le terminal efface la surbrillance,
@@ -231,7 +286,7 @@ function host(id: string): Host {
   el.addEventListener('mousedown', (e) => void (middle(e) && pastePrimary(term)), true);
   el.addEventListener('mouseup', middle, true);
   el.addEventListener('auxclick', middle, true);
-  h = { term, fit, el, opened: false };
+  h = { term, fit, search, el, opened: false };
   hosts.set(id, h);
   return h;
 }
