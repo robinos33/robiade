@@ -16,6 +16,8 @@ use robiade_core::history::{SessionSearch, TranscriptReader};
 use robiade_core::contributions::{self, Granularity};
 use robiade_core::stats;
 use robiade_core::tasks::{DueDate, SessionId, Task, TaskId, TaskRepository};
+use robiade_core::assets::AssetKind;
+use robiade_core::code::{self, Peek};
 use robiade_core::vcs::FileChange;
 use secrecy::ExposeSecret;
 use tauri::{Manager, State};
@@ -25,7 +27,7 @@ use crate::dto::{
     ContainerActionPreviewDto, ContainerDto, ContributionBucketDto, DbConnectionDto, DbConnectionInputDto, DbOverviewDto, DbProbeDto, DbTargetDto, EntryDto, EnvironmentDto,
     FileChangeDto, ForgeDto, GranularityDto, IssueActionDto, IssueActionPreviewDto, IssueDto, IssueRefDto, IssueStartDto,
     IssueStartedDto, MergeRequestDto, MrActionDto, MrOutcomesDto, MrRefDto, NewIssueDto, OverviewDto, PageDto,
-    PageRequestDto, RelationDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto, WorktreeCreationDto, WorktreeDto,
+    PageRequestDto, ProjectFileDto, ProjectFilesDto, RelationDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto, WorktreeCreationDto, WorktreeDto,
     UpdateDto, WorktreeRemovalDto,
 };
 use crate::db_sessions::OpenSession;
@@ -315,6 +317,77 @@ pub async fn read_asset(state: State<'_, AppState>, id: String, path: String) ->
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Racine que l'onglet Code peut lire : celle d'un dépôt Git ou d'un de ses worktrees liés.
+fn code_root(state: &AppState, raw: &str) -> CmdResult<PathBuf> {
+    let dir = project_dir(raw)?;
+    let path = dir.to_string_lossy();
+    let workspace = state.workspaces.resolve(&path);
+    let is_root = workspace.is_repository
+        && (workspace.project_root == path || workspace.worktree.as_deref() == Some(path.as_ref()));
+    is_root.then_some(dir).ok_or_else(|| "ce dossier n'est pas la racine d'un dépôt Git".into())
+}
+
+/// `relative` dans `root` (canonique), liens résolus, et son chemin résolu relatif à `root`. Refusé
+/// s'il en sort (`..`, chemin absolu, lien vers l'extérieur) ou s'il passe par `.git`, demandé ou
+/// atteint par un lien. Contrairement à `existing_inside`, le fichier doit exister.
+fn file_inside(root: &Path, relative: &str) -> CmdResult<(PathBuf, String)> {
+    if !code::is_plain_relative(relative) {
+        return Err("chemin hors du projet".into());
+    }
+    let path = root.join(relative).canonicalize().map_err(|_| "fichier introuvable : déplacé ou supprimé ?".to_owned())?;
+    let resolved = path.strip_prefix(root).map_err(|_| "lien vers l'extérieur du projet : non suivi".to_owned())?;
+    let resolved = resolved.to_string_lossy().into_owned();
+    if !code::is_plain_relative(&resolved) {
+        return Err("lien vers un chemin interdit : non suivi".into());
+    }
+    Ok((path, resolved))
+}
+
+/// Fichiers du projet ou du worktree, hors ignorés par git.
+#[tauri::command]
+pub async fn project_files(app: tauri::AppHandle, root: String) -> CmdResult<ProjectFilesDto> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let root = code_root(&state, &root)?;
+        let files = state.vcs.files(&root.to_string_lossy()).map_err(|e| e.to_string())?;
+        Ok(ProjectFilesDto::new(files))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Un fichier du projet, en lecture seule. `reveal` ouvre un fichier de secrets connu.
+#[tauri::command]
+pub async fn read_project_file(app: tauri::AppHandle, root: String, path: String, reveal: bool) -> CmdResult<ProjectFileDto> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = code_root(&app.state::<AppState>(), &root)?;
+        read_inside(&root, &path, reveal)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn read_inside(root: &Path, path: &str, reveal: bool) -> CmdResult<ProjectFileDto> {
+    let (file, resolved) = file_inside(root, path)?;
+    // Un lien vers un fichier de secrets en est un, et l'inverse aussi.
+    let named = if code::is_secret_file(path) { path } else { resolved.as_str() };
+    let meta = std::fs::metadata(&file).map_err(|e| e.to_string())?;
+    if !meta.is_file() {
+        return Err("pas un fichier : dossier ou sous-module".into());
+    }
+    let size = meta.len();
+    let kind = match code::peek(named, size, reveal) {
+        Peek::Secret => return Ok(ProjectFileDto::Secret),
+        Peek::TooLarge { size, limit } => return Ok(ProjectFileDto::TooLarge { size, limit }),
+        Peek::Read(kind) => kind,
+    };
+    let bytes = std::fs::read(&file).map_err(|e| e.to_string())?;
+    if kind != AssetKind::Image && code::looks_binary(&bytes) {
+        return Ok(ProjectFileDto::Binary { size });
+    }
+    Ok(ProjectFileDto::Content(AssetContentDto::of(kind, named, bytes, code::masks_tokens(named, reveal))))
 }
 
 /// Modifications en cours dans le dossier de l'agent.
@@ -1394,5 +1467,55 @@ mod tests {
         assert!(existing_inside(&root, "/etc/hosts").is_err());
 
         std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn reads_only_what_stays_inside_the_project() {
+        let base = std::env::temp_dir().join(format!("robiade-code-{}", std::process::id()));
+        let root = base.join("projet");
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        std::fs::create_dir_all(base.join("outside")).unwrap();
+        std::fs::write(root.join("src/a.rs"), "let t = \"glpat-abcdefghijklmnopqrst\";").unwrap();
+        std::fs::write(root.join(".git/config"), "[remote]").unwrap();
+        std::fs::write(base.join("outside/secret"), "").unwrap();
+        std::os::unix::fs::symlink(base.join("outside/secret"), root.join("fuite")).unwrap();
+        std::os::unix::fs::symlink(root.join("src/a.rs"), root.join("alias.rs")).unwrap();
+        std::os::unix::fs::symlink(root.join(".git/config"), root.join("config.ini")).unwrap();
+        let root = root.canonicalize().unwrap();
+
+        let text = |dto: ProjectFileDto| match dto {
+            ProjectFileDto::Content(c) => c.text.unwrap(),
+            _ => panic!("contenu attendu"),
+        };
+        // Lu, jeton masqué ; un lien qui reste dans le projet est suivi.
+        assert!(text(read_inside(&root, "src/a.rs", false).unwrap()).contains("glpat-••••••"));
+        assert!(text(read_inside(&root, "alias.rs", false).unwrap()).starts_with("let t"));
+        for refused in ["fuite", "../outside/secret", "/etc/hosts", "src/../../outside/secret", ".git/config", ".GIT/config", "config.ini", "src"] {
+            assert!(read_inside(&root, refused, false).is_err(), "{refused}");
+        }
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn does_not_load_a_secret_a_large_or_a_binary_file() {
+        let root = std::env::temp_dir().join(format!("robiade-code-kinds-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join(".env"), "APP_SECRET=glpat-abcdefghijklmnopqrst").unwrap();
+        std::fs::write(root.join("dump.sql"), vec![b'a'; code::MAX_TEXT_BYTES as usize + 1]).unwrap();
+        std::fs::write(root.join("app.bin"), b"\x7fELF\0\0").unwrap();
+        std::os::unix::fs::symlink(root.join(".env"), root.join("env.txt")).unwrap();
+        let root = root.canonicalize().unwrap();
+
+        assert!(matches!(read_inside(&root, ".env", false).unwrap(), ProjectFileDto::Secret));
+        assert!(matches!(read_inside(&root, "env.txt", false).unwrap(), ProjectFileDto::Secret));
+        // Ouvert à ma demande, il s'affiche tel quel.
+        match read_inside(&root, ".env", true).unwrap() {
+            ProjectFileDto::Content(c) => assert!(c.text.unwrap().contains("glpat-abcdefghijklmnopqrst")),
+            _ => panic!("contenu attendu"),
+        }
+        assert!(matches!(read_inside(&root, "dump.sql", false).unwrap(), ProjectFileDto::TooLarge { .. }));
+        assert!(matches!(read_inside(&root, "app.bin", false).unwrap(), ProjectFileDto::Binary { size: 6 }));
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }

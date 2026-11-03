@@ -14,6 +14,7 @@ use robiade_core::issue_actions::{IssueAction, NewIssue};
 use robiade_core::project::{self, Workspace};
 use robiade_core::merge_actions::{AuditEntry, MrAction};
 use robiade_core::history::{EntryKind, SearchHit, SessionSummary, TokenUsage, TranscriptEntry, HIT_END, HIT_START};
+use robiade_core::code::is_secret_file;
 use robiade_core::secrets::mask_secrets;
 use robiade_core::pricing::{Estimate, PRICES_AS_OF};
 use robiade_core::stats::{self, AgentsOverview, Overview};
@@ -96,16 +97,50 @@ pub struct AssetContentDto {
 
 impl AssetContentDto {
     pub fn new(asset: &Asset, bytes: Vec<u8>) -> Self {
+        Self::of(asset.kind, &asset.path, bytes, false)
+    }
+
+    /// Contenu de `path` affiché comme `kind` ; `mask` masque les jetons connus du texte.
+    pub fn of(kind: AssetKind, path: &str, bytes: Vec<u8>, mask: bool) -> Self {
         use base64::Engine;
-        let kind = kind_name(asset.kind);
-        match AssetKind::image_mime(&asset.path) {
-            Some(mime) if asset.kind == AssetKind::Image => {
+        let name = kind_name(kind);
+        match AssetKind::image_mime(path) {
+            Some(mime) if kind == AssetKind::Image => {
                 let data = base64::engine::general_purpose::STANDARD.encode(bytes);
-                Self { kind, text: None, data_url: Some(format!("data:{mime};base64,{data}")) }
+                Self { kind: name, text: None, data_url: Some(format!("data:{mime};base64,{data}")) }
             }
-            _ => Self { kind, text: Some(String::from_utf8_lossy(&bytes).into_owned()), data_url: None },
+            _ => {
+                let text = String::from_utf8_lossy(&bytes);
+                let text = if mask { mask_secrets(&text) } else { text.into_owned() };
+                Self { kind: name, text: Some(text), data_url: None }
+            }
         }
     }
+}
+
+/// Fichiers d'un projet pour l'onglet Code ; `secrets` en reprend ceux qui ne s'ouvrent qu'à ma demande.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectFilesDto {
+    pub files: Vec<String>,
+    pub secrets: Vec<String>,
+}
+
+impl ProjectFilesDto {
+    pub fn new(files: Vec<String>) -> Self {
+        let secrets = files.iter().filter(|f| is_secret_file(f)).cloned().collect();
+        Self { files, secrets }
+    }
+}
+
+/// Un fichier de projet : son contenu, ou la raison pour laquelle il n'a pas été lu.
+#[derive(Serialize)]
+#[serde(tag = "state", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum ProjectFileDto {
+    Content(AssetContentDto),
+    Secret,
+    TooLarge { size: u64, limit: u64 },
+    Binary { size: u64 },
 }
 
 /// Une jauge en pourcentage, avec son niveau calculé côté Rust.

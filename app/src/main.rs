@@ -252,6 +252,8 @@ fn main() {
             commands::rename_agent,
             commands::forget_agent,
             commands::read_asset,
+            commands::project_files,
+            commands::read_project_file,
             commands::working_changes,
             commands::working_diff,
             commands::merge_requests,
