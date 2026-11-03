@@ -8,7 +8,7 @@ use robiade_core::databases::{Connection, Engine, Part, Probe, Source, Stage, Ta
 use robiade_core::db_browse::{Cell, Column, Cursor, Filter, FilterOp, Page, PageRequest, Relation, RelationKind, Sort};
 use robiade_core::db_console::{HistoryEntry, Outcome};
 use robiade_core::forge::{
-    Issue, IssueRef, IssueState, MergeRequest, MrOutcomes, MrRef, MrState, PipelineStatus, GITLAB_HOST,
+    Discussion, Issue, IssueRef, IssueState, MergeRequest, MrOutcomes, MrRef, MrState, PipelineStatus, GITLAB_HOST,
 };
 use robiade_core::issue_actions::{IssueAction, NewIssue};
 use robiade_core::project::{self, Workspace};
@@ -723,6 +723,66 @@ impl From<MergeRequest> for MergeRequestDto {
             }),
             wagon,
             approvals: m.approvals.map(|a| ApprovalsDto { required: a.required, left: a.left, by: a.by }),
+        }
+    }
+}
+
+/// Une MR telle que le panneau de lecture la montre : en-tête, description et fils d'échanges.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MrReadingDto {
+    pub mr: MergeRequestDto,
+    /// Markdown de GitLab, non fiable : rendu dans une iframe sandboxée, jamais en `{@html}`.
+    pub description: String,
+    pub discussions: Vec<DiscussionDto>,
+}
+
+impl MrReadingDto {
+    pub fn new(mut mr: MergeRequest, discussions: Vec<Discussion>) -> Self {
+        let description = std::mem::take(&mut mr.description);
+        Self { mr: mr.into(), description, discussions: discussions.into_iter().map(DiscussionDto::from).collect() }
+    }
+}
+
+/// Une issue telle que le panneau de lecture la montre.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueReadingDto {
+    pub issue: IssueDto,
+    /// Markdown de GitLab, non fiable : rendu dans une iframe sandboxée, jamais en `{@html}`.
+    pub description: String,
+    pub discussions: Vec<DiscussionDto>,
+}
+
+impl IssueReadingDto {
+    pub fn new(mut issue: Issue, discussions: Vec<Discussion>) -> Self {
+        let description = std::mem::take(&mut issue.description);
+        Self { issue: issue.into(), description, discussions: discussions.into_iter().map(DiscussionDto::from).collect() }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscussionDto {
+    pub notes: Vec<NoteDto>,
+    /// `None` pour un fil qui ne se résout pas.
+    pub resolved: Option<bool>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteDto {
+    pub author: String,
+    /// Markdown de GitLab, non fiable.
+    pub body: String,
+    pub created_at: i64,
+}
+
+impl From<Discussion> for DiscussionDto {
+    fn from(d: Discussion) -> Self {
+        Self {
+            notes: d.notes.into_iter().map(|n| NoteDto { author: n.author, body: n.body, created_at: n.created_at }).collect(),
+            resolved: d.resolved,
         }
     }
 }

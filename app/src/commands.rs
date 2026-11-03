@@ -10,7 +10,7 @@ use robiade_core::db_browse::{page, page_query, PageRequest, TableRef};
 use robiade_core::databases::DbError;
 use robiade_core::db_console::{self, Admission, ConsoleHistory, Policy, StatementKind};
 use robiade_core::merge_actions::AuditEntry;
-use robiade_core::forge::{Issue, IssueRef, MrRef};
+use robiade_core::forge::{ForgeError, Issue, IssueRef, MrRef};
 use robiade_core::{issue_start, task_start};
 use robiade_core::history::{SessionSearch, TranscriptReader};
 use robiade_core::contributions::{self, Granularity};
@@ -26,7 +26,7 @@ use crate::dto::{
     ActionPreviewDto, AgentDto, AssetContentDto, AuditEntryDto, ConsoleHistoryDto, ConsoleReplyDto, ConsoleResultDto, FinishedWriteDto,
     ContainerActionPreviewDto, ContainerDto, ContributionBucketDto, DbConnectionDto, DbConnectionInputDto, DbOverviewDto, DbProbeDto, DbTargetDto, EntryDto, EnvironmentDto,
     FileChangeDto, ForgeDto, GranularityDto, IssueActionDto, IssueActionPreviewDto, IssueDto, IssueRefDto, IssueStartDto,
-    IssueStartedDto, MergeRequestDto, MrActionDto, MrOutcomesDto, MrRefDto, NewIssueDto, OverviewDto, PageDto,
+    IssueReadingDto, IssueStartedDto, MergeRequestDto, MrActionDto, MrReadingDto, MrOutcomesDto, MrRefDto, NewIssueDto, OverviewDto, PageDto,
     PageRequestDto, ProjectFileDto, ProjectFilesDto, RelationDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto, WorktreeCreationDto, WorktreeDto,
     UpdateDto, WorktreeRemovalDto,
 };
@@ -455,6 +455,46 @@ pub async fn issues(state: State<'_, AppState>, project: Option<String>) -> CmdR
     .map_err(|e| e.to_string())?
     .map_err(|e| e.to_string())?;
     Ok(issues.into_iter().map(IssueDto::from).collect())
+}
+
+/// Une MR lue à l'ouverture du panneau de lecture : état, approbations, description et fils
+/// d'échanges, lus en parallèle. Rien n'est gardé : GitLab reste la source.
+#[tauri::command]
+pub async fn read_merge_request(state: State<'_, AppState>, target: MrRefDto) -> CmdResult<MrReadingDto> {
+    let mr = target.validate().ok_or("MR invalide")?;
+    let forge = state.forge.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        std::thread::scope(|s| {
+            let approvals = s.spawn(|| forge.approvals(&mr));
+            let discussions = s.spawn(|| forge.merge_request_discussions(&mr));
+            let mut found = forge.merge_request(&mr)?;
+            // Des approbations illisibles ne cachent pas la MR : l'en-tête s'en passe.
+            found.approvals = approvals.join().ok().and_then(Result::ok);
+            let discussions = discussions.join().map_err(|_| ForgeError::Api("lecture interrompue".into()))??;
+            Ok(MrReadingDto::new(found, discussions))
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e: ForgeError| e.to_string())
+}
+
+/// Une issue lue à l'ouverture du panneau de lecture : en-tête, description et fils d'échanges.
+#[tauri::command]
+pub async fn read_issue(state: State<'_, AppState>, target: IssueRefDto) -> CmdResult<IssueReadingDto> {
+    let issue = target.validate().ok_or("issue invalide")?;
+    let forge = state.forge.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        std::thread::scope(|s| {
+            let discussions = s.spawn(|| forge.issue_discussions(&issue));
+            let found = forge.issue(&issue)?;
+            let discussions = discussions.join().map_err(|_| ForgeError::Api("lecture interrompue".into()))??;
+            Ok(IssueReadingDto::new(found, discussions))
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e: ForgeError| e.to_string())
 }
 
 /// Relit la MR sur GitLab et applique les règles du domaine : rien ne part sur un état périmé.

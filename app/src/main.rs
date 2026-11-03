@@ -267,6 +267,8 @@ fn main() {
             commands::working_diff,
             commands::merge_requests,
             commands::issues,
+            commands::read_merge_request,
+            commands::read_issue,
             commands::preview_mr_action,
             commands::run_mr_action,
             commands::preview_issue_action,
