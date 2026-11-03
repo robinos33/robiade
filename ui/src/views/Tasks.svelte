@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { app } from '../lib/state.svelte';
   import { api } from '../lib/api';
   import { openUrl } from '@tauri-apps/plugin-opener';
@@ -115,7 +116,13 @@
     await api.deleteTask(t.id).catch((e) => app.notify(String(e)));
     await app.refreshTasks();
   }
+
+  /** Un agent a pu fermer sa tâche (`robiade task done`) : relue à l'ouverture de la vue et au retour dans l'app. */
+  const reloadTasks = () => void app.refreshTasks().catch((e) => app.notify(String(e)));
+  onMount(reloadTasks);
 </script>
+
+<svelte:window onfocus={reloadTasks} />
 
 <section class="page">
   <header class="page-head" data-tauri-drag-region>
