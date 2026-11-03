@@ -729,6 +729,8 @@ export function install() {
       },
       unregisterCallback: (id: number) => callbacks.delete(id),
       convertFileSrc: (p: string) => p,
+      // Lu par `getCurrentWebview()` ; un dépôt de fichiers se simule par `emit('tauri://drag-drop', …)`.
+      metadata: { currentWindow: { label: 'main' }, currentWebview: { windowLabel: 'main', label: 'main' } },
       async invoke(cmd: string, args: Record<string, unknown> = {}) {
         if (cmd === 'plugin:event|listen') {
           const event = args.event as string;
