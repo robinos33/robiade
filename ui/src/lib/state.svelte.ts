@@ -154,9 +154,10 @@ class AppState {
 
   /**
    * MR de la session d'un agent : son `pr-link` (écrit pour `gh`, pas pour `glab`), sinon la MR
-   * ouverte du même projet GitLab dont la branche source est celle de la session.
+   * ouverte du même projet GitLab dont la branche source est celle de la session. Titre et état ne
+   * sont connus que de cette dernière.
    */
-  mergeRequestOf(agent: Agent): { url: string; state?: MrState } | null {
+  mergeRequestOf(agent: Agent): { url: string; state?: MrState; title?: string } | null {
     const session = this.sessionOf(agent);
     if (session?.mergeRequestUrl) return { url: session.mergeRequestUrl };
     const project = agent.gitlabProject?.toLowerCase();
@@ -165,7 +166,7 @@ class AppState {
     const mr = [...(this.forge?.mine ?? []), ...(this.forge?.reviews ?? [])].find(
       (m) => m.project.toLowerCase() === project && m.sourceBranch === branch,
     );
-    return mr ? { url: mr.webUrl, state: mr.state } : null;
+    return mr ? { url: mr.webUrl, state: mr.state, title: mr.title } : null;
   }
 
   async init() {

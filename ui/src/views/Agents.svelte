@@ -253,7 +253,7 @@
                 <Icon name="branch" size={12} /><span class="tail" dir="rtl"><bdi>{session.gitBranch}</bdi></span>
               </span>
             {/if}
-            {#if mr}<MrBadge url={mr.url} state={mr.state} />{/if}
+            {#if mr}<MrBadge url={mr.url} state={mr.state} title={mr.title} />{/if}
             <span class="spacer"></span>
             {#if active.status !== 'ended'}
               <button class="btn ghost" onclick={restart} title="Relance claude sur la même session : prend une mise à jour installée (« Restart to update »)">
