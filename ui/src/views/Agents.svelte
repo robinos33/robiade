@@ -434,6 +434,8 @@
     border-bottom: 1px solid var(--line); background: var(--bg);
   }
   .spacer { flex: 1; }
+  /* Quand la place manque, chemin, branche et titre de MR rétrécissent ; les actions jamais. */
+  .term-bar .btn { flex: none; }
   .branch { display: inline-flex; align-items: center; gap: 4px; min-width: 0; color: var(--ink-2); }
   .branch :global(svg) { flex: none; }
   .tail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
