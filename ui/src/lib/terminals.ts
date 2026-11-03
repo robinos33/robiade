@@ -85,11 +85,18 @@ document.addEventListener('selectionchange', () => {
 });
 
 /**
+ * Caractères de contrôle C0 et C1, sauf tabulation et fins de ligne. Un titre d'issue ou un diff
+ * vient de GitLab : un `ESC[201~` fermerait le bracketed paste et la suite partirait comme tapée.
+ */
+const CONTROL = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g;
+
+/**
  * Colle la dernière sélection dans le prompt, sans l'envoyer. `paste` passe en bracketed paste et
- * normalise les fins de ligne ; une fin de ligne finale (triple-clic sur une ligne) est retirée.
+ * normalise les fins de ligne, mais laisse passer les séquences d'échappement : on les retire. Une
+ * fin de ligne finale (triple-clic sur une ligne) est retirée aussi.
  */
 function pastePrimary(term: Terminal) {
-  const text = primary.replace(/[\r\n]+$/, '');
+  const text = primary.replace(CONTROL, '').replace(/[\r\n]+$/, '');
   if (!text) return;
   // Sans bracketed paste, chaque `\r` vaudrait Entrée. Claude Code l'active toujours.
   if (!term.modes.bracketedPasteMode && /[\r\n]/.test(text)) return;
