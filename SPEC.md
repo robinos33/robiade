@@ -193,7 +193,9 @@ texte (FTS5) ; reprise d'une session (`claude --resume <sessionId>` dans un PTY)
 wagons empilés).
 
 **Lecture** : mes MR (auteur ou relecteur), état pipeline, discussions non résolues, conflits,
-approbations ; MR des autres en attente de ma review.
+approbations ; MR des autres en attente de ma review. Une issue ou une MR se lit en entier dans un
+panneau, à côté de la liste : description et fils d'échanges (sans les notes système), avec leur
+état résolu ou non. Lus à l'ouverture, jamais stockés ; ⌘+clic garde le navigateur.
 
 **Actions** (toutes confirmées dans l'UI, voir §6) : commenter, approuver, rebaser, relancer un job,
 passer draft/ready, merger. Règles de domaine portées par le code, pas par l'utilisateur :
@@ -409,7 +411,9 @@ Le niveau d'exigence est celui d'un outil d'administration.
 - Tout ce qui vient des transcripts, de GitLab (titres, descriptions, commentaires, logs de jobs)
   et de Docker est **non fiable** : rendu comme texte, jamais en `{@html}`. Markdown et HTML rendus
   dans une iframe `srcdoc` sandboxée (ni script, ni origine, ni navigation hors de l'app) : aucun
-  nettoyage à maintenir, le contenu ne peut rien exécuter.
+  nettoyage à maintenir, le contenu ne peut rien exécuter. Les liens y sont inertes ; les images
+  jointes à GitLab, servies derrière authentification, ne sont pas chargées et s'affichent comme
+  leur adresse.
 - Un transcript peut contenir des secrets collés par erreur : la recherche plein texte est locale
   et son index SQLite vit dans le cache de l'app, exclu de Time Machine (`tmutil addexclusion`).
 - Lecture des fichiers d'un projet (onglet Code) : une commande Rust, bornée à la racine du dépôt
