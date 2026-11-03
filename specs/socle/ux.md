@@ -31,6 +31,11 @@ performance, communs à toutes les vues.
   comprise. Une fin de ligne finale est retirée, et le presse-papiers n'est ni lu ni modifié.
   Avant toute sélection, le clic molette ne fait rien. Une fenêtre détachée ne voit que les
   sélections faites dans cette fenêtre.
+- **Panneaux latéraux redimensionnables** : barre latérale, liste et panneau Session/Diff des
+  agents, arbre de Code, liste de l'historique, logs d'un conteneur, arbre et détail d'une ligne
+  de l'explorateur DB. Une poignée sur la bordure, surlignée au survol, se glisse ou se règle
+  aux flèches ← →. Un double-clic rend la largeur par défaut. La largeur est retenue sur le
+  poste, une par panneau. Les modales ne sont pas concernées.
 
 ## Règles
 
@@ -51,6 +56,10 @@ performance, communs à toutes les vues.
   moins un tour du point (900 ms, pour ne pas flasher) et **jamais plus de 5 s** : un démarrage
   lent ou bloqué rend la main quand même. Un échec le retire aussi, « Démarrage incomplet » dit
   pourquoi.
+- **Un panneau reste entre ses bornes** : un minimum pour que son contenu reste utilisable, un
+  maximum pour que la zone principale garde le sien (le terminal d'agent garde environ
+  60 colonnes). Une largeur retenue qui ne tient plus, sur un écran plus petit, s'affiche bornée
+  et revient quand la place revient.
 
 ### Budgets de performance (mesurés, pas supposés)
 | Mesure | Cible |
@@ -67,6 +76,8 @@ performance, communs à toutes les vues.
   ligne serait envoyée. Les caractères de contrôle sont retirés avant le collage, sauf tabulation
   et fins de ligne : un titre d'issue venu de GitLab pourrait sinon fermer le bracketed paste et
   envoyer la suite.
+- **Le terminal se recale une fois, au relâchement d'une poignée.** Chaque recalage envoie un
+  redimensionnement au PTY et fait redessiner tout l'écran à Claude Code.
 
 ## Décisions
 
@@ -75,11 +86,24 @@ performance, communs à toutes les vues.
   la vue Agents, et quitter une vue efface sa sélection : sans cela, on ne pourrait rien reprendre
   d'une autre vue. Risque résiduel : un texte oublié arrive dans le prompt, mais il ne part pas
   sans Entrée.
+- Décidé le 2026-11-03 : sans réglage, un panneau garde la largeur de la feuille de style, y
+  compris quand elle est proportionnelle (26 %, 38 %). Seul un glisser ou une flèche fixe une
+  largeur en pixels (issue #23).
+- Décidé le 2026-11-03 : les bornes ne s'appliquent qu'à l'affichage, la largeur retenue n'est
+  réécrite que par l'utilisateur (issue #23).
+- Décidé le 2026-11-03 : une seule largeur pour les onglets Session et Diff, pour que changer
+  d'onglet ne redimensionne pas le terminal (issue #23).
+- **[À trancher]** Dans l'onglet Agents, la liste se borne en supposant le panneau Session/Diff
+  à son minimum, et celui-ci prend la place qu'elle laisse : élargir la liste rétrécit le
+  panneau de droite. C'est le choix fait pendant le ticket, parce que des bornes qui dépendent
+  l'une de l'autre oscillent. Je ne l'ai pas encore validé (issue #23).
 
 ## Écarté
 
 - Ne coller qu'une sélection encore visible, comme le demandait l'issue #12 : un titre d'issue ou
   un diff d'une autre vue n'aurait jamais pu être repris.
+- Recalage du terminal à chaque image (`requestAnimationFrame`) pendant le glisser : encore un
+  redimensionnement du PTY par colonne franchie, soit des dizaines par glisser (issue #23).
 
 ## Tickets
 
@@ -87,3 +111,4 @@ performance, communs à toutes les vues.
 - #11 — Terminal : ⌘+clic sur un lien
 - #12 — Terminal : clic molette colle la sélection dans le prompt
 - #21 — Interface : écran de démarrage
+- #23 — Interface — panneaux latéraux redimensionnables
