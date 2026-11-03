@@ -70,6 +70,33 @@ window.addEventListener('keyup', (e) => setMeta(e.metaKey), true);
 // ⌘⇥ vers une autre app : le relâchement de ⌘ ne nous parvient pas.
 window.addEventListener('blur', () => setMeta(false));
 
+/**
+ * Dernière sélection faite dans l'interface, terminal ou DOM, comme la sélection primaire de X11 :
+ * le clic molette dans un terminal d'agent la colle dans son prompt. On garde le texte, pas la
+ * sélection : il survit à la désélection et au changement de vue, ce qui permet de reprendre un
+ * titre d'issue ou un bout de diff affichés ailleurs (zones `.selectable`, le reste de l'interface
+ * est en `user-select: none`). Le presse-papiers n'est pas touché.
+ */
+let primary = '';
+
+document.addEventListener('selectionchange', () => {
+  const text = document.getSelection()?.toString() ?? '';
+  if (text) primary = text;
+});
+
+/**
+ * Colle la dernière sélection dans le prompt, sans l'envoyer. `paste` passe en bracketed paste et
+ * normalise les fins de ligne ; une fin de ligne finale (triple-clic sur une ligne) est retirée.
+ */
+function pastePrimary(term: Terminal) {
+  const text = primary.replace(/[\r\n]+$/, '');
+  if (!text) return;
+  // Sans bracketed paste, chaque `\r` vaudrait Entrée. Claude Code l'active toujours.
+  if (!term.modes.bracketedPasteMode && /[\r\n]/.test(text)) return;
+  term.paste(text);
+  term.focus();
+}
+
 /** Lignes repliées recollées au plus, de part et d'autre de la ligne survolée. */
 const MAX_WRAPPED_ROWS = 32;
 
@@ -150,10 +177,26 @@ function host(id: string): Host {
   term.loadAddon(fit);
   term.onData((data) => void api.writeAgent(id, data).catch(() => {}));
   term.onResize(({ cols, rows }) => void api.resizeAgent(id, cols, rows).catch(() => {}));
+  // Le texte est lu pendant le glisser : un clic ultérieur dans le terminal efface la surbrillance,
+  // pas la dernière sélection.
+  term.onSelectionChange(() => {
+    if (term.hasSelection()) primary = term.getSelection();
+  });
   const el = document.createElement('div');
   el.className = 'term-host';
   // ⌘ enfoncé avant que la fenêtre ait le focus : le premier mouvement de souris le dit.
   el.addEventListener('mousemove', (e) => setMeta(e.metaKey));
+  // Clic molette, intercepté avant xterm : si le programme suit la souris, xterm lui transmettrait
+  // le clic. `preventDefault` empêche aussi le défilement automatique et l'ouverture d'un lien.
+  const middle = (e: MouseEvent) => {
+    if (e.button !== 1) return false;
+    e.preventDefault();
+    e.stopPropagation();
+    return true;
+  };
+  el.addEventListener('mousedown', (e) => void (middle(e) && pastePrimary(term)), true);
+  el.addEventListener('mouseup', middle, true);
+  el.addEventListener('auxclick', middle, true);
   h = { term, fit, el, opened: false };
   hosts.set(id, h);
   return h;
