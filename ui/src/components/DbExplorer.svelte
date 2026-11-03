@@ -5,9 +5,16 @@
   import { sessionReadOnly } from '../lib/format';
   import DbConsole from './DbConsole.svelte';
   import DbGrid from './DbGrid.svelte';
+  import ResizeHandle from './ResizeHandle.svelte';
   import StageBadge from './StageBadge.svelte';
 
   let { connection, onclose }: { connection: DbConnection; onclose: () => void } = $props();
+
+  /** Largeur de l'arbre choisie à la poignée ; `null` garde celle de la feuille de style. */
+  let treeWidth = $state<number | null>(null);
+  let panesW = $state(0);
+  /** Place gardée à droite de l'arbre : le détail d'une ligne à son minimum (260) et 300px de grille. */
+  const DETAIL_ROOM = 560;
 
   let overview = $state<DbOverview | null>(null);
   let error = $state<string | null>(null);
@@ -103,8 +110,16 @@
 
   {#if error}<p class="error-text">{error}</p>{/if}
 
-  <div class="panes">
-    <nav class="tree">
+  <div class="panes" bind:clientWidth={panesW}>
+    <nav class="tree" style:--db-tree-w={treeWidth ? `${treeWidth}px` : null}>
+      <ResizeHandle
+        id="db.tree"
+        edge="right"
+        min={180}
+        max={panesW ? panesW - DETAIL_ROOM : Infinity}
+        label="Largeur de la liste des tables"
+        bind:width={treeWidth}
+      />
       <input class="search" bind:value={search} placeholder="Filtrer les tables" spellcheck="false" />
       <div class="list">
         {#each schemas as [schema, relations] (schema)}
@@ -160,7 +175,7 @@
   }
   .error-text { color: var(--danger); margin: 8px 16px; font-size: 12.5px; overflow-wrap: anywhere; }
   .panes { display: flex; flex: 1; min-height: 0; }
-  .tree { width: 260px; flex: none; border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  .tree { position: relative; width: var(--db-tree-w, 260px); flex: none; border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
   .search {
     margin: 8px; height: 26px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
     background: var(--bg-raised); color: var(--ink); font-size: 12px; padding: 0 8px;
