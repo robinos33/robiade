@@ -18,7 +18,14 @@
   const ENGINES: { engine: DbEngine; label: string; port: number }[] = [
     { engine: 'postgres', label: 'PostgreSQL', port: 5432 },
     { engine: 'mariadb', label: 'MariaDB', port: 3306 },
+    { engine: 'mongo', label: 'MongoDB', port: 27017 },
+    { engine: 'elasticsearch', label: 'Elasticsearch', port: 9200 },
   ];
+  /** Ce que chaque champ veut dire pour les moteurs qui ne suivent pas le DATABASE_URL de Doctrine. */
+  const HINTS: Partial<Record<DbEngine, Partial<Record<DbPart, string>>>> = {
+    elasticsearch: { url: 'ELASTICSEARCH_URL, http(s)://', database: 'sans objet', password: 'ou clé d’API encodée, sans utilisateur' },
+    mongo: { url: 'MONGODB_URL, mongodb://, graines h1:p1,h2:p2 acceptées', database: 'sert aussi d’authSource par défaut' },
+  };
 
   const PARTS: { part: DbPart; label: string; secret: boolean; hint: string }[] = [
     { part: 'url', label: 'URL', secret: true, hint: 'DATABASE_URL de Symfony' },
@@ -74,13 +81,19 @@
     return 'non renseigné';
   });
 
+  const hint = (p: (typeof PARTS)[number]) => HINTS[engine]?.[p.part] ?? p.hint;
+
   /** Secret enregistré en clair : il n'est jamais renvoyé ici, laissé vide il reste inchangé. */
   const storedClear = (part: DbPart) => initial?.fields.some((f) => f.part === part && f.source.kind === 'literal') ?? false;
 
   const LOCAL_HOSTS = ['localhost', '127.0.0.1', '::1'];
-  /** Hôte d'une URL Postgres ou MariaDB (`mysql://`), crochets d'IPv6 retirés. */
-  const urlHost = (url: string) =>
-    /^(?:postgres(?:ql)?|mysql|mariadb):\/\/(?:[^/]*@)?(\[[^\]]+\]|[^:/?]+)/.exec(url.trim())?.[1]?.replace(/^\[|\]$/g, '');
+  /** Hôte d'une URL, crochets d'IPv6 retirés. Une liste de graines Mongo n'a pas d'hôte unique,
+   *  donc jamais local. */
+  function urlHost(url: string): string | undefined {
+    const authority = /^(?:postgres(?:ql)?|mysql|mariadb|https?|mongodb):\/\/(?:[^/]*@)?([^/?]*)/.exec(url.trim())?.[1];
+    if (!authority || authority.includes(',')) return undefined;
+    return /^(\[[^\]]+\]|[^:]+)/.exec(authority)?.[1]?.replace(/^\[|\]$/g, '');
+  }
 
   /** Même règle que le domaine, pour n'offrir la saisie en clair que là où elle sera acceptée :
    *  dev, et un hôte local connu sans rien résoudre. Rust tranche de toute façon à l'enregistrement. */
@@ -162,7 +175,6 @@
             {e.label}
           </button>
         {/each}
-        <span class="muted">· Mongo, Elastic plus tard</span>
       </div>
 
       <span class="k">Environnement</span>
@@ -190,7 +202,7 @@
       {#each PARTS as p (p.part)}
         {@const row = rows[p.part]}
         <div class="field-row">
-          <span class="k" title={p.hint}>{p.label}</span>
+          <span class="k" title={hint(p)}>{p.label}</span>
           <select class="field kind" bind:value={row.kind} onchange={() => (picking = row.kind === 'vault' && !row.vault ? p.part : null)}>
             <option value="none">—</option>
             <option value="literal" disabled={p.secret && !clearAllowed && row.kind !== 'literal'}>
@@ -201,9 +213,9 @@
           </select>
           {#if row.kind === 'literal' && p.secret}
             <input class="field mono" class:refused={!clearAllowed} type="password" bind:value={row.value} autocomplete="off"
-              placeholder={storedClear(p.part) ? 'inchangé' : p.hint} />
+              placeholder={storedClear(p.part) ? 'inchangé' : hint(p)} />
           {:else if row.kind === 'literal'}
-            <input class="field mono" bind:value={row.value} placeholder={p.hint} spellcheck="false" />
+            <input class="field mono" bind:value={row.value} placeholder={hint(p)} spellcheck="false" />
           {:else if row.kind === 'keychain'}
             <input class="field mono" bind:value={row.service} placeholder="service du trousseau" spellcheck="false" />
           {:else if row.kind === 'vault'}
@@ -211,7 +223,7 @@
               {row.vault ? `${row.vault.mount}/${row.vault.path}#${row.vault.key}` : 'Choisir dans Vault…'}
             </button>
           {:else}
-            <span class="muted hint">{p.hint}</span>
+            <span class="muted hint">{hint(p)}</span>
           {/if}
         </div>
         {#if picking === p.part}

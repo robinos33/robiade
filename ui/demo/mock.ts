@@ -373,6 +373,14 @@ const dbConnections: DbConnection[] = [
     fields: [{ part: 'url', source: { kind: 'literal', value: 'mysql://app:app@127.0.0.1:3306/catalogue?serverVersion=10.11.2-MariaDB' } }],
   },
   {
+    id: 'db-avis', name: 'Avis clients', engine: 'mongo', stage: 'staging', projectPath: null, readOnly: true,
+    fields: [{ part: 'url', source: { kind: 'vault', mount: 'boutique-kv', path: 'internal/staging/MONGODB', key: 'URL' } }],
+  },
+  {
+    id: 'db-logs', name: 'Journaux prod', engine: 'elasticsearch', stage: 'prod', projectPath: null, readOnly: true,
+    fields: [{ part: 'url', source: { kind: 'vault', mount: 'boutique-kv', path: 'internal/prod/ELASTICSEARCH', key: 'URL' } }],
+  },
+  {
     id: 'db-staging', name: 'Boutique staging', engine: 'postgres', stage: 'staging', projectPath: null, readOnly: true,
     fields: [{ part: 'url', source: { kind: 'vault', mount: 'boutique-kv', path: 'internal/staging/DATABASE', key: 'URL' } }],
   },
@@ -382,9 +390,17 @@ const dbConnections: DbConnection[] = [
   },
 ];
 
+/** Collections d'une base Mongo : pas de schéma, et pas d'estimation de taille. */
+const mongoCollections = ['avis', 'moderation', 'signalements'].map((name) => ({ schema: '', name, kind: 'table', estimatedRows: null }));
+
+/** Index d'un cluster Elasticsearch : pas de schéma. */
+const esIndices = ['commandes', 'logs-2026.09', 'logs-2026.10', 'recherches'].map((name, i) => ({
+  schema: '', name, kind: 'table', estimatedRows: [48_210, 1_204_377, 986_002, 3_118][i]!,
+}));
+
 const dbTarget = (id: unknown) => ({
-  host: id === 'db-local' ? 'localhost' : id === 'db-catalogue' ? '127.0.0.1' : `pg-${id === 'db-prod' ? 'prod' : 'staging'}.boutique.internal`,
-  port: id === 'db-local' ? 8032 : id === 'db-catalogue' ? 3306 : 5432,
+  host: id === 'db-local' ? 'localhost' : id === 'db-catalogue' ? '127.0.0.1' : id === 'db-logs' ? 'es-prod.boutique.internal' : `pg-${id === 'db-prod' ? 'prod' : 'staging'}.boutique.internal`,
+  port: id === 'db-local' ? 8032 : id === 'db-catalogue' ? 3306 : id === 'db-logs' ? 9200 : 5432,
   database: id === 'db-catalogue' ? 'catalogue' : 'boutique',
   user: 'app',
   sslMode: id === 'db-local' ? null : 'require',
@@ -667,12 +683,17 @@ const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
   vault_keys: (args) => (String(args.path).endsWith('DATABASE') ? ['URL'] : ['DSN', 'URL']),
   resolve_db_target: (args) => dbTarget(args.id),
   test_db_connection: (args) => ({ target: dbTarget(args.id), serverVersion: '17.2', user: 'app', database: 'boutique', readOnly: true }),
-  open_db: (args) => ({
-    database: args.database ?? 'boutique',
-    databases: ['boutique', 'boutique_archive', 'postgres'],
-    relations: dbRelations,
-    readOnly: args.id !== 'db-local',
-  }),
+  open_db: (args) =>
+    args.id === 'db-logs'
+      ? { database: 'boutique-logs', databases: ['boutique-logs'], relations: esIndices, readOnly: true }
+      : args.id === 'db-avis'
+      ? { database: 'avis', databases: ['avis', 'avis_archive'], relations: mongoCollections, readOnly: true }
+      : {
+          database: args.database ?? 'boutique',
+          databases: ['boutique', 'boutique_archive', 'postgres'],
+          relations: dbRelations,
+          readOnly: args.id !== 'db-local',
+        },
   db_page: (args) => dbPage(args.request as DbPageRequest),
   run_db_statement: (args) => consoleReply(args),
   cancel_db_statement: () => null,

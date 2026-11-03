@@ -1378,7 +1378,7 @@ pub struct DbOverviewDto {
     pub database: String,
     pub databases: Vec<String>,
     pub relations: Vec<RelationDto>,
-    /// Lu sur le serveur.
+    /// Lu sur le serveur ; pour un moteur sans lecture seule de session, celle que la console tient.
     pub read_only: bool,
 }
 

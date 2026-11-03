@@ -3,12 +3,14 @@
 pub mod backup;
 pub mod claude_code;
 pub mod docker;
+pub mod elasticsearch;
 pub mod engines;
 pub mod git;
 pub mod gitlab;
 pub mod hooks;
 pub mod keychain;
 pub mod mariadb;
+pub mod mongo;
 pub mod postgres;
 pub mod pty;
 pub mod self_update;

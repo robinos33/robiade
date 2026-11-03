@@ -2,7 +2,7 @@
   import { untrack } from 'svelte';
   import { app } from '../lib/state.svelte';
   import { api } from '../lib/api';
-  import { engineLabel } from '../lib/format';
+  import { engineLabel, sessionReadOnly } from '../lib/format';
   import type { DbConnection, DbProbe, DbTarget } from '../lib/types';
   import DbConnectionDialog from '../components/DbConnectionDialog.svelte';
   import DbExplorer from '../components/DbExplorer.svelte';
@@ -47,6 +47,14 @@
     if (s?.kind === 'vault') return `Vault ${s.mount}/${s.path}#${s.key}`;
     if (s?.kind === 'keychain') return `trousseau ${s.service}`;
     return '';
+  }
+
+  /** Ce que le test a constaté de l'accès. Sans lecture seule de session (Mongo, Elasticsearch), le
+   *  serveur dit seulement si le compte pourrait écrire ; la console tient la lecture seule. */
+  function probeAccess(c: DbConnection, probe: DbProbe): string {
+    if (sessionReadOnly(c.engine)) return probe.readOnly ? 'lecture seule (vérifiée sur le serveur)' : 'lecture-écriture';
+    if (probe.readOnly) return 'compte en lecture seule';
+    return c.readOnly ? 'lecture seule tenue par la console, le compte peut écrire' : 'lecture-écriture';
   }
 
   const targetLabel = (t: DbTarget) => `${t.user ? `${t.user}@` : ''}${t.host}:${t.port}${t.database ? `/${t.database}` : ''}`;
@@ -140,7 +148,7 @@
             <p class="result ok">
               {c.stage === 'prod' ? 'PROD · ' : ''}{c.name} → <span class="mono">{targetLabel(r.probe.target)}</span>
               · {engineLabel(c.engine)} {r.probe.serverVersion} · connecté en {r.probe.user} sur {r.probe.database}
-              · {r.probe.readOnly ? 'lecture seule (vérifiée sur le serveur)' : 'lecture-écriture'}
+              · {probeAccess(c, r.probe)}
             </p>
           {:else if r?.error}
             <p class="result error-text">{c.name} : {r.error}</p>

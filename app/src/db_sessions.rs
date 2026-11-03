@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
-use robiade_core::databases::{DbError, Dialect, Language};
+use robiade_core::databases::{DbError, Language};
 use robiade_core::db_browse::{Canceller, DbSession};
 use robiade_core::db_console::Policy;
 
@@ -202,6 +202,7 @@ impl DbSessions {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use robiade_core::databases::Dialect;
     use robiade_core::db_browse::{PageQuery, Relation, TableRef, TableShape};
     use robiade_core::db_console::{Executed, StatementKind};
 
@@ -374,6 +375,7 @@ mod tests {
             user: Some("postgres".into()),
             password: Some(std::env::var("ROBIADE_PG_TEST_PASSWORD").unwrap()),
             ssl_mode: None,
+            options: vec![],
         };
         let mut setup = Postgres.open(Engine::Postgres, &target, Tls::Disabled, false).unwrap();
         setup.execute("CREATE TABLE IF NOT EXISTS robiade_expiry (a int)", StatementKind::Write, 1).unwrap();

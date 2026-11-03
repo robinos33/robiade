@@ -42,6 +42,8 @@ const ENGINE_LABELS: Record<DbEngine, string> = {
   elasticsearch: 'Elasticsearch',
 };
 export const engineLabel = (engine: DbEngine) => ENGINE_LABELS[engine];
+/** Le serveur tient une session en lecture seule et le confirme ; sinon, c'est la console. */
+export const sessionReadOnly = (engine: DbEngine) => engine === 'postgres' || engine === 'mariadb';
 
 /** Jour local `AAAA-MM-JJ`, celui d'un `<input type="date">` — pas le jour UTC de `toISOString`. */
 export function localDay(at: number): string {

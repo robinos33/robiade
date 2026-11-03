@@ -13,7 +13,7 @@ pub const VAULT_HOST: &str = "vault.example.com";
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ConnectionId(pub String);
 
-/// Moteurs prévus par la spec ; Postgres et MariaDB savent se connecter pour l'instant.
+/// Moteurs prévus par la spec, tous pris en charge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Engine {
     Postgres,
@@ -37,8 +37,16 @@ impl Engine {
         match self {
             Self::Postgres => Some(Language::Sql(Dialect::Postgres)),
             Self::MariaDb => Some(Language::Sql(Dialect::MariaDb)),
-            Self::Mongo | Self::Elasticsearch => None,
+            Self::Elasticsearch => Some(Language::Elastic),
+            Self::Mongo => Some(Language::Mongo),
         }
+    }
+
+    /// Le serveur sait tenir une session en lecture seule, et le confirmer. Elasticsearch et Mongo
+    /// ne le savent pas : la lecture seule y est celle du compte, ou à défaut celle que la console
+    /// impose par sa liste blanche.
+    pub fn session_read_only(self) -> bool {
+        matches!(self, Self::Postgres | Self::MariaDb)
     }
 
     /// Préfixes d'URL acceptés : ceux du `DATABASE_URL` de Symfony.
@@ -46,7 +54,9 @@ impl Engine {
         match self {
             Self::Postgres => &["postgresql://", "postgres://"],
             Self::MariaDb => &["mysql://", "mariadb://"],
-            Self::Mongo | Self::Elasticsearch => &[],
+            Self::Elasticsearch => &["https://", "http://"],
+            // `mongodb+srv://` demanderait de résoudre des enregistrements DNS SRV : pas pris en charge.
+            Self::Mongo => &["mongodb://"],
         }
     }
 }
@@ -55,6 +65,10 @@ impl Engine {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Language {
     Sql(Dialect),
+    /// Requêtes REST au format de la Dev Tools de Kibana.
+    Elastic,
+    /// Commandes JSON au format de `runCommand`.
+    Mongo,
 }
 
 impl From<Dialect> for Language {
@@ -146,6 +160,10 @@ pub enum DbError {
     InvalidCursor,
     #[error("connexion introuvable")]
     NotFound,
+    #[error("une requête commence par sa méthode et son chemin : GET /index/_search")]
+    NotARequest,
+    #[error("une commande est un objet JSON dont la première clé est le nom : {{\"find\": \"collection\", \"filter\": {{}}}}")]
+    NotACommand,
     #[error("aucune instruction à exécuter")]
     NoStatement,
     #[error("une seule instruction à la fois : sélectionne-la, ou place le curseur dedans")]
@@ -156,6 +174,8 @@ pub enum DbError {
     ReadOnlyGuard(&'static str),
     #[error("en production, la console n'accepte que des lectures, et des UPDATE ou DELETE validés")]
     ProdRefused,
+    #[error("en production, cette console n'accepte que des lectures : {0} n'en est pas une")]
+    ProdReadsOnly(String),
     #[error("UPDATE ou DELETE sans WHERE refusé en production")]
     ProdWithoutWhere,
     #[error("fonction refusée en production : {0}")]
@@ -321,9 +341,12 @@ pub struct Target {
     pub database: Option<String>,
     pub user: Option<String>,
     pub password: Option<String>,
-    /// `sslmode` de l'URL, seul paramètre de requête repris ; les autres (`serverVersion`,
-    /// `charset`) ne concernent que Doctrine.
+    /// `sslmode` de l'URL (ou ce qu'en dit le schéma ou `tls=` pour Elasticsearch et Mongo) ; les
+    /// autres paramètres (`serverVersion`, `charset`) ne concernent que Doctrine.
     pub ssl_mode: Option<String>,
+    /// Paramètres d'URL repris par l'adapter qui les comprend, sur liste blanche : pour Mongo,
+    /// `authSource`, `authMechanism`, `replicaSet`, `directConnection` et `readPreference`.
+    pub options: Vec<(String, String)>,
 }
 
 impl Target {
@@ -332,7 +355,7 @@ impl Target {
         let url = values.iter().find(|(p, _)| *p == Part::Url).map(|(_, v)| v.as_str());
         let mut target = match url {
             Some(url) => parse_url(engine, url).ok_or(DbError::Invalid(Part::Url))?,
-            None => Self { host: String::new(), port: 0, database: None, user: None, password: None, ssl_mode: None },
+            None => Self { host: String::new(), port: 0, database: None, user: None, password: None, ssl_mode: None, options: vec![] },
         };
         for (part, raw) in values {
             let value = raw.trim();
@@ -358,7 +381,9 @@ impl Target {
     /// Chiffrement exigé pour joindre cette cible. Hors dev, toujours : un `sslmode` qui laisserait
     /// un attaquant réseau rabattre la session en clair (`prefer`, `allow`) est refusé, pas
     /// silencieusement durci, pour que la configuration fautive se voie. En dev, le clair n'est
-    /// accepté explicitement (`disable`) que vers la machine locale.
+    /// accepté que vers la machine locale : explicitement (`disable`), ou en repli si le serveur ne
+    /// parle pas TLS. Vers un autre hôte, un repli en clair se provoque depuis le réseau (il suffit
+    /// de faire échouer la poignée de main) et livrerait le mot de passe : TLS est exigé.
     pub fn tls(&self, stage: Stage) -> Result<Tls, DbError> {
         let mode = self.ssl_mode.as_deref();
         if stage != Stage::Dev {
@@ -369,7 +394,8 @@ impl Target {
             };
         }
         match mode {
-            None | Some("prefer" | "allow") => Ok(Tls::Preferred),
+            None | Some("prefer" | "allow") if is_local_host(&self.host) => Ok(Tls::Preferred),
+            None | Some("prefer" | "allow") => Ok(Tls::Required),
             Some("require" | "verify-ca" | "verify-full") => Ok(Tls::Required),
             Some("disable") if is_local_host(&self.host) => Ok(Tls::Disabled),
             Some("disable") => Err(DbError::ClearTextOffLocalhost),
@@ -383,7 +409,7 @@ impl Target {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tls {
     Required,
-    /// TLS si le serveur le propose : dev seulement, où un repli en clair est acceptable.
+    /// TLS si le serveur le propose : dev vers la machine locale seulement.
     Preferred,
     /// Dev vers la machine locale seulement.
     Disabled,
@@ -405,11 +431,12 @@ fn literal_host(engine: Engine, fields: &[(Part, Source)]) -> Option<String> {
     }
 }
 
-/// `postgres[ql]://user:pass@host:port/base?sslmode=…`, ou `mysql://…` pour MariaDB, identifiants
-/// décodés.
+/// `postgres[ql]://user:pass@host:port/base?sslmode=…`, `mysql://…` pour MariaDB, `http[s]://…` pour
+/// Elasticsearch, identifiants décodés. Pour Elasticsearch, c'est le schéma qui dit le chiffrement,
+/// et le chemin ne désigne pas de base.
 fn parse_url(engine: Engine, url: &str) -> Option<Target> {
     let url = url.trim();
-    let rest = engine.schemes().iter().find_map(|scheme| url.strip_prefix(scheme))?;
+    let (scheme, rest) = engine.schemes().iter().find_map(|scheme| Some((*scheme, url.strip_prefix(scheme)?)))?;
     let (rest, query) = rest.split_once('?').unwrap_or((rest, ""));
     // Le dernier `@` : un mot de passe mal encodé peut en contenir un.
     let (userinfo, rest) = match rest.rfind('@') {
@@ -417,7 +444,10 @@ fn parse_url(engine: Engine, url: &str) -> Option<Target> {
         None => (None, rest),
     };
     let (authority, database) = rest.split_once('/').unwrap_or((rest, ""));
+    // Mongo : plusieurs graines `h1:p1,h2:p2` restent ensemble dans l'hôte, que l'adapter découpe ;
+    // une telle liste n'est jamais la machine locale.
     let (host, port) = match authority.strip_prefix('[') {
+        _ if engine == Engine::Mongo && authority.contains(',') => (authority, None),
         // IPv6 entre crochets.
         Some(v6) => {
             let (host, after) = v6.split_once(']')?;
@@ -439,7 +469,14 @@ fn parse_url(engine: Engine, url: &str) -> Option<Target> {
         },
         None => (None, None),
     };
-    let ssl_mode = query.split('&').find_map(|kv| kv.strip_prefix("sslmode=")).map(str::to_owned);
+    let mut options = Vec::new();
+    let ssl_mode = match (engine, scheme) {
+        (Engine::Elasticsearch, "http://") => Some("disable".to_owned()),
+        (Engine::Elasticsearch, _) => Some("verify-full".to_owned()),
+        (Engine::Mongo, _) => mongo_options(query, &mut options)?,
+        _ => query.split('&').find_map(|kv| kv.strip_prefix("sslmode=")).map(str::to_owned),
+    };
+    let database = if engine == Engine::Elasticsearch { "" } else { database };
     Some(Target {
         host: percent_decode(host)?,
         port,
@@ -447,10 +484,40 @@ fn parse_url(engine: Engine, url: &str) -> Option<Target> {
         user: user.filter(|u| !u.is_empty()),
         password,
         ssl_mode,
+        options,
     })
 }
 
-fn percent_decode(s: &str) -> Option<String> {
+/// Paramètres d'une URL Mongo (noms insensibles à la casse) : `tls` ou `ssl` disent le
+/// chiffrement ; ceux qui affaibliraient la vérification du certificat, ou en désigneraient un
+/// autre, rendent l'URL invalide plutôt que d'être ignorés en silence ; ceux de la liste blanche
+/// passent à l'adapter. `None` : URL invalide.
+fn mongo_options(query: &str, options: &mut Vec<(String, String)>) -> Option<Option<String>> {
+    const KEPT: &[&str] = &["authSource", "authMechanism", "replicaSet", "directConnection", "readPreference"];
+    let mut ssl_mode = None;
+    for pair in query.split('&').filter(|p| !p.is_empty()) {
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        let value = percent_decode(value)?;
+        match key.to_ascii_lowercase().as_str() {
+            "tls" | "ssl" => {
+                ssl_mode = Some(match value.as_str() {
+                    "true" => "require",
+                    "false" => "disable",
+                    _ => return None,
+                });
+            }
+            k if k.starts_with("tls") || k.starts_with("ssl") => return None,
+            k => {
+                if let Some(kept) = KEPT.iter().find(|name| name.to_ascii_lowercase() == k) {
+                    options.push(((*kept).to_owned(), value));
+                }
+            }
+        }
+    }
+    Some(ssl_mode.map(str::to_owned))
+}
+
+pub(crate) fn percent_decode(s: &str) -> Option<String> {
     let bytes = s.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
@@ -606,11 +673,45 @@ mod tests {
                 user: Some("app".into()),
                 password: Some("p@ss:word".into()),
                 ssl_mode: Some("require".into()),
+                options: vec![],
             }
         );
         let v6 = Target::assemble(Engine::Postgres, &[(Part::Url, "postgres://[::1]/db".into())]).unwrap();
         assert_eq!((v6.host.as_str(), v6.port), ("::1", 5432));
         assert_eq!(Target::assemble(Engine::Postgres, &[(Part::Url, "mysql://h/db".into())]), Err(DbError::Invalid(Part::Url)));
+    }
+
+    #[test]
+    fn reads_a_mongo_url_its_seeds_and_its_whitelisted_options() {
+        let url = "mongodb://app:p%40ss@m1:27017,m2:27018/boutique?replicaSet=rs0&authSource=admin&tls=true&maxPoolSize=5";
+        let t = Target::assemble(Engine::Mongo, &[(Part::Url, url.into())]).unwrap();
+        assert_eq!((t.host.as_str(), t.port, t.database.as_deref()), ("m1:27017,m2:27018", 27017, Some("boutique")));
+        assert_eq!(t.options, [("replicaSet".to_owned(), "rs0".to_owned()), ("authSource".to_owned(), "admin".to_owned())]);
+        assert_eq!(t.tls(Stage::Prod), Ok(Tls::Required));
+        let local = Target::assemble(Engine::Mongo, &[(Part::Url, "mongodb://localhost/app?TLS=false".into())]).unwrap();
+        assert_eq!((local.port, local.tls(Stage::Dev)), (27017, Ok(Tls::Disabled)));
+        // Une liste de graines n'est jamais locale : pas de clair.
+        let seeds = Target::assemble(Engine::Mongo, &[(Part::Url, "mongodb://localhost:1,localhost:2/?tls=false".into())]).unwrap();
+        assert_eq!(seeds.tls(Stage::Dev), Err(DbError::ClearTextOffLocalhost));
+        for weakened in ["tlsInsecure=true", "tlsAllowInvalidCertificates=true", "tlsCAFile=/tmp/ca.pem", "ssl=maybe"] {
+            let url = format!("mongodb://h/app?{weakened}");
+            assert_eq!(Target::assemble(Engine::Mongo, &[(Part::Url, url)]), Err(DbError::Invalid(Part::Url)), "{weakened}");
+        }
+        assert_eq!(Target::assemble(Engine::Mongo, &[(Part::Url, "mongodb+srv://h/app".into())]), Err(DbError::Invalid(Part::Url)));
+    }
+
+    #[test]
+    fn an_elasticsearch_url_says_whether_it_is_encrypted() {
+        let t = Target::assemble(Engine::Elasticsearch, &[(Part::Url, "https://elastic:p%40ss@es.local/prefixe".into())]).unwrap();
+        assert_eq!((t.host.as_str(), t.port, t.database.as_deref()), ("es.local", 9200, None));
+        assert_eq!((t.user.as_deref(), t.password.as_deref()), (Some("elastic"), Some("p@ss")));
+        assert_eq!(t.tls(Stage::Prod), Ok(Tls::Required));
+        let clear = Target::assemble(Engine::Elasticsearch, &[(Part::Url, "http://localhost:9201".into())]).unwrap();
+        assert_eq!(clear.tls(Stage::Dev), Ok(Tls::Disabled));
+        assert_eq!(clear.tls(Stage::Staging), Err(DbError::TlsRequired));
+        let remote = Target::assemble(Engine::Elasticsearch, &[(Part::Url, "http://es.dev.local:9200".into())]).unwrap();
+        assert_eq!(remote.tls(Stage::Dev), Err(DbError::ClearTextOffLocalhost));
+        assert!(!Engine::Elasticsearch.session_read_only() && Engine::MariaDb.session_read_only());
     }
 
     #[test]
@@ -636,6 +737,7 @@ mod tests {
             user: None,
             password: None,
             ssl_mode: mode.map(str::to_owned),
+            options: vec![],
         };
         for stage in [Stage::Staging, Stage::Prod] {
             assert_eq!(target("db", None).tls(stage), Ok(Tls::Required));
@@ -644,7 +746,11 @@ mod tests {
                 assert_eq!(target("localhost", Some(weak)).tls(stage), Err(DbError::TlsRequired), "{weak}");
             }
         }
-        assert_eq!(target("db", None).tls(Stage::Dev), Ok(Tls::Preferred));
+        assert_eq!(target("localhost", None).tls(Stage::Dev), Ok(Tls::Preferred));
+        assert_eq!(target("::1", Some("prefer")).tls(Stage::Dev), Ok(Tls::Preferred));
+        // Ailleurs, le repli se provoquerait depuis le réseau.
+        assert_eq!(target("db", None).tls(Stage::Dev), Ok(Tls::Required));
+        assert_eq!(target("db", Some("allow")).tls(Stage::Dev), Ok(Tls::Required));
         assert_eq!(target("db", Some("require")).tls(Stage::Dev), Ok(Tls::Required));
         assert_eq!(target("127.0.0.1", Some("disable")).tls(Stage::Dev), Ok(Tls::Disabled));
         assert_eq!(target("db.dev.local", Some("disable")).tls(Stage::Dev), Err(DbError::ClearTextOffLocalhost));
