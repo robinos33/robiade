@@ -460,7 +460,9 @@ Le niveau d'exigence est celui d'un outil d'administration.
   demande une action (§4.5). Le reste est neutre.
 - **Rien ne saute.** Les mises à jour en direct ne déplacent pas la ligne sous le curseur ; le
   tri ne change pas pendant qu'on lit.
-- Thème clair et sombre suivant le système ; respect de « Réduire les animations ».
+- Thème Système (par défaut, suit macOS à chaud), Clair ou Sombre, choisi par un bouton en bas
+  de la barre latérale et mémorisé sur le poste ; le terminal garde Catppuccin Macchiato dans les
+  deux. Respect de « Réduire les animations ».
 
 **Structure de l'écran**
 ```
