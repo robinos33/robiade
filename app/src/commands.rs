@@ -49,6 +49,19 @@ fn project_dir(raw: &str) -> CmdResult<PathBuf> {
     canonical.is_dir().then_some(canonical).ok_or_else(|| "le chemin n'est pas un dossier".into())
 }
 
+/// Où reprendre une session : là où elle a tourné, ou dans son dépôt si ce worktree a été
+/// supprimé depuis. `claude --resume <id>` retrouve la session depuis n'importe quel dossier.
+fn resume_dir(raw: &str) -> CmdResult<PathBuf> {
+    if Path::new(raw).exists() {
+        return project_dir(raw);
+    }
+    let root = robiade_core::project::root_of(raw);
+    if root == raw || !Path::new(root).is_dir() {
+        return Err(format!("le dossier de cette session n'existe plus, ni son dépôt : {raw}"));
+    }
+    project_dir(root)
+}
+
 #[tauri::command]
 pub fn environment(app: tauri::AppHandle, state: State<AppState>) -> EnvironmentDto {
     EnvironmentDto {
@@ -252,8 +265,8 @@ pub fn spawn_agent(
     cols: u16,
     rows: u16,
 ) -> CmdResult<AgentDto> {
-    let cwd = project_dir(&project_path)?;
     let resume = resume_session_id.as_deref().map(agent_id).transpose()?;
+    let cwd = if resume.is_some() { resume_dir(&project_path)? } else { project_dir(&project_path)? };
     state.agents.spawn(&cwd, resume, None, cols.clamp(20, 500), rows.clamp(5, 200))
 }
 
@@ -1443,6 +1456,24 @@ pub fn db_console_history(state: State<AppState>, id: String) -> CmdResult<Vec<C
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_session_whose_worktree_was_removed_resumes_in_its_repository() {
+        let base = std::env::temp_dir().join(format!("robiade-resume-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let repo = base.canonicalize().unwrap();
+        let worktree = repo.join(".claude/worktrees/supprime");
+        let raw = worktree.to_string_lossy();
+        assert_eq!(resume_dir(&raw).unwrap(), repo);
+
+        std::fs::create_dir_all(&worktree).unwrap();
+        assert_eq!(resume_dir(&raw).unwrap(), worktree);
+
+        // Worktree rangé à côté du dépôt : plus rien ne dit à quel dépôt il appartenait.
+        let sibling = repo.with_extension("wt-supprime");
+        assert!(resume_dir(&sibling.to_string_lossy()).unwrap_err().contains("n'existe plus"));
+        std::fs::remove_dir_all(&repo).unwrap();
+    }
 
     #[test]
     fn reveals_only_what_stays_inside_the_worktree() {
