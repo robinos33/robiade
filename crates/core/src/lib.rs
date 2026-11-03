@@ -15,6 +15,7 @@ pub mod forge;
 pub mod history;
 pub mod issue_actions;
 pub mod issue_start;
+pub mod links;
 pub mod merge_actions;
 pub mod pricing;
 pub mod project;
