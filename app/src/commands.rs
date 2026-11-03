@@ -1074,7 +1074,7 @@ pub fn update_status(state: State<AppState>) -> Option<UpdateDto> {
 #[tauri::command]
 pub fn relaunch(app: tauri::AppHandle) {
     if !crate::hold_quit(&app, true) {
-        app.request_restart();
+        restart(&app);
     }
 }
 
@@ -1085,9 +1085,39 @@ pub fn quit(app: tauri::AppHandle, state: State<AppState>, relaunch: bool) {
     state.quit_confirmed.store(true, std::sync::atomic::Ordering::SeqCst);
     state.agents.kill_all();
     if relaunch {
-        app.request_restart();
+        restart(&app);
     } else {
         app.exit(0);
+    }
+}
+
+/// Relance l'app une fois ce process terminé, par LaunchServices, comme un clic dans le Dock.
+/// `request_restart` de Tauri ouvre une seconde instance (`open -n`) pendant que celle-ci tourne
+/// encore : le Dock lui donne sa propre icône, à côté de celle épinglée. Hors bundle (`tauri dev`),
+/// on s'en remet à Tauri.
+fn restart(app: &tauri::AppHandle) {
+    use std::os::unix::process::CommandExt;
+    use std::process::{Command, Stdio};
+
+    // `<bundle>.app/Contents/MacOS/<binaire>`
+    let exe = std::env::current_exe().ok();
+    let bundle = exe.as_deref().and_then(|e| e.ancestors().nth(3)).filter(|b| b.extension().is_some_and(|x| x == "app"));
+    let Some(bundle) = bundle else { return app.request_restart() };
+    // Attend la fin de ce process (10 s au plus), puis l'ouvre : sans `-n`, une seule instance.
+    let waiter = Command::new("/bin/sh")
+        .arg("-c")
+        .arg(r#"i=0; while /bin/kill -0 "$1" 2>/dev/null && [ $i -lt 100 ]; do /bin/sleep 0.1; i=$((i+1)); done; exec /usr/bin/open "$2""#)
+        .arg("sh")
+        .arg(std::process::id().to_string())
+        .arg(bundle)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .process_group(0)
+        .spawn();
+    match waiter {
+        Ok(_) => app.exit(0),
+        Err(_) => app.request_restart(),
     }
 }
 
