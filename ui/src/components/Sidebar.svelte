@@ -3,6 +3,7 @@
   import { cycleTheme, theme, type ThemeChoice } from '../lib/theme.svelte';
   import type { Worktree } from '../lib/types';
   import Icon from './Icon.svelte';
+  import Logo from './Logo.svelte';
   import UpdateStatus from './UpdateStatus.svelte';
   import WorktreeRemoveDialog from './WorktreeRemoveDialog.svelte';
 
@@ -71,7 +72,7 @@
   <div class="titlebar" data-tauri-drag-region></div>
 
   <div class="brand" data-tauri-drag-region>
-    <span class="logo" aria-hidden="true">R</span>
+    <Logo />
     <span class="name" title={build}>Robiade</span>
     <button class="palette" onclick={() => (app.paletteOpen = true)} title="Palette de commandes">
       <kbd>⌘K</kbd>
@@ -177,21 +178,6 @@
   }
   .titlebar { height: 30px; flex: none; }
   .brand { display: flex; align-items: center; gap: 9px; padding: 4px 6px 14px; }
-  .logo {
-    display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px;
-    background: var(--ink); color: var(--bg); font-weight: 800; font-size: 13px; position: relative;
-  }
-  .logo::after {
-    content: ''; position: absolute; top: -2px; right: -2px; width: 7px; height: 7px;
-    border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--bg-raised);
-  }
-  /* Au survol, le point fait le tour du carré dans le sens horaire, une fois. 19px sépare deux coins. */
-  .logo:hover::after { animation: orbit 900ms linear; }
-  @keyframes orbit {
-    25% { transform: translate(0, 19px); }
-    50% { transform: translate(-19px, 19px); }
-    75% { transform: translate(-19px, 0); }
-  }
   .name { font-weight: 680; letter-spacing: -0.015em; font-size: 14px; flex: 1; }
   .palette { background: none; border: 0; padding: 0; }
   .new {
