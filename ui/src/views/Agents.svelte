@@ -2,6 +2,7 @@
   import { app } from '../lib/state.svelte';
   import { api } from '../lib/api';
   import { attach, refit } from '../lib/terminals';
+  import { panelDrag } from '../lib/panelDrag.svelte';
   import { linkedPath, readLinkedFile } from '../lib/links';
   import { baseName } from '../lib/fileTree';
   import { ago, dollars, duration, shortPath, tokens } from '../lib/format';
@@ -83,9 +84,14 @@
     const id = activeId;
     if (!id || !container) return;
     attach(id, container, (uri) => (linked = { agentId: id, uri }));
-    const observer = new ResizeObserver(() => refit(id));
+    const observer = new ResizeObserver(() => { if (!panelDrag.active) refit(id); });
     observer.observe(container);
     return () => observer.disconnect();
+  });
+
+  // Pendant le glisser d'une poignée, un seul `fit`, au relâchement : un seul `resize_agent` au PTY.
+  $effect(() => {
+    if (!panelDrag.active && activeId) refit(activeId);
   });
 
   $effect(() => {
@@ -445,7 +451,8 @@
   .branch { display: inline-flex; align-items: center; gap: 4px; min-width: 0; color: var(--ink-2); }
   .branch :global(svg) { flex: none; }
   .tail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-  .term { flex: 1; min-height: 0; padding: 10px 0 4px 12px; background: #24273a; /* TERMINAL_THEME.background */ }
+  /* `fit` suspendu pendant un glisser : xterm garde sa taille, rognée plutôt que débordante. */
+  .term { flex: 1; min-height: 0; overflow: hidden; padding: 10px 0 4px 12px; background: #24273a; /* TERMINAL_THEME.background */ }
   .term :global(.term-host) { height: 100%; }
   .stats { border-left: 1px solid var(--line); padding: 12px 16px 16px; overflow-y: auto; }
   .side-tabs { display: flex; gap: 2px; margin: 0 -6px 12px; }
