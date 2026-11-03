@@ -263,6 +263,12 @@ class AppState {
       this.activeAgentId = agent.id;
       this.view = 'agents';
       this.newAgentOpen = false;
+      // Worktree supprimé depuis : la session repart dans le dépôt, sur la branche qui y est active.
+      const worktrees = `${agent.projectPath}/.claude/worktrees/`;
+      if (resumeSessionId !== null && projectPath.startsWith(worktrees)) {
+        const worktree = projectPath.slice(worktrees.length);
+        this.notify(`Worktree « ${worktree} » supprimé : session reprise dans ${agent.projectName}, sur la branche qui y est active.`);
+      }
     } catch (e) {
       this.notify(String(e));
     }
