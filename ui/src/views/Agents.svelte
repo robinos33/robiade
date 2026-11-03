@@ -246,20 +246,23 @@
             {/if}
             <StatusBadge status={active.status} />
             <ModeBadge mode={active.permissionMode} permissive={active.permissive} />
-            <span class="mono muted ellipsis">{shortPath(active.projectPath, app.env?.home ?? '')}</span>
+            <span class="path mono muted ellipsis">{shortPath(active.projectPath, app.env?.home ?? '')}</span>
             {#if session?.gitBranch}
-              <span class="branch mono"><Icon name="branch" size={12} /> {session.gitBranch}</span>
+              <!-- Coupée par le début : la fin distingue les branches. `bdi` garde les `/` en place dans le `rtl`. -->
+              <span class="branch mono" title={session.gitBranch}>
+                <Icon name="branch" size={12} /><span class="tail" dir="rtl"><bdi>{session.gitBranch}</bdi></span>
+              </span>
             {/if}
-            {#if mr}<MrBadge url={mr.url} state={mr.state} />{/if}
+            {#if mr}<MrBadge url={mr.url} state={mr.state} title={mr.title} />{/if}
             <span class="spacer"></span>
             {#if active.status !== 'ended'}
               <button class="btn ghost" onclick={restart} title="Relance claude sur la même session : prend une mise à jour installée (« Restart to update »)">
-                <Icon name="resume" size={12} /> Redémarrer
+                <Icon name="resume" size={12} /><span class="label">Redémarrer</span>
               </button>
-              <button class="btn ghost" onclick={stop} title="Arrêter le process"><Icon name="stop" size={13} /> Arrêter</button>
+              <button class="btn ghost" onclick={stop} title="Arrêter le process"><Icon name="stop" size={13} /><span class="label">Arrêter</span></button>
             {:else}
-              <button class="btn" onclick={() => app.spawn(active.projectPath, active.resumedFrom ?? active.id)}>
-                <Icon name="resume" size={12} /> Reprendre
+              <button class="btn" onclick={() => app.spawn(active.projectPath, active.resumedFrom ?? active.id)} title="Reprendre la session">
+                <Icon name="resume" size={12} /><span class="label">Reprendre</span>
               </button>
             {/if}
           </div>
@@ -411,13 +414,13 @@
   .tab:has(.recent) .close { top: 2px; }
   .pick { grid-column: 2 / 4; }
   .name {
-    display: inline-flex; align-items: center; gap: 6px; max-width: 220px; padding: 2px 6px; margin-left: -6px;
+    display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 220px; padding: 2px 6px; margin-left: -6px;
     border: 0; border-radius: var(--radius-sm); background: none; color: var(--ink); font-weight: 600;
   }
   .name :global(svg) { color: var(--ink-3); opacity: 0; }
   .name:hover { background: var(--bg-hover); }
   .name:hover :global(svg) { opacity: 1; }
-  .name-field { width: 220px; height: 26px; }
+  .name-field { width: 220px; min-width: 0; height: 26px; }
   .agent.active { background: var(--bg-active); }
   .line { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .sub { padding-left: 20px; }
@@ -428,10 +431,20 @@
   .term-wrap { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg-sunken); }
   .term-bar {
     display: flex; align-items: center; gap: 12px; height: 40px; padding: 0 12px; flex: none;
-    border-bottom: 1px solid var(--line); background: var(--bg);
+    border-bottom: 1px solid var(--line); background: var(--bg); container-type: inline-size;
   }
   .spacer { flex: 1; }
-  .branch { display: inline-flex; align-items: center; gap: 4px; color: var(--ink-2); }
+  /* Quand la place manque, le chemin cède d'abord, puis branche et titre de MR, le nom en dernier ; les actions jamais. */
+  .term-bar .btn { flex: none; }
+  .path { flex-shrink: 100; }
+  .name { flex-shrink: 0.25; }
+  /* Barre étroite : les actions passent en icône seule, leur libellé reste au survol. */
+  @container (max-width: 720px) {
+    .term-bar .btn .label { display: none; }
+  }
+  .branch { display: inline-flex; align-items: center; gap: 4px; min-width: 0; color: var(--ink-2); }
+  .branch :global(svg) { flex: none; }
+  .tail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .term { flex: 1; min-height: 0; padding: 10px 0 4px 12px; background: #24273a; /* TERMINAL_THEME.background */ }
   .term :global(.term-host) { height: 100%; }
   .stats { border-left: 1px solid var(--line); padding: 12px 16px 16px; overflow-y: auto; }
