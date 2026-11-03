@@ -172,6 +172,13 @@
     content: ''; position: absolute; top: -2px; right: -2px; width: 7px; height: 7px;
     border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--bg-raised);
   }
+  /* Au survol, le point fait le tour du carré dans le sens horaire, une fois. 19px sépare deux coins. */
+  .logo:hover::after { animation: orbit 900ms linear; }
+  @keyframes orbit {
+    25% { transform: translate(0, 19px); }
+    50% { transform: translate(-19px, 19px); }
+    75% { transform: translate(-19px, 0); }
+  }
   .name { font-weight: 680; letter-spacing: -0.015em; font-size: 14px; flex: 1; }
   .palette { background: none; border: 0; padding: 0; }
   .new {
