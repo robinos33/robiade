@@ -85,6 +85,19 @@ if (params.get('explore')) {
   }
 }
 
+function linkLines(): string[] {
+  const osc8 = (uri: string, text: string) => `\x1b]8;;${uri}\x1b\\${text}\x1b]8;;\x1b\\`;
+  const mr = 'https://gitlab.example.com/shop/boutique/-/merge_requests/412';
+  return [
+    `${c('38;2;166;218;149', '⏺')} MR ouverte : ${mr}.`,
+    `  Rapport : file:///Users/demo/code/wt-panier-promo/notes/rapport%20final.md, secrets : file:///Users/demo/code/wt-panier-promo/.env`,
+    `  Pièges : file:///etc/passwd · x-apple.systempreferences://com.apple.preference.security · javascript:alert(1)`,
+    `  OSC 8 : ${osc8(`${mr}/diffs`, 'diff de la MR')} · ${osc8('x-apple.systempreferences:com.apple.preference.security', 'réglages')}`,
+    `  Repliée : ${mr}/diffs?commit_id=${'0123456789abcdef'.repeat(8)}`,
+    '',
+  ];
+}
+
 const ESC = '\x1b[';
 const c = (code: string, text: string) => `${ESC}${code}m${text}${ESC}0m`;
 const lines = [
@@ -110,6 +123,8 @@ const lines = [
   '',
   `${c('38;2;238;212;159', '✻')} ${c('38;2;238;212;159', 'Vérification des cas limites…')} ${c('2', '(42s · ↓ 3.1k tokens)')}`,
   '',
+  // `?view=agents&links` : liens à ⌘+cliquer, dont des pièges qui ne doivent rien lire ni ouvrir.
+  ...(params.has('links') ? linkLines() : []),
   c('2', '─'.repeat(100)),
   `${c('1', '>')} `,
   c('2', '─'.repeat(100)),

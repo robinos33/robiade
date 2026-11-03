@@ -550,6 +550,14 @@ function projectFile(path: string, reveal: boolean) {
   return { state: 'content', kind, text, dataUrl: null };
 }
 
+/** Comme Rust : seuls les fichiers du worktree du premier agent se lisent. */
+function linkedFile(uri: string) {
+  const path = decodeURIComponent(new URL(uri).pathname);
+  if (!path.startsWith('/Users/demo/code/wt-panier-promo/')) throw "hors du projet de l'agent : non lu";
+  if (path.endsWith('/.env')) return { state: 'secret' };
+  return { state: 'content', kind: 'markdown', text: `# ${path.split('/').pop()}\n\nRapport de démo, ouvert par **⌘+clic** dans le terminal.`, dataUrl: null };
+}
+
 const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
   /** `?update=installing|ready|failed` : état de la mise à jour au lancement. */
   update_status: () => DEMO_UPDATES[new URLSearchParams(location.search).get('update') ?? ''] ?? null,
@@ -607,6 +615,7 @@ const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
     const name = String((args as { path: string }).path).split('/').pop();
     return { kind: 'markdown', text: `# ${name}\n\nNote de démo écrite par l'agent.`, dataUrl: null };
   },
+  read_linked_file: (args) => linkedFile(String(args.uri)),
   project_files: () => ({ files: PROJECT_FILES, secrets: ['.env'] }),
   read_project_file: (args) => projectFile(String(args.path), Boolean(args.reveal)),
   containers: () => containers,
@@ -687,6 +696,7 @@ export function install() {
           listeners.set(event, [...(listeners.get(event) ?? []), args.handler as number]);
           return args.handler;
         }
+        if (cmd === 'plugin:opener|open_url') console.info('[démo] navigateur :', args.url);
         if (cmd.startsWith('plugin:')) return null;
         return HANDLERS[cmd]?.(args) ?? null;
       },
