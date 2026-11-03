@@ -6,15 +6,18 @@
   import FilePreview, { copySource } from './FilePreview.svelte';
   import Icon from './Icon.svelte';
 
-  let { name, path, load, assets, onnavigate, onclose }: {
+  let { name, path, load, assets = [], onnavigate, onclose }: {
     name: string;
     /** Chemin absolu du fichier ; en changer recharge l'aperçu. */
     path: string;
     /** Lit le fichier ; un rejet porte le message à afficher. */
     load: (path: string) => Promise<AssetContent>;
-    /** Assets de l'agent, dans l'ordre de la liste : ← et → passent de l'un à l'autre. */
-    assets: Asset[];
-    onnavigate: (path: string) => void;
+    /**
+     * Assets de l'agent, dans l'ordre de la liste : ← et → passent de l'un à l'autre. Sans objet
+     * pour un fichier ouvert par lien, qui n'en fait pas partie.
+     */
+    assets?: Asset[];
+    onnavigate?: (path: string) => void;
     onclose: () => void;
   } = $props();
 
@@ -45,8 +48,8 @@
   function onkeydown(e: KeyboardEvent) {
     if (e.metaKey || e.altKey || e.ctrlKey) return;
     if (e.key === 'Escape') onclose();
-    else if (e.key === 'ArrowLeft' && prev) onnavigate(prev.path);
-    else if (e.key === 'ArrowRight' && next) onnavigate(next.path);
+    else if (e.key === 'ArrowLeft' && prev) onnavigate?.(prev.path);
+    else if (e.key === 'ArrowRight' && next) onnavigate?.(next.path);
     else return;
     e.preventDefault();
   }
@@ -61,9 +64,9 @@
       <span class="mono muted ellipsis path selectable">{shortPath(path, app.env?.home ?? '')}</span>
       {#if assets.length > 1}
         <div class="nav">
-          <button class="btn ghost icon" disabled={!prev} onclick={() => prev && onnavigate(prev.path)} title="Précédent (←)"><Icon name="prev" size={14} /></button>
+          <button class="btn ghost icon" disabled={!prev} onclick={() => prev && onnavigate?.(prev.path)} title="Précédent (←)"><Icon name="prev" size={14} /></button>
           <span class="muted num">{index + 1} / {assets.length}</span>
-          <button class="btn ghost icon" disabled={!next} onclick={() => next && onnavigate(next.path)} title="Suivant (→)"><Icon name="next" size={14} /></button>
+          <button class="btn ghost icon" disabled={!next} onclick={() => next && onnavigate?.(next.path)} title="Suivant (→)"><Icon name="next" size={14} /></button>
         </div>
       {/if}
       {#if content?.kind === 'html' || content?.kind === 'markdown'}

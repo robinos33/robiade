@@ -102,6 +102,8 @@ export const api = {
   cancelDbStatement: (id: string) => invoke<void>('cancel_db_statement', { id }),
   dbConsoleHistory: (id: string) => invoke<DbConsoleHistory[]>('db_console_history', { id }),
   readAsset: (id: string, path: string) => invoke<AssetContent>('read_asset', { id, path }),
+  /** Fichier d'un lien `file://` du terminal de l'agent, s'il reste dans son dossier de travail. */
+  readLinkedFile: (id: string, uri: string) => invoke<ProjectFile>('read_linked_file', { id, uri }),
   /** Fichiers du projet ou du worktree `root`, hors ignorés par git. */
   projectFiles: (root: string) => invoke<ProjectFiles>('project_files', { root }),
   /** `reveal` ouvre un fichier de secrets connu, qui sinon n'est pas lu. */

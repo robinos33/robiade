@@ -2,6 +2,8 @@
   import { app } from '../lib/state.svelte';
   import { api } from '../lib/api';
   import { attach, refit } from '../lib/terminals';
+  import { linkedPath, readLinkedFile } from '../lib/links';
+  import { baseName } from '../lib/fileTree';
   import { ago, dollars, duration, shortPath, tokens } from '../lib/format';
   import StatusBadge from '../components/StatusBadge.svelte';
   import MrBadge from '../components/MrBadge.svelte';
@@ -18,6 +20,8 @@
   let container: HTMLDivElement | undefined = $state();
   /** Chemin de l'asset ouvert en aperçu, pour l'agent actif. */
   let viewing = $state<string | null>(null);
+  /** Lien `file://` ouvert par ⌘+clic dans le terminal d'un agent. */
+  let linked = $state<{ agentId: string; uri: string } | null>(null);
   /** Onglet du panneau de droite. */
   let side = $state<'session' | 'diff'>('session');
 
@@ -78,7 +82,7 @@
   $effect(() => {
     const id = activeId;
     if (!id || !container) return;
-    attach(id, container);
+    attach(id, container, (uri) => (linked = { agentId: id, uri }));
     const observer = new ResizeObserver(() => refit(id));
     observer.observe(container);
     return () => observer.disconnect();
@@ -351,6 +355,10 @@
     onnavigate={(path) => (viewing = path)}
     onclose={() => (viewing = null)}
   />
+{:else if active && linked?.agentId === active.id}
+  {@const { agentId, uri } = linked}
+  {@const path = linkedPath(uri)}
+  <AssetViewer name={baseName(path)} {path} load={() => readLinkedFile(agentId, uri)} onclose={() => (linked = null)} />
 {/if}
 
 <style>
