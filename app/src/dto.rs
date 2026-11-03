@@ -732,15 +732,18 @@ impl From<MergeRequest> for MergeRequestDto {
 #[serde(rename_all = "camelCase")]
 pub struct MrReadingDto {
     pub mr: MergeRequestDto,
+    /// J'en suis l'auteur : les actions proposées ne sont pas celles d'un relecteur.
+    pub mine: bool,
     /// Markdown de GitLab, non fiable : rendu dans une iframe sandboxée, jamais en `{@html}`.
     pub description: String,
     pub discussions: Vec<DiscussionDto>,
 }
 
 impl MrReadingDto {
-    pub fn new(mut mr: MergeRequest, discussions: Vec<Discussion>) -> Self {
+    pub fn new(mut mr: MergeRequest, me: &str, discussions: Vec<Discussion>) -> Self {
         let description = std::mem::take(&mut mr.description);
-        Self { mr: mr.into(), description, discussions: discussions.into_iter().map(DiscussionDto::from).collect() }
+        let mine = mr.author == me;
+        Self { mr: mr.into(), mine, description, discussions: discussions.into_iter().map(DiscussionDto::from).collect() }
     }
 }
 

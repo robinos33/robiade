@@ -468,10 +468,11 @@ pub async fn read_merge_request(state: State<'_, AppState>, target: MrRefDto) ->
             let approvals = s.spawn(|| forge.approvals(&mr));
             let discussions = s.spawn(|| forge.merge_request_discussions(&mr));
             let mut found = forge.merge_request(&mr)?;
+            let me = forge.me()?;
             // Des approbations illisibles ne cachent pas la MR : l'en-tête s'en passe.
             found.approvals = approvals.join().ok().and_then(Result::ok);
             let discussions = discussions.join().map_err(|_| ForgeError::Api("lecture interrompue".into()))??;
-            Ok(MrReadingDto::new(found, discussions))
+            Ok(MrReadingDto::new(found, &me, discussions))
         })
     })
     .await
