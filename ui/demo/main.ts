@@ -119,5 +119,7 @@ const bytes = new TextEncoder().encode(lines.join('\r\n'));
 let bin = '';
 bytes.forEach((b) => (bin += String.fromCharCode(b)));
 emit('agent:output', { id: AGENT_IDS[0]!, data: btoa(bin) });
+// `?view=tasks&read=Panier` : lit dans le panneau l'issue ou la MR dont le titre contient ce texte.
+if (params.get('read')) await click('.issue .link, .mr-row .title', params.get('read')!);
 // `?update=failed&output` : ouvre la sortie d'une mise à jour échouée.
 if (params.has('output')) await click('button.update', 'Mise à jour échouée');

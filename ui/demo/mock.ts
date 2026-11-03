@@ -3,7 +3,7 @@
  * Rien de ce fichier n'entre dans le build (seul `index.html` est une entrée Vite).
  */
 import type {
-  ContributionBucket, Granularity, Agent, Container, DbCell, DbColumn, DbConnection, DbPageRequest, FileChange, Forge, GitWorktree, Issue, MergeRequest, Overview, Session, Task, Tokens, WorktreeRemoval,
+  ContributionBucket, Granularity, Agent, Container, DbCell, DbColumn, DbConnection, DbPageRequest, Discussion, FileChange, Forge, GitWorktree, Issue, MergeRequest, MrRef, Overview, Session, Task, Tokens, WorktreeRemoval,
 } from '../src/lib/types';
 import { localDay } from '../src/lib/format';
 
@@ -171,6 +171,53 @@ const issues: Issue[] = [
   { project: 'shop/catalogue-api', iid: 41, state: 'opened', title: 'Filtre par marque sur la recherche', labels: ['feature', 'api'], assignees: ['demo'], webUrl: `${GITLAB}/shop/catalogue-api/-/issues/41`, updatedAt: NOW - 20 * 60 * MIN, dueDate: '2026-11-06', mergeRequests: 0 },
   { project: 'shop/facturation', iid: 19, state: 'opened', title: 'Les avoirs doivent avoir une numérotation continue', labels: ['bug'], assignees: ['demo'], webUrl: `${GITLAB}/shop/facturation/-/issues/19`, updatedAt: NOW - 50 * 60 * MIN, dueDate: null, mergeRequests: 1 },
 ];
+
+/**
+ * Fils du panneau de lecture. Les pièges (`<script>`, `<img onerror>`) changeraient le titre et
+ * le fond de la fenêtre s'ils s'exécutaient : l'iframe sandboxée doit les laisser inertes.
+ */
+const TRAPS = `<script>top.document.title = 'XSS'; top.document.body.style.background = 'red'</script>
+<img src="x" onerror="top.document.title = 'XSS'; top.document.body.style.background = 'red'">`;
+const note = (author: string, minutesAgo: number, body: string) => ({ author, createdAt: NOW - minutesAgo * MIN, body });
+const READINGS: Record<string, { description: string; discussions: Discussion[] }> = {
+  'shop/boutique#230': {
+    description: `Un client qui laisse un panier plein doit recevoir **un seul** rappel, 24 h après.
+
+## À faire
+- [ ] tâche planifiée qui relève les paniers inactifs depuis 24 h
+- [ ] e-mail avec le contenu du panier et un lien de reprise
+- [ ] pas de rappel si une commande a été passée entre-temps
+
+![maquette du mail](/uploads/3f9a/maquette.png)
+
+${TRAPS}`,
+    discussions: [
+      { resolved: null, notes: [note('camille', 300, 'On garde le même gabarit que l’e-mail de confirmation ?')] },
+      { resolved: null, notes: [note('demo', 280, 'Oui, avec un bloc « votre panier » en plus.'), note('camille', 270, `Parfait. ${TRAPS}`)] },
+    ],
+  },
+  'shop/catalogue-api!88': {
+    description: `Remplace la pagination par \`offset\` par un curseur opaque sur \`/products\`.
+
+| Avant | Après |
+| --- | --- |
+| \`?page=12\` | \`?after=eyJpZCI6MTIwfQ\` |
+
+Les clients existants gardent \`?page\` jusqu’à la v3.`,
+    discussions: [
+      {
+        resolved: false,
+        notes: [
+          note('yanis', 120, 'Le curseur encode l’`id` seul : deux produits créés dans la même milliseconde ?'),
+          note('demo', 95, 'L’`id` est unique, le tri se fait dessus : pas d’ex æquo possible.'),
+        ],
+      },
+      { resolved: true, notes: [note('camille', 200, 'Il manque le test du dernier curseur.'), note('demo', 190, 'Ajouté.')] },
+      { resolved: null, notes: [note('camille', 60, 'Belle MR 👍')] },
+    ],
+  },
+};
+const reading = (key: string) => READINGS[key] ?? { description: '', discussions: [] };
 
 const tasks: Task[] = [
   { id: 't1', title: 'Relire la MR de Camille avant la démo', notes: '', projectPath: null, status: 'doing', dueOn: localDay(NOW), issue: null, issueUrl: null, sessionId: AGENT_IDS[0]!, createdAt: NOW - 90 * MIN, doneAt: null },
@@ -534,6 +581,15 @@ const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
   link_task_session: (args) => Object.assign(tasks.find((t) => t.id === args.id)!, { sessionId: args.sessionId ?? null }),
   merge_requests: () => forge,
   issues: () => issues,
+  read_merge_request: (args) => {
+    const { project, iid } = args.target as MrRef;
+    const found = [...forge.mine, ...forge.reviews].find((m) => m.project === project && m.iid === iid)!;
+    return { mr: found, mine: forge.mine.includes(found), ...reading(`${project}!${iid}`) };
+  },
+  read_issue: (args) => {
+    const { project, iid } = args.target as MrRef;
+    return { issue: issues.find((i) => i.project === project && i.iid === iid)!, ...reading(`${project}#${iid}`) };
+  },
   stats: () => overview(),
   merge_request_states: () => ({}),
   merge_request_outcomes: () => ({ total: 31, merged: 24, opened: 5, closed: 2, unknown: 0 }),
