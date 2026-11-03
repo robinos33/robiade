@@ -5,8 +5,13 @@
   import type { Entry, SearchHit } from '../lib/types';
   import MrBadge from '../components/MrBadge.svelte';
   import Icon from '../components/Icon.svelte';
+  import ResizeHandle from '../components/ResizeHandle.svelte';
 
   const PAGE = 200;
+  /** Largeur de la liste choisie à la poignée ; `null` garde celle de la feuille de style. */
+  let listWidth = $state<number | null>(null);
+  let splitW = $state(0);
+
   let query = $state('');
   let limit = $state(PAGE);
   let entries = $state<Entry[] | null>(null);
@@ -71,33 +76,44 @@
     </div>
   </header>
 
-  <div class="split">
-    <ul class="list">
-      {#each filtered.slice(0, limit) as s (s.sessionId)}
-        <li>
-          <button class="session" class:active={s.sessionId === app.selectedSessionId} onclick={() => (app.selectedSessionId = s.sessionId)}>
-            <span class="title">{s.title}</span>
-            {#if snippets.get(s.sessionId)}
-              <span class="snippet">
-                {#each snippets.get(s.sessionId) ?? [] as [text, hit], i (i)}{#if hit}<mark>{text}</mark>{:else}{text}{/if}{/each}
+  <div class="split" bind:clientWidth={splitW} style:--list-w={listWidth ? `${listWidth}px` : null}>
+    <!-- Enveloppe sans défilement : la poignée reste sur la bordure quand la liste défile. -->
+    <div class="pane">
+      <ResizeHandle
+        id="history.list"
+        edge="right"
+        min={260}
+        max={splitW ? splitW - 400 : Infinity}
+        label="Largeur de la liste des sessions"
+        bind:width={listWidth}
+      />
+      <ul class="list">
+        {#each filtered.slice(0, limit) as s (s.sessionId)}
+          <li>
+            <button class="session" class:active={s.sessionId === app.selectedSessionId} onclick={() => (app.selectedSessionId = s.sessionId)}>
+              <span class="title">{s.title}</span>
+              {#if snippets.get(s.sessionId)}
+                <span class="snippet">
+                  {#each snippets.get(s.sessionId) ?? [] as [text, hit], i (i)}{#if hit}<mark>{text}</mark>{:else}{text}{/if}{/each}
+                </span>
+              {/if}
+              <span class="meta">
+                <span class="proj">{s.projectName}</span>
+                {#if s.gitBranch && s.gitBranch !== 'HEAD'}<span class="mono ellipsis">{s.gitBranch}</span>{/if}
+                <span class="spacer"></span>
+                {#if s.mergeRequestUrl}<MrBadge url={s.mergeRequestUrl} />{/if}
+                <span class="num">{ago(s.lastActivityAt, app.now)}</span>
               </span>
-            {/if}
-            <span class="meta">
-              <span class="proj">{s.projectName}</span>
-              {#if s.gitBranch && s.gitBranch !== 'HEAD'}<span class="mono ellipsis">{s.gitBranch}</span>{/if}
-              <span class="spacer"></span>
-              {#if s.mergeRequestUrl}<MrBadge url={s.mergeRequestUrl} />{/if}
-              <span class="num">{ago(s.lastActivityAt, app.now)}</span>
-            </span>
-          </button>
-        </li>
-      {:else}
-        <li class="empty">{app.historyLoaded ? 'Aucune session ne correspond.' : 'Lecture de l’historique…'}</li>
-      {/each}
-      {#if filtered.length > limit}
-        <li><button class="btn more" onclick={() => (limit += PAGE)}>Afficher {Math.min(PAGE, filtered.length - limit)} de plus</button></li>
-      {/if}
-    </ul>
+            </button>
+          </li>
+        {:else}
+          <li class="empty">{app.historyLoaded ? 'Aucune session ne correspond.' : 'Lecture de l’historique…'}</li>
+        {/each}
+        {#if filtered.length > limit}
+          <li><button class="btn more" onclick={() => (limit += PAGE)}>Afficher {Math.min(PAGE, filtered.length - limit)} de plus</button></li>
+        {/if}
+      </ul>
+    </div>
 
     <div class="detail">
       {#if selected}
@@ -149,8 +165,9 @@
   .search { position: relative; width: 300px; color: var(--ink-3); }
   .search :global(svg) { position: absolute; left: 9px; top: 8px; }
   .search .field { padding-left: 30px; }
-  .split { display: grid; grid-template-columns: minmax(340px, 38%) 1fr; min-height: 0; flex: 1; }
-  ul.list { list-style: none; margin: 0; padding: 6px; overflow-y: auto; border-right: 1px solid var(--line); }
+  .split { display: grid; grid-template-columns: var(--list-w, minmax(340px, 38%)) 1fr; min-height: 0; flex: 1; }
+  .pane { position: relative; display: flex; min-width: 0; min-height: 0; }
+  ul.list { flex: 1; min-width: 0; list-style: none; margin: 0; padding: 6px; overflow-y: auto; border-right: 1px solid var(--line); }
   .session {
     display: flex; flex-direction: column; gap: 3px; width: 100%; padding: 8px 10px; text-align: left;
     border: 0; border-radius: var(--radius-sm); background: none;
