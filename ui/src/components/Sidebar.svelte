@@ -1,5 +1,6 @@
 <script lang="ts">
   import { app, type View } from '../lib/state.svelte';
+  import { cycleTheme, theme, type ThemeChoice } from '../lib/theme.svelte';
   import type { Worktree } from '../lib/types';
   import Icon from './Icon.svelte';
   import UpdateStatus from './UpdateStatus.svelte';
@@ -36,6 +37,13 @@
     if (!env?.commit) return 'Build hors install.sh : pas de mise à jour automatique';
     return `Build ${env.commit.slice(0, 7)}${env.dirty ? ', avec des modifications non commitées' : ''}`;
   });
+
+  const THEMES: Record<ThemeChoice, { label: string; icon: string; next: string }> = {
+    system: { label: 'Système', icon: 'theme-system', next: 'Clair' },
+    light: { label: 'Clair', icon: 'sun', next: 'Sombre' },
+    dark: { label: 'Sombre', icon: 'moon', next: 'Système' },
+  };
+  const themeTitle = $derived(`Thème : ${THEMES[theme.choice].label} (clic : ${THEMES[theme.choice].next})`);
 
   const liveIn = (root: string) => app.liveAgents.filter((a) => a.projectRoot === root);
   const liveInWorktree = (path: string) => app.liveAgents.filter((a) => a.worktreePath === path);
@@ -144,6 +152,11 @@
     </div>
   {/if}
   <UpdateStatus />
+  <div class="foot">
+    <button class="theme" onclick={cycleTheme} title={themeTitle} aria-label={themeTitle}>
+      <Icon name={THEMES[theme.choice].icon} />
+    </button>
+  </div>
 </nav>
 
 {#if menu}
@@ -216,5 +229,11 @@
   }
   .menu button:hover { background: var(--bg-hover); }
   .menu .danger { color: var(--danger); }
+  .foot { display: flex; margin-top: 8px; }
+  .theme {
+    display: grid; place-items: center; width: 28px; height: 28px; padding: 0;
+    border: 0; border-radius: var(--radius-sm); background: none; color: var(--ink-3);
+  }
+  .theme:hover { background: var(--bg-hover); color: var(--ink); }
   .dot.hot { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 </style>
