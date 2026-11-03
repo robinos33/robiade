@@ -157,6 +157,8 @@ pub struct Approvals {
 pub struct MergeRequest {
     pub mr: MrRef,
     pub title: String,
+    /// Markdown de GitLab, non fiable.
+    pub description: String,
     pub author: String,
     pub state: MrState,
     pub source_branch: String,
@@ -337,6 +339,7 @@ mod tests {
         let mut mr = MergeRequest {
             mr: MrRef { project: "p".into(), iid: 1 },
             title: String::new(),
+            description: String::new(),
             author: String::new(),
             state: MrState::Opened,
             source_branch: "ticket-2".into(),

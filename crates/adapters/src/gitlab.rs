@@ -529,6 +529,8 @@ struct ApiPipeline {
 #[derive(Deserialize)]
 struct ApiMergeRequest {
     title: String,
+    #[serde(default)]
+    description: Option<String>,
     state: String,
     #[serde(default)]
     draft: bool,
@@ -565,6 +567,7 @@ fn to_domain(m: ApiMergeRequest) -> Option<MergeRequest> {
     Some(MergeRequest {
         mr: MrRef::from_url(&m.web_url)?,
         title: m.title,
+        description: m.description.unwrap_or_default(),
         author: m.author.username,
         state,
         source_branch: m.source_branch,
@@ -593,7 +596,7 @@ mod tests {
     #[test]
     fn reads_a_merge_request_with_its_pipeline() {
         let mr = parse(
-            r#"{"iid":303,"title":"Ajoute le cache","state":"opened","draft":true,"source_branch":"cache",
+            r#"{"iid":303,"title":"Ajoute le cache","description":"Voir **#12**","state":"opened","draft":true,"source_branch":"cache",
                 "target_branch":"staging","web_url":"https://gitlab.example.com/a/b/-/merge_requests/303",
                 "updated_at":"2026-10-26T13:43:40.062Z","has_conflicts":true,"blocking_discussions_resolved":false,
                 "detailed_merge_status":"draft_status","author":{"username":"robinos33"},
@@ -605,6 +608,7 @@ mod tests {
         assert_eq!(mr.pipeline, Some(PipelineStatus::Failed));
         assert!(mr.has_conflicts && mr.unresolved_discussions);
         assert_eq!(mr.updated_at, 1_793_022_220_062);
+        assert_eq!(mr.description, "Voir **#12**");
     }
 
     #[test]

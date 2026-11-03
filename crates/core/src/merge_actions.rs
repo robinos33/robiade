@@ -160,6 +160,7 @@ mod tests {
         MergeRequest {
             mr: MrRef { project: "a/b".into(), iid: 1 },
             title: "Draft: Ajoute le cache".into(),
+            description: String::new(),
             author: author.into(),
             state: MrState::Opened,
             source_branch: "cache".into(),
