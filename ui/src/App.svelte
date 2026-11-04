@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { fade } from 'svelte/transition';
   import { app, type View } from './lib/state.svelte';
-  import { sidebar } from './lib/sidebar.svelte';
+  import { sidebar, toggleSidebar } from './lib/sidebar.svelte';
   import Logo from './components/Logo.svelte';
   import Sidebar from './components/Sidebar.svelte';
   import NewAgent from './components/NewAgent.svelte';
@@ -45,6 +45,7 @@
     else if (e.key === 'n' || e.key === 't') app.newAgent(); // ⌘T, comme un onglet de terminal
     else if (e.key === 'o') app.resumeOpen = !app.resumeOpen;
     else if (e.key === 'p') app.findFile();
+    else if (e.key === 'b') toggleSidebar();
     else if (e.key === ',') app.view = 'settings'; // ⌘, : les réglages, comme toute app macOS
     else return;
     e.preventDefault();
