@@ -20,6 +20,10 @@ performance, communs à toutes les vues.
 ```
 - **Inbox** = la [vue Status](../inbox.md). C'est l'écran d'accueil.
 - Sélectionner un projet filtre toutes les vues ; « Global » enlève le filtre.
+- Dans la barre latérale, un clic sur le titre `Projets` ou `Worktrees` replie la section ; le
+  repli est mémorisé sur le poste. Repliée, elle montre son nombre d'éléments et la pastille la
+  plus forte de ses lignes (un agent qui attend reste visible), garde la ligne de la sélection
+  et rend sa hauteur à l'autre section. La navigation ne se replie pas : le clavier la couvre.
 - Le panneau de détail d'un agent héberge son terminal ; on peut le détacher dans une fenêtre.
 - Dans le terminal, ⌘+clic ouvre un lien, comme dans iTerm ; ⌘ enfoncé, le lien survolé est
   souligné. Sans ⌘, un clic reste un clic dans le terminal. Claude Code y affiche ses URL en
@@ -124,6 +128,9 @@ performance, communs à toutes les vues.
 - Décidé le 2026-11-03 : la recherche du terminal surligne ses occurrences par l'API proposée
   d'xterm 6 (`allowProposedApi`), sans laquelle ni surbrillance ni compteur (issue #13). Risque
   résiduel : cette API peut changer à une mise à jour d'xterm.
+- Décidé le 2026-11-04 : `Projets` repliée garde la ligne du projet sélectionné, ou « Global »,
+  même quand c'est un worktree qui est sélectionné (issue #27). Le projet reste le contexte : sans
+  elle, la section ne dirait plus où l'on est dès qu'on entre dans un worktree.
 
 ## Écarté
 
@@ -140,3 +147,4 @@ performance, communs à toutes les vues.
 - #13 — Terminal : chemins cliquables, ⌘F, glisser-déposer, taille de police
 - #21 — Interface : écran de démarrage
 - #23 — Interface — panneaux latéraux redimensionnables
+- #27 — Barre latérale — replier les sections Projets et Worktrees
