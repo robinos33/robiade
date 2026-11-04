@@ -9,7 +9,7 @@ use rayon::prelude::*;
 use robiade_core::contributions::Contribution;
 use robiade_core::forge::{
     is_project_path, is_username, readable, Approvals, Discussion, Forge, ForgeError, ForgeUrls, Issue, IssueRef, IssueState,
-    MergeRequest, MrRef, MrState, Note, PipelineStatus,
+    MergeMethods, MergeRequest, MrRef, MrState, Note, PipelineStatus,
 };
 use robiade_core::issue_actions::{IssuePlanned, NewIssue};
 use robiade_core::merge_actions::Planned;
@@ -626,6 +626,7 @@ fn to_domain(m: ApiMergeRequest, urls: &GitLabUrls) -> Option<MergeRequest> {
         pipeline_id: m.head_pipeline.map(|p| p.id),
         sha: m.sha.unwrap_or_default(),
         approvals: None,
+        merge_methods: MergeMethods::ANY,
     })
 }
 

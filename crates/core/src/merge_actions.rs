@@ -1,7 +1,7 @@
 //! Actions sur une MR. Les règles de domaine sont portées ici, pas laissées à l'utilisateur : une
 //! action interdite n'est jamais proposée à la forge, et ce qui part est décrit avant d'être confirmé.
 
-use crate::forge::{MergeRequest, MrRef, MrState, PipelineStatus};
+use crate::forge::{MergeMethods, MergeRequest, MrRef, MrState, PipelineStatus};
 use crate::Millis;
 use crate::trunks::TrunkBranches;
 
@@ -53,6 +53,8 @@ pub enum Refused {
     NotMergeable(String),
     #[error("la MR a changé depuis l'affichage : relis-la avant de merger")]
     Stale,
+    #[error("le dépôt interdit le merge {0}")]
+    MethodForbidden(&'static str),
 }
 
 /// Applique les règles à l'état **courant** de la MR, relu juste avant d'agir.
@@ -91,7 +93,12 @@ pub fn plan(mr: &MergeRequest, action: &MrAction, me: &str, trunks: &TrunkBranch
                 return Err(Refused::NotMergeable(mr.merge_status.clone()));
             }
             // Un wagon garde ses commits : les wagons en aval en descendent par ancestralité.
-            Ok(Planned::Merge { sha: mr.sha.clone(), squash: !mr.is_intermediate_wagon(trunks) })
+            let squash = !mr.is_intermediate_wagon(trunks);
+            match (squash, mr.merge_methods) {
+                (true, MergeMethods { squash: false, .. }) => Err(Refused::MethodForbidden("avec squash")),
+                (false, MergeMethods { merge_commit: false, .. }) => Err(Refused::MethodForbidden("sans squash")),
+                _ => Ok(Planned::Merge { sha: mr.sha.clone(), squash }),
+            }
         }
     }
 }
@@ -165,6 +172,7 @@ mod tests {
             pipeline: Some(PipelineStatus::Failed),
             pipeline_id: Some(42),
             approvals: None,
+            merge_methods: MergeMethods::ANY,
         }
     }
 
@@ -185,6 +193,19 @@ mod tests {
         let main_only = TrunkBranches::new(["main"]).unwrap();
         let into_staging = plan(&mr("moi", "staging"), &merge(sha), "moi", &main_only);
         assert_eq!(into_staging, Ok(Planned::Merge { sha: sha.into(), squash: false }), "staging n'y est qu'une branche");
+    }
+
+    #[test]
+    fn a_merge_method_the_repository_forbids_is_refused_before_anything_leaves() {
+        let sha = "0123456789abcdef";
+        let mut no_squash = mr("moi", "staging");
+        no_squash.merge_methods.squash = false;
+        assert_eq!(plan(&no_squash, &merge(sha), "moi", &trunks()), Err(Refused::MethodForbidden("avec squash")));
+        let mut squash_only = mr("moi", "ticket-1");
+        squash_only.merge_methods.merge_commit = false;
+        assert_eq!(plan(&squash_only, &merge(sha), "moi", &trunks()), Err(Refused::MethodForbidden("sans squash")));
+        squash_only.target_branch = "staging".into();
+        assert_eq!(plan(&squash_only, &merge(sha), "moi", &trunks()), Ok(Planned::Merge { sha: sha.into(), squash: true }));
     }
 
     #[test]
