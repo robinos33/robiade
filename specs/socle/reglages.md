@@ -7,8 +7,9 @@ de chaque projet, sans toucher au code ; rien n'y est secret.
 
 - Page **Réglages** (icône en bas de la barre latérale, palette, ⌘,), enregistrée dans
   `robiade.db`. Trois sections :
-  - **Forge** : fournisseur (GitLab seul), URL de l'instance, service du trousseau du jeton
-    (défaut `gitlab-api-token`). Vide : pas de volet Forge (merge requests, issues, activité),
+  - **Forge** : fournisseur (GitLab ou GitHub, github.com ou Enterprise Server), URL de
+    l'instance, service du trousseau du jeton (défaut `gitlab-api-token` ou `github-api-token`).
+    Pour GitHub, la page indique les droits d'un jeton fine-grained. Vide : pas de volet Forge (merge requests, issues, activité),
     comme pour un dépôt hors de l'instance.
   - **Vault** (optionnel) : URL, service du trousseau de secours (défaut `vault-token`). Vide : la
     source « Vault » disparaît du dialogue de connexion DB.
@@ -28,8 +29,10 @@ de chaque projet, sans toucher au code ; rien n'y est secret.
 
 - Aucun secret dans les réglages : un jeton se désigne par son service du trousseau.
 - Une URL d'instance est `https://hôte[:port]`, sans chemin, requête ni identifiants.
-- Le jeton ne part que vers l'hôte réglé. **Un nouvel hôte n'est enregistré qu'une fois
-  confirmé**, premier réglage compris (un jeton peut déjà attendre dans le trousseau) : Rust
+- Le jeton ne part que vers l'hôte de l'API de l'instance réglée : l'instance elle-même, sauf
+  github.com, dont l'API est `api.github.com`. C'est cet hôte que la confirmation montre ;
+  changer de fournisseur sur une même instance peut le changer, et redemande la confirmation.
+  **Un nouvel hôte n'est enregistré qu'une fois confirmé**, premier réglage compris (un jeton peut déjà attendre dans le trousseau) : Rust
   renvoie l'hôte normalisé, la confirmation le montre avec le service du jeton, puis le renvoie.
   Retirer un réglage n'envoie rien et ne demande pas de confirmation. Même règle pour Vault, dont
   le jeton de la CLI partirait lui aussi vers le nouvel hôte.
@@ -61,3 +64,4 @@ résiduel ci-dessus.
 ## Tickets
 
 - #26 — Socle — indépendance vis-à-vis de l'entreprise : instance GitLab, Vault et branches de tronc dans une page Réglages
+- #28 — Forge — fournisseur GitHub (pull requests, issues, checks)
