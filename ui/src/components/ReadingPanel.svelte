@@ -52,7 +52,7 @@
   const page = $derived.by(() => {
     if (!reading) return null;
     const r = reading.mr ?? reading.issue;
-    return r && threadPage(target.project, r.description, r.discussions, colorScheme());
+    return r && threadPage(app.env?.forge?.url ?? '', target.project, r.description, r.discussions, colorScheme());
   });
 
   const mr = $derived(reading?.mr?.mr ?? null);

@@ -62,7 +62,7 @@ pub trait ForgeUrls: Send + Sync {
     fn project_of_remote(&self, url: &str) -> Option<String>;
 }
 
-/// Aucune forge réglée : aucune adresse n'est reconnue.
+/// Aucune forge réglée : aucune adresse n'est reconnue, et tout appel est refusé.
 pub struct NoForge;
 
 impl ForgeUrls for NoForge {
@@ -77,6 +77,51 @@ impl ForgeUrls for NoForge {
     }
     fn project_of_remote(&self, _: &str) -> Option<String> {
         None
+    }
+}
+
+impl Forge for NoForge {
+    fn me(&self) -> Result<String, ForgeError> {
+        Err(ForgeError::NotConfigured)
+    }
+    fn my_merge_requests(&self) -> Result<Vec<MergeRequest>, ForgeError> {
+        Err(ForgeError::NotConfigured)
+    }
+    fn review_requests(&self) -> Result<Vec<MergeRequest>, ForgeError> {
+        Err(ForgeError::NotConfigured)
+    }
+    fn merge_request(&self, _: &MrRef) -> Result<MergeRequest, ForgeError> {
+        Err(ForgeError::NotConfigured)
+    }
+    fn my_issues(&self) -> Result<Vec<Issue>, ForgeError> {
+        Err(ForgeError::NotConfigured)
+    }
+    fn approvals(&self, _: &MrRef) -> Result<Approvals, ForgeError> {
+        Err(ForgeError::NotConfigured)
+    }
+    fn merge_request_discussions(&self, _: &MrRef) -> Result<Vec<Discussion>, ForgeError> {
+        Err(ForgeError::NotConfigured)
+    }
+    fn issue(&self, _: &IssueRef) -> Result<Issue, ForgeError> {
+        Err(ForgeError::NotConfigured)
+    }
+    fn issue_discussions(&self, _: &IssueRef) -> Result<Vec<Discussion>, ForgeError> {
+        Err(ForgeError::NotConfigured)
+    }
+    fn project_issues(&self, _: &str) -> Result<Vec<Issue>, ForgeError> {
+        Err(ForgeError::NotConfigured)
+    }
+    fn execute(&self, _: &MrRef, _: &Planned) -> Result<(), ForgeError> {
+        Err(ForgeError::NotConfigured)
+    }
+    fn execute_on_issue(&self, _: &IssueRef, _: &IssuePlanned) -> Result<(), ForgeError> {
+        Err(ForgeError::NotConfigured)
+    }
+    fn create_issue(&self, _: &NewIssue) -> Result<IssueRef, ForgeError> {
+        Err(ForgeError::NotConfigured)
+    }
+    fn my_contributions(&self, _: Millis, _: Millis) -> Result<Vec<Contribution>, ForgeError> {
+        Err(ForgeError::NotConfigured)
     }
 }
 
@@ -229,8 +274,10 @@ pub fn readable(discussions: impl IntoIterator<Item = Discussion>) -> Vec<Discus
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ForgeError {
-    #[error("aucun token GitLab dans le trousseau (service gitlab-api-token)")]
-    NoToken,
+    #[error("aucune forge réglée : renseigne-la dans Réglages")]
+    NotConfigured,
+    #[error("aucun token GitLab dans le trousseau (service {0})")]
+    NoToken(String),
     #[error("token GitLab refusé")]
     Unauthorized,
     #[error("MR introuvable")]

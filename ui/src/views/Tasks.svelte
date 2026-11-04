@@ -44,7 +44,7 @@
   /** Issues du projet GitLab sélectionné, ou celles qui me sont assignées en vue globale. */
   let issues = $state<Issue[] | null>(null);
   let issuesError = $state<string | null>(null);
-  const issuesScope = $derived(app.project === null ? 'assigned' : app.selectedGitlabProject);
+  const issuesScope = $derived(!app.env?.forge ? null : app.project === null ? 'assigned' : app.selectedGitlabProject);
 
   $effect(() => {
     const scope = issuesScope;
@@ -212,8 +212,10 @@
           </button>
         {/if}
       </h2>
-      {#if issuesScope === null}
-        <p class="muted">Ce projet n'a pas de remote origin sur gitlab.example.com.</p>
+      {#if !app.env?.forge}
+        <p class="muted">Aucune forge réglée : renseigne son instance dans Réglages.</p>
+      {:else if issuesScope === null}
+        <p class="muted">Ce projet n'a pas de remote origin sur {new URL(app.env.forge.url).host}.</p>
       {:else if issuesError}
         <p class="error-text">GitLab illisible : {issuesError}</p>
       {:else if issues === null}

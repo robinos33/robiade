@@ -21,8 +21,6 @@ use serde_json::json;
 use crate::gitlab_urls::GitLabUrls;
 use crate::keychain;
 
-/// Service du trousseau qui porte le token (le même que mes scripts).
-const TOKEN_SERVICE: &str = "gitlab-api-token";
 /// Une page suffit : au-delà de 100 MR ouvertes, la liste n'est plus un outil de suivi.
 const PER_PAGE: &str = "100";
 /// Pages d'événements lues au plus pour une plage : au-delà, la plage est trop large pour un appel.
@@ -35,6 +33,8 @@ pub struct GitLab {
     api: String,
     /// Forme des URL de l'instance : une MR ou une issue d'un autre hôte est ignorée.
     urls: GitLabUrls,
+    /// Service du trousseau qui porte le token.
+    token_service: String,
     /// Lu au premier appel, oublié sur un 401 pour relire un token renouvelé.
     token: Mutex<Option<SecretString>>,
     username: Mutex<Option<String>>,
@@ -42,7 +42,7 @@ pub struct GitLab {
 
 impl GitLab {
     /// `authority` : `hôte[:port]` de l'instance, seul hôte vers lequel le token part.
-    pub fn new(authority: &str) -> Self {
+    pub fn new(authority: &str, token_service: &str) -> Self {
         let http = ureq::Agent::config_builder()
             .https_only(true)
             // Aucune redirection : le token, porté par un en-tête maison, la suivrait vers un autre hôte.
@@ -55,6 +55,7 @@ impl GitLab {
             http,
             api: format!("https://{authority}/api/v4"),
             urls: GitLabUrls::new(authority),
+            token_service: token_service.to_owned(),
             token: Mutex::default(),
             username: Mutex::default(),
         }
@@ -63,9 +64,9 @@ impl GitLab {
     fn token(&self) -> Result<SecretString, ForgeError> {
         let mut cached = self.token.lock().unwrap_or_else(|e| e.into_inner());
         if cached.is_none() {
-            *cached = keychain::generic_password(TOKEN_SERVICE);
+            *cached = keychain::generic_password(&self.token_service);
         }
-        cached.clone().ok_or(ForgeError::NoToken)
+        cached.clone().ok_or_else(|| ForgeError::NoToken(self.token_service.clone()))
     }
 
     /// `GET` sur l'API ; `path_and_query` est construit ici, jamais repris tel quel d'une entrée.

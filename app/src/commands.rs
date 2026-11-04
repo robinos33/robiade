@@ -70,6 +70,8 @@ pub fn environment(app: tauri::AppHandle, state: State<AppState>) -> Environment
         home: app.path().home_dir().map(|h| h.to_string_lossy().into_owned()).unwrap_or_default(),
         commit: crate::updates::COMMIT.map(str::to_owned),
         dirty: crate::updates::dirty(),
+        forge: state.applied.forge.as_ref().map(Into::into),
+        vault: state.applied.vault.as_ref().map(Into::into),
     }
 }
 

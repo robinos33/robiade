@@ -5,7 +5,7 @@ import { localDay } from './format';
 import { writeOutput } from './terminals';
 import type { Agent, Environment, Forge, GitWorktree, MergeRequest, MrState, Project, QuitRequest, ReadingTarget, Session, Task, Update, Workspace, Worktree } from './types';
 
-export type View = 'inbox' | 'agents' | 'history' | 'mr' | 'tasks' | 'stats' | 'env' | 'db' | 'code';
+export type View = 'inbox' | 'agents' | 'history' | 'mr' | 'tasks' | 'stats' | 'env' | 'db' | 'code' | 'settings';
 
 const ATTENTION_ORDER: Record<string, number> = { awaitingPermission: 0, failed: 1, awaitingInput: 2 };
 
@@ -207,7 +207,7 @@ class AppState {
   /** Lit l'état des MR des sessions récentes ; le cache côté Rust évite de relire les MR closes. */
   async refreshMrStates() {
     const urls = [...new Set(this.history.slice(0, 200).flatMap((s) => (s.mergeRequestUrl ? [s.mergeRequestUrl] : [])))];
-    if (urls.length === 0) return;
+    if (urls.length === 0 || !this.env?.forge) return;
     try {
       this.mrStates = { ...this.mrStates, ...(await api.mergeRequestStates(urls)) };
     } catch {
@@ -216,7 +216,7 @@ class AppState {
   }
 
   async refreshForge() {
-    if (this.forgeLoading) return;
+    if (this.forgeLoading || !this.env?.forge) return;
     this.forgeLoading = true;
     try {
       this.forge = await api.mergeRequests();

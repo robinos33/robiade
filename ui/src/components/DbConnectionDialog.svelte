@@ -209,7 +209,7 @@
               Valeur{p.secret && !clearAllowed ? ' (dev local seulement)' : ''}
             </option>
             <option value="keychain">Trousseau</option>
-            <option value="vault">Vault</option>
+            {#if app.env?.vault || row.kind === 'vault'}<option value="vault">Vault</option>{/if}
           </select>
           {#if row.kind === 'literal' && p.secret}
             <input class="field mono" class:refused={!clearAllowed} type="password" bind:value={row.value} autocomplete="off"

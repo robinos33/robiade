@@ -1045,6 +1045,10 @@ pub struct EnvironmentDto {
     /// Commit dont la build est issue ; `None` hors `install.sh`.
     pub commit: Option<String>,
     pub dirty: bool,
+    /// Forge en vigueur ; `None` : pas de volet Forge.
+    pub forge: Option<crate::settings::ForgeSettingsDto>,
+    /// Vault en vigueur ; `None` : pas de source Vault pour les connexions DB.
+    pub vault: Option<crate::settings::VaultSettingsDto>,
 }
 
 #[derive(Serialize, Clone)]

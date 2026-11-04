@@ -7,6 +7,7 @@ mod containers;
 mod db_sessions;
 mod dto;
 mod forge;
+mod settings;
 mod task_cli;
 mod updates;
 
@@ -16,18 +17,16 @@ use std::sync::Arc;
 use robiade_adapters::claude_code::TranscriptStore;
 use robiade_adapters::docker::DockerEngine;
 use robiade_adapters::git::GitCli;
-use robiade_adapters::gitlab::GitLab;
-use robiade_adapters::gitlab_urls::GitLabUrls;
 use robiade_adapters::sqlite_agents::SqliteAgentJournal;
 use robiade_adapters::engines::Engines;
 use robiade_adapters::sqlite_audit::SqliteAuditLog;
 use robiade_adapters::sqlite_connections::SqliteConnectionRepository;
 use robiade_adapters::sqlite_console_history::SqliteConsoleHistory;
 use robiade_adapters::sqlite_search::SearchIndex;
-use robiade_adapters::vault::VaultKv;
+use robiade_adapters::sqlite_settings::SqliteSettings;
 use robiade_adapters::workspace::WorkspaceResolver;
 use robiade_adapters::sqlite_tasks::SqliteTaskRepository;
-use robiade_adapters::{backup, hooks, shell_env, task_backup};
+use robiade_adapters::{backup, hooks, legacy_settings, shell_env, task_backup};
 use robiade_core::containers::Containers;
 use robiade_core::databases::{DatabaseProbe, Vault};
 use robiade_core::db_browse::DatabaseBrowser;
@@ -59,12 +58,12 @@ pub struct AppState {
     pub db_sessions: db_sessions::DbSessions,
     pub console_history: SqliteConsoleHistory,
     pub updates: Arc<updates::Updates>,
+    pub settings: SqliteSettings,
+    /// Réglages lus au démarrage, ceux que la forge et le Vault utilisent.
+    pub applied: settings::Applied,
     /// Fermeture confirmée dans l'interface malgré des agents au travail.
     pub quit_confirmed: AtomicBool,
 }
-
-/// Instance GitLab, en attendant les réglages.
-const FORGE_HOST: &str = "gitlab.example.com";
 
 pub fn now() -> i64 {
     std::time::SystemTime::now()
@@ -162,8 +161,11 @@ fn main() {
             let data_dir = own_dir(app.path().app_data_dir()?);
             std::fs::create_dir_all(&data_dir)?;
             let home = app.path().home_dir()?;
+            // Avant tout autre dépôt : une base qui a déjà des tables vient d'une version antérieure.
+            let settings = SqliteSettings::open(&data_dir.join("robiade.db"), || legacy_settings::seed(&home))?;
+            let applied = settings::Applied { forge: settings.forge()?, vault: settings.vault()? };
+            let (forge, forge_urls) = settings::forge_of(applied.forge.as_ref());
 
-            let forge_urls: Arc<dyn ForgeUrls> = Arc::new(GitLabUrls::new(FORGE_HOST));
             let workspaces = Arc::new(WorkspaceResolver::new(forge_urls.clone()));
             let login = shell_env::resolve();
             let updates = Arc::new(updates::Updates::default());
@@ -209,7 +211,6 @@ fn main() {
                 std::thread::sleep(std::time::Duration::from_secs(3600));
             });
 
-            let gitlab: Arc<dyn Forge> = Arc::new(GitLab::new(FORGE_HOST));
             let docker: Arc<dyn Containers> = Arc::new(DockerEngine::new(home.clone())?);
             app.manage(AppState {
                 transcripts,
@@ -219,20 +220,22 @@ fn main() {
                 agents: registry,
                 vcs: git.clone(),
                 worktrees: git,
-                forge: gitlab.clone(),
+                forge: forge.clone(),
                 forge_urls,
-                mr_states: Arc::new(forge::MrStates::new(gitlab.clone())),
-                contributions: Arc::new(forge::Contributions::new(gitlab)),
+                mr_states: Arc::new(forge::MrStates::new(forge.clone())),
+                contributions: Arc::new(forge::Contributions::new(forge)),
                 audit: Arc::new(SqliteAuditLog::open(&data_dir.join("robiade.db"))?),
                 log_streams: containers::LogStreams::new(app.handle().clone(), docker.clone()),
                 docker,
                 connections: SqliteConnectionRepository::open(&data_dir.join("robiade.db"))?,
-                vault: Arc::new(VaultKv::new(home.clone())),
+                vault: settings::vault_of(applied.vault.as_ref(), home.clone()),
                 databases: Arc::new(Engines),
                 browser: Arc::new(Engines),
                 db_sessions: db_sessions::DbSessions::default(),
                 console_history: SqliteConsoleHistory::open(&data_dir.join("robiade.db"))?,
                 updates,
+                settings,
+                applied,
                 quit_confirmed: AtomicBool::new(false),
             });
             Ok(())
@@ -319,6 +322,9 @@ fn main() {
             commands::update_status,
             commands::relaunch,
             commands::quit,
+            settings::settings,
+            settings::save_forge_settings,
+            settings::save_vault_settings,
         ])
         .build(tauri::generate_context!())
         .expect("échec du démarrage de Robiade")

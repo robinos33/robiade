@@ -104,13 +104,15 @@
         <span>{app.forgeError}</span>
         {#if app.forgeError.includes('trousseau')}
           <span class="muted">
-            Dans un vrai terminal : <code>security add-generic-password -s gitlab-api-token -a "$USER" -w</code>
+            Dans un vrai terminal : <code>security add-generic-password -s {app.env?.forge?.tokenService} -a "$USER" -w</code>
           </span>
         {/if}
       </div>
     {/if}
 
-    {#if app.forge === null}
+    {#if !app.env?.forge}
+      <p class="muted">Aucune forge réglée : renseigne son instance dans <button class="btn ghost" onclick={() => (app.view = 'settings')}>Réglages</button>.</p>
+    {:else if app.forge === null}
       {#if !app.forgeError}<p class="muted">Lecture de GitLab…</p>{/if}
     {:else}
       <div class="block">

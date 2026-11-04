@@ -1,4 +1,4 @@
-//! Lecture des moteurs KV v2 de Vault, instance configurée uniquement, avec le jeton que la CLI
+//! Lecture des moteurs KV v2 de Vault, instance réglée uniquement, avec le jeton que la CLI
 //! dépose après `vault login -method=oidc`. Robiade ne fait aucun flux de connexion lui-même.
 //!
 //! Les noms (chemins, clés) remontent à l'interface ; les valeurs, jamais : seule `read` en rend
@@ -7,15 +7,13 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use robiade_core::databases::{is_vault_path, is_vault_segment, Vault, VaultError, VaultRef, VAULT_HOST};
+use robiade_core::databases::{is_vault_path, is_vault_segment, Vault, VaultError, VaultRef};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use serde_json::Value;
 
 use crate::keychain;
 
-/// Jeton de secours, si la CLI n'en a pas déposé : `security add-generic-password -s vault-token …`.
-const TOKEN_SERVICE: &str = "vault-token";
 /// Bornes du parcours récursif : au-delà, le préfixe est trop large pour être une liste utile.
 const MAX_PATHS: usize = 1000;
 const MAX_REQUESTS: usize = 200;
@@ -25,10 +23,13 @@ pub struct VaultKv {
     api: String,
     /// `~/.vault-token`, relu à chaque appel : un `vault login` refait est pris sans redémarrer.
     token_file: PathBuf,
+    /// Jeton de secours, si la CLI n'en a pas déposé : `security add-generic-password -s <service> …`.
+    token_service: String,
 }
 
 impl VaultKv {
-    pub fn new(home: PathBuf) -> Self {
+    /// `authority` : `hôte[:port]` du Vault, seul hôte vers lequel le jeton part.
+    pub fn new(home: PathBuf, authority: &str, token_service: &str) -> Self {
         let http = ureq::Agent::config_builder()
             .https_only(true)
             // Aucune redirection : le jeton la suivrait vers un autre hôte.
@@ -38,7 +39,12 @@ impl VaultKv {
             .user_agent("robiade")
             .build()
             .into();
-        Self { http, api: format!("https://{VAULT_HOST}/v1"), token_file: home.join(".vault-token") }
+        Self {
+            http,
+            api: format!("https://{authority}/v1"),
+            token_file: home.join(".vault-token"),
+            token_service: token_service.to_owned(),
+        }
     }
 
     fn token(&self) -> Result<SecretString, VaultError> {
@@ -47,7 +53,7 @@ impl VaultKv {
             .map(|t| t.trim().to_owned())
             .filter(|t| !t.is_empty())
             .map(SecretString::from);
-        from_cli.or_else(|| keychain::generic_password(TOKEN_SERVICE)).ok_or(VaultError::NoToken)
+        from_cli.or_else(|| keychain::generic_password(&self.token_service)).ok_or(VaultError::NoToken)
     }
 
     /// `GET` sur l'API ; `path` est assemblé ici à partir de segments validés.
@@ -205,7 +211,7 @@ mod tests {
 
     #[test]
     fn refuses_paths_outside_the_safe_alphabet_before_any_call() {
-        let vault = VaultKv::new(PathBuf::from("/nonexistent"));
+        let vault = VaultKv::new(PathBuf::from("/nonexistent"), "vault.example.com", "vault-token");
         assert!(matches!(vault.paths("forum-kv", "../sys"), Err(VaultError::Api(_))));
         assert!(matches!(vault.paths("kv?x=1", ""), Err(VaultError::Api(_))));
         assert!(matches!(vault.keys("forum-kv", "internal/prod/"), Err(VaultError::Api(_))));

@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
-  Agent, AssetContent, IssueReading, MrReading, ProjectFile, ProjectFiles, Container, ContributionBucket, Granularity, DbConnection, DbConnectionInput, DbConsoleHistory, DbConsoleReply, DbFinishedWrite, DbOverview, DbPage, DbPageRequest, DbProbe, DbTarget, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, SearchHit, Session, Task, TaskStatus, GitWorktree, Update, WorktreeCreation, WorktreeRemoval,
+  Agent, AssetContent, IssueReading, MrReading, ProjectFile, ProjectFiles, Container, ContributionBucket, Granularity, DbConnection, DbConnectionInput, DbConsoleHistory, DbConsoleReply, DbFinishedWrite, DbOverview, DbPage, DbPageRequest, DbProbe, DbTarget, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, SaveOutcome, SearchHit, Session, Settings, ForgeSettings, VaultSettings, Task, TaskStatus, GitWorktree, Update, WorktreeCreation, WorktreeRemoval,
 } from './types';
 
 export const api = {
@@ -118,4 +118,10 @@ export const api = {
   /** Relance pour prendre la mise à jour ; des agents vivants passent d'abord par la confirmation. */
   relaunch: () => invoke<void>('relaunch'),
   quit: (relaunch: boolean) => invoke<void>('quit', { relaunch }),
+  settings: () => invoke<Settings>('settings'),
+  /** Sans `confirmedHost`, un nouvel hôte n'est pas enregistré : la réponse le donne à confirmer. */
+  saveForgeSettings: (forge: ForgeSettings | null, confirmedHost: string | null) =>
+    invoke<SaveOutcome>('save_forge_settings', { forge, confirmedHost }),
+  saveVaultSettings: (vault: VaultSettings | null, confirmedHost: string | null) =>
+    invoke<SaveOutcome>('save_vault_settings', { vault, confirmedHost }),
 };
