@@ -5,27 +5,27 @@ a vocation à rejoindre le fichier de cette feature.
 
 ## Règles
 
-L'ADE concentre un token GitLab, des accès DB et le socket Docker : c'est une cible de valeur.
+L'ADE concentre un jeton de forge, des accès DB et le socket Docker : c'est une cible de valeur.
 Le niveau d'exigence est celui d'un outil d'administration.
 
 ### Surface d'attaque
 - **Aucun port réseau en écoute.** Le canal hooks → ADE est un socket Unix dans
   `~/Library/Application Support/ade/`, permissions `0600`, et l'ADE vérifie l'UID du pair
   (`getpeereid`).
-- Sorties réseau **sur liste blanche** : les hôtes configurés (forge et Vault, voir les
-  [réglages](reglages.md)) et les hôtes DB déclarés.
+- Sorties réseau **sur liste blanche** : les hôtes configurés (l'API de la forge et Vault, voir
+  les [réglages](reglages.md)) et les hôtes DB déclarés.
 - Tauri : capabilities minimales commande par commande ; pas de plugin `shell`, `fs` ni `opener`
   exposé au front : une page s'ouvre dans le navigateur par une commande Rust qui n'accepte qu'une
   URL `https` de l'instance de forge réglée, sans identifiants ni autre port ; CSP stricte (`default-src 'self'`, pas d'`unsafe-inline`, pas d'`unsafe-eval`) ; aucun
   contenu distant chargé dans la WebView.
 
 ### Secrets
-- Keychain uniquement (token GitLab, mots de passe DB). Jamais dans SQLite, les logs, les messages
+- Keychain uniquement (jeton de forge, mots de passe DB). Jamais dans SQLite, les logs, les messages
   d'erreur ou l'IPC vers le front.
 - Type `Secret<T>` (`secrecy`) côté Rust : pas de `Debug`/`Display`, effacé en mémoire au drop.
 
 ### Données non fiables
-- Tout ce qui vient des transcripts, de GitLab (titres, descriptions, commentaires, logs de jobs)
+- Tout ce qui vient des transcripts, de la forge (titres, descriptions, commentaires, logs de jobs)
   et de Docker est **non fiable** : rendu comme texte, jamais en `{@html}`. Markdown et HTML rendus
   dans une iframe `srcdoc` sandboxée (ni script, ni origine, ni navigation hors de l'app) : aucun
   nettoyage à maintenir, le contenu ne peut rien exécuter. Les liens y sont inertes ; les images
@@ -48,7 +48,7 @@ Le niveau d'exigence est celui d'un outil d'administration.
   passe aussi par Rust, avec les mêmes bornes : la réponse ne renseigne pas sur le reste du disque.
 
 ### Actions
-- Toute action sortante (GitLab, DB en écriture, suppression de worktree, arrêt de conteneur)
+- Toute action sortante (forge, DB en écriture, suppression de worktree, arrêt de conteneur)
   passe par une confirmation qui montre **la cible exacte** (projet, MR, branche). Pas de
   confirmation générique « êtes-vous sûr ? ».
 - DB : connexion en lecture seule par défaut ; l'écriture se fait avec un autre utilisateur ou
@@ -73,3 +73,4 @@ Le niveau d'exigence est celui d'un outil d'administration.
 - #26 — Socle — indépendance vis-à-vis de l'entreprise : instance GitLab, Vault et branches de tronc dans une page Réglages
 - #13 — Terminal : chemins cliquables, ⌘F, glisser-déposer, taille de police
 - #15 — App : mise à jour automatique depuis main au démarrage
+- #28 — Forge — fournisseur GitHub (pull requests, issues, checks)
