@@ -284,15 +284,15 @@ pub fn readable(discussions: impl IntoIterator<Item = Discussion>) -> Vec<Discus
 pub enum ForgeError {
     #[error("aucune forge réglée : renseigne-la dans Réglages")]
     NotConfigured,
-    #[error("aucun token GitLab dans le trousseau (service {0})")]
+    #[error("aucun jeton de forge dans le trousseau (service {0})")]
     NoToken(String),
-    #[error("token GitLab refusé")]
+    #[error("jeton refusé par la forge")]
     Unauthorized,
-    #[error("MR introuvable")]
+    #[error("introuvable sur la forge")]
     NotFound,
-    #[error("GitLab injoignable : {0}")]
+    #[error("forge injoignable : {0}")]
     Network(String),
-    #[error("réponse GitLab inattendue : {0}")]
+    #[error("réponse inattendue de la forge : {0}")]
     Api(String),
 }
 
