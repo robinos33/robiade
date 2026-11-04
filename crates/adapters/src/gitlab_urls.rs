@@ -98,7 +98,7 @@ mod tests {
     }
 
     #[test]
-    fn only_merge_requests_of_the_configured_instance_are_recognised() {
+    fn only_merge_requests_of_the_instance_are_recognised() {
         let urls = urls();
         let mr = urls.merge_request("https://gitlab.example.com/a/b-c/d_e/-/merge_requests/42");
         assert_eq!(mr, Some(MrRef { project: "a/b-c/d_e".into(), iid: 42 }));
@@ -115,14 +115,14 @@ mod tests {
     #[test]
     fn an_issue_is_recognised_under_both_of_its_urls() {
         let urls = urls();
-        let expected = Some(IssueRef { project: "shop/boutique".into(), iid: 5021 });
-        let base = "https://gitlab.example.com/shop/boutique/-";
+        let expected = Some(IssueRef { project: "acme/shop".into(), iid: 5021 });
+        let base = "https://gitlab.example.com/acme/shop/-";
         assert_eq!(urls.issue(&format!("{base}/work_items/5021")), expected);
         assert_eq!(urls.issue(&format!("{base}/issues/5021")), expected);
         assert_eq!(urls.issue(&format!("{base}/merge_requests/1")), None);
-        let issue = IssueRef { project: "shop/boutique".into(), iid: 12 };
+        let issue = IssueRef { project: "acme/shop".into(), iid: 12 };
         let url = urls.issue_url(&issue).unwrap();
-        assert_eq!(url, "https://gitlab.example.com/shop/boutique/-/issues/12");
+        assert_eq!(url, "https://gitlab.example.com/acme/shop/-/issues/12");
         assert_eq!(urls.issue(&url), Some(issue));
     }
 
@@ -130,8 +130,8 @@ mod tests {
     fn finds_the_gitlab_project_of_a_remote_without_its_credentials() {
         let urls = urls();
         let project = |url| urls.project_of_remote(url);
-        let boutique = project("git@gitlab.example.com:shop/boutique.git");
-        assert_eq!(boutique.as_deref(), Some("shop/boutique"));
+        let shop = project("git@gitlab.example.com:acme/shop.git");
+        assert_eq!(shop.as_deref(), Some("acme/shop"));
         assert_eq!(project("https://gitlab.example.com/groupe/poc/zork.git").as_deref(), Some("groupe/poc/zork"));
         assert_eq!(project("ssh://git@gitlab.example.com:2222/a/b").as_deref(), Some("a/b"));
         assert_eq!(project("https://moi:glpat-x@gitlab.example.com/a/b.git").as_deref(), Some("a/b"));

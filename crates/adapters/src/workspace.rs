@@ -102,7 +102,7 @@ mod tests {
         std::fs::write(
             repo.join(".git/config"),
             "[core]\n\tbare = false\n[remote \"upstream\"]\n\turl = git@gitlab.example.com:autre/x.git\n\
-             [remote \"origin\"]\n\turl = git@gitlab.example.com:shop/boutique.git\n",
+             [remote \"origin\"]\n\turl = git@gitlab.example.com:acme/shop.git\n",
         )
         .unwrap();
         std::fs::create_dir_all(repo.join("sub")).unwrap();
@@ -119,8 +119,8 @@ mod tests {
         assert_eq!(linked.project_root, repo_str);
         assert_eq!(linked.worktree_name(), Some("repo-wt-fix"));
         assert!(linked.is_repository);
-        assert_eq!(main.gitlab_project.as_deref(), Some("shop/boutique"));
-        assert_eq!(linked.gitlab_project.as_deref(), Some("shop/boutique"));
+        assert_eq!(main.gitlab_project.as_deref(), Some("acme/shop"));
+        assert_eq!(linked.gitlab_project.as_deref(), Some("acme/shop"));
 
         let gone = resolver.resolve(&base.join("disparu").to_string_lossy());
         assert!(!gone.is_repository);

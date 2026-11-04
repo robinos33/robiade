@@ -602,7 +602,7 @@ mod tests {
     use super::*;
 
     fn vault(path: &str, key: &str) -> Source {
-        Source::Vault(VaultRef { mount: "forum-kv".into(), path: path.into(), key: key.into() })
+        Source::Vault(VaultRef { mount: "shop-kv".into(), path: path.into(), key: key.into() })
     }
 
     fn create(stage: Stage, read_only: bool, fields: Vec<(Part, Source)>) -> Result<Connection, DbError> {

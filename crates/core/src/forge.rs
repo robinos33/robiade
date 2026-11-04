@@ -380,7 +380,7 @@ mod tests {
             None
         }
         fn issue(&self, url: &str) -> Option<IssueRef> {
-            (url == "https://forge/p/12").then(|| IssueRef { project: "shop/boutique".into(), iid: 12 })
+            (url == "https://forge/p/12").then(|| IssueRef { project: "acme/shop".into(), iid: 12 })
         }
         fn issue_url(&self, _: &IssueRef) -> Option<String> {
             None
@@ -395,10 +395,10 @@ mod tests {
 
     #[test]
     fn an_issue_is_typed_as_the_forge_writes_it() {
-        let expected = Some(IssueRef { project: "shop/boutique".into(), iid: 12 });
-        assert_eq!(IssueRef::parse(" #12 ", Some("shop/boutique"), &OneIssue), expected);
-        assert_eq!(IssueRef::parse("shop/boutique#12", Some("autre/projet"), &OneIssue), expected);
-        assert_eq!(IssueRef::parse("shop/boutique#12", None, &OneIssue), expected);
+        let expected = Some(IssueRef { project: "acme/shop".into(), iid: 12 });
+        assert_eq!(IssueRef::parse(" #12 ", Some("acme/shop"), &OneIssue), expected);
+        assert_eq!(IssueRef::parse("acme/shop#12", Some("autre/projet"), &OneIssue), expected);
+        assert_eq!(IssueRef::parse("acme/shop#12", None, &OneIssue), expected);
         assert_eq!(IssueRef::parse("https://forge/p/12", None, &OneIssue), expected);
         for bad in ["#12", "12", "a/../b#1", "a b#1", "a/b#", "a/b#1x", "https://forge/p/13"] {
             assert_eq!(IssueRef::parse(bad, None, &OneIssue), None, "{bad}");

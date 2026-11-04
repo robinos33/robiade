@@ -212,8 +212,8 @@ mod tests {
     #[test]
     fn refuses_paths_outside_the_safe_alphabet_before_any_call() {
         let vault = VaultKv::new(PathBuf::from("/nonexistent"), "vault.example.com", "vault-token");
-        assert!(matches!(vault.paths("forum-kv", "../sys"), Err(VaultError::Api(_))));
+        assert!(matches!(vault.paths("shop-kv", "../sys"), Err(VaultError::Api(_))));
         assert!(matches!(vault.paths("kv?x=1", ""), Err(VaultError::Api(_))));
-        assert!(matches!(vault.keys("forum-kv", "internal/prod/"), Err(VaultError::Api(_))));
+        assert!(matches!(vault.keys("shop-kv", "internal/prod/"), Err(VaultError::Api(_))));
     }
 }

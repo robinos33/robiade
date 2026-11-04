@@ -161,7 +161,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let transcript = dir.join("s1.jsonl");
         let mut f = std::fs::File::create(&transcript).unwrap();
-        writeln!(f, r#"{{"type":"user","timestamp":"2026-10-27T10:00:00Z","message":{{"content":"Corrige l'équipe de boutique"}}}}"#).unwrap();
+        writeln!(f, r#"{{"type":"user","timestamp":"2026-10-27T10:00:00Z","message":{{"content":"Corrige l'équipe de la boutique"}}}}"#).unwrap();
         drop(f);
 
         let index = SearchIndex::open(&dir.join("cache.db")).unwrap();

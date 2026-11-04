@@ -157,9 +157,9 @@ mod tests {
             typ: Some(PortSummaryTypeEnum::TCP),
         };
         let labels = HashMap::from([
-            (COMPOSE_PROJECT.to_owned(), "boutique".to_owned()),
+            (COMPOSE_PROJECT.to_owned(), "shop".to_owned()),
             (COMPOSE_SERVICE.to_owned(), "postgres".to_owned()),
-            (COMPOSE_WORKING_DIR.to_owned(), "/Users/r/PhpstormProjects/boutique".to_owned()),
+            (COMPOSE_WORKING_DIR.to_owned(), "/Users/r/PhpstormProjects/shop".to_owned()),
         ]);
         let container = to_domain(ContainerSummary {
             id: Some("3f2a9c1b7d4e".repeat(5) + "abcd"),
@@ -175,9 +175,9 @@ mod tests {
         assert_eq!(container.name, "boutique-postgres");
         assert_eq!(container.state, ContainerState::Running);
         assert_eq!(container.ports, vec![Port { private: 5432, public: Some(8032), protocol: "tcp".into() }]);
-        assert_eq!(container.compose_project.as_deref(), Some("boutique"));
+        assert_eq!(container.compose_project.as_deref(), Some("shop"));
         assert_eq!(container.service.as_deref(), Some("postgres"));
-        assert_eq!(container.working_dir.as_deref(), Some("/Users/r/PhpstormProjects/boutique"));
+        assert_eq!(container.working_dir.as_deref(), Some("/Users/r/PhpstormProjects/shop"));
     }
 
     #[test]

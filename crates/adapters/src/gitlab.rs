@@ -627,7 +627,7 @@ mod tests {
             r#"{"iid":303,"title":"Ajoute le cache","description":"Voir **#12**","state":"opened","draft":true,"source_branch":"cache",
                 "target_branch":"staging","web_url":"https://gitlab.example.com/a/b/-/merge_requests/303",
                 "updated_at":"2026-10-26T13:43:40.062Z","has_conflicts":true,"blocking_discussions_resolved":false,
-                "detailed_merge_status":"draft_status","author":{"username":"robinos33"},
+                "detailed_merge_status":"draft_status","author":{"username":"jdoe"},
                 "head_pipeline":{"status":"failed","id":1}}"#,
         )
         .unwrap();
@@ -643,14 +643,14 @@ mod tests {
     fn reads_an_issue_published_as_a_work_item() {
         let issue: ApiIssue = serde_json::from_str(
             r#"{"iid":5021,"title":"Cache","state":"closed",
-                "web_url":"https://gitlab.example.com/shop/boutique/-/work_items/5021",
-                "updated_at":"2026-10-26T13:43:40Z","labels":["category::tech"],"assignees":[{"username":"robinos33"}],
+                "web_url":"https://gitlab.example.com/acme/shop/-/work_items/5021",
+                "updated_at":"2026-10-26T13:43:40Z","labels":["category::tech"],"assignees":[{"username":"jdoe"}],
                 "due_date":"2026-11-02","merge_requests_count":1}"#,
         )
         .unwrap();
         let issue = issue_to_domain(issue, &instance()).unwrap();
-        assert_eq!(issue.issue, IssueRef { project: "shop/boutique".into(), iid: 5021 });
-        assert_eq!((issue.assignees, issue.due_date.as_deref()), (vec!["robinos33".to_owned()], Some("2026-11-02")));
+        assert_eq!(issue.issue, IssueRef { project: "acme/shop".into(), iid: 5021 });
+        assert_eq!((issue.assignees, issue.due_date.as_deref()), (vec!["jdoe".to_owned()], Some("2026-11-02")));
         assert_eq!(issue.state, IssueState::Closed);
     }
 

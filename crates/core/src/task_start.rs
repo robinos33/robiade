@@ -63,13 +63,13 @@ mod tests {
 
     fn issue() -> Issue {
         Issue {
-            issue: IssueRef { project: "robinos33/robiade".into(), iid: 6 },
+            issue: IssueRef { project: "acme/tools".into(), iid: 6 },
             title: "Démarrer un agent".into(),
             state: IssueState::Opened,
             description: "Depuis l'onglet Tâches.".into(),
             labels: vec![],
             assignees: vec![],
-            web_url: "https://gitlab.example.com/robinos33/robiade/-/work_items/6".into(),
+            web_url: "https://gitlab.example.com/acme/tools/-/work_items/6".into(),
             updated_at: 0,
             due_date: None,
             merge_requests: 0,
@@ -89,7 +89,7 @@ mod tests {
         let t = task("Ma version", "");
         assert_eq!(branch_name(&t, Some(&issue())), "ticket-6-demarrer-un-agent");
         assert_eq!(tab_name(&t, Some(&issue())), "#6 Démarrer un agent");
-        assert!(initial_prompt(&t, Some(&issue()), "b").contains("robinos33/robiade#6"));
+        assert!(initial_prompt(&t, Some(&issue()), "b").contains("acme/tools#6"));
     }
 
     #[test]

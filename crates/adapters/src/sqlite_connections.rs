@@ -170,7 +170,7 @@ mod tests {
     fn round_trips_a_connection_with_every_kind_of_source() {
         let repo = SqliteConnectionRepository::open(Path::new(":memory:")).unwrap();
         let fields = vec![
-            (Part::Url, Source::Vault(VaultRef { mount: "forum-kv".into(), path: "internal/prod/DATABASE".into(), key: "URL".into() })),
+            (Part::Url, Source::Vault(VaultRef { mount: "shop-kv".into(), path: "internal/prod/DATABASE".into(), key: "URL".into() })),
             (Part::User, Source::Literal("lecteur".into())),
             (Part::Password, Source::Keychain("pg-forum-ro".into())),
         ];

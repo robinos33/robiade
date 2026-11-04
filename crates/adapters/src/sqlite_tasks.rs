@@ -153,7 +153,7 @@ mod tests {
         let mut task = Task::create(TaskId("a".into()), "Écrire la spec", Some("/p".into()), 1).unwrap();
         repo.save(&task).unwrap();
         task.schedule(Some(DueDate::parse("2026-11-02").unwrap()));
-        task.link_issue(Some(IssueRef { project: "shop/boutique".into(), iid: 12 }));
+        task.link_issue(Some(IssueRef { project: "acme/shop".into(), iid: 12 }));
         task.link_session(Some(SessionId::parse("0b7f3c2e-9a41-4d3b-8e6f-1c2d3e4f5a6b").unwrap()));
         task.move_to(TaskStatus::Done, 5);
         repo.save(&task).unwrap();

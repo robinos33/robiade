@@ -56,9 +56,9 @@ mod tests {
 
     #[test]
     fn a_claude_worktree_belongs_to_its_repository() {
-        let wt = "/Users/r/PhpstormProjects/boutique/.claude/worktrees/ticket-4626";
-        assert_eq!(root_of(wt), "/Users/r/PhpstormProjects/boutique");
-        assert_eq!(display_name(wt), "boutique");
+        let wt = "/Users/r/PhpstormProjects/shop/.claude/worktrees/ticket-4626";
+        assert_eq!(root_of(wt), "/Users/r/PhpstormProjects/shop");
+        assert_eq!(display_name(wt), "shop");
         assert_eq!(root_of("/Users/r/ade"), "/Users/r/ade");
     }
 
