@@ -533,9 +533,13 @@
   .term-bar .btn { flex: none; }
   .path { flex-shrink: 100; }
   .name { flex-shrink: 0.25; }
-  /* Barre étroite : les actions passent en icône seule, leur libellé reste au survol. */
+  /*
+   * Barre étroite : les actions passent en icône seule, l'état en pastille seule, le mode permissif
+   * en triangle seul ; un mode non permissif disparaît. Les libellés restent au survol.
+   */
   @container (max-width: 720px) {
-    .term-bar .btn .label { display: none; }
+    .term-bar .btn .label,
+    .term-bar :global(.compact-hide) { display: none; }
   }
   .branch { display: inline-flex; align-items: center; gap: 4px; min-width: 0; color: var(--ink-2); }
   .branch :global(svg) { flex: none; }
