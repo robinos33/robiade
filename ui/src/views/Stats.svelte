@@ -277,6 +277,12 @@
         {#if activityError}
           <p class="muted small" title={activityError}>{app.forgeName} illisible : {activityError}</p>
         {/if}
+        {#if app.env.forge.provider === 'github'}
+          <p class="muted small">
+            GitHub ne sert que les 300 derniers événements, sur 90 jours : au-delà, commits, MR ouvertes et
+            reviews sont vides. Les MR mergées viennent de la recherche, sans cette limite.
+          </p>
+        {/if}
         {#if !activity}
           {#if !activityError}<p class="muted small">Lecture des événements {app.forgeName}…</p>{/if}
         {:else if multiples}
