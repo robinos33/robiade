@@ -1,5 +1,5 @@
 //! Actions sur une MR. Les règles de domaine sont portées ici, pas laissées à l'utilisateur : une
-//! action interdite n'est jamais proposée à GitLab, et ce qui part est décrit avant d'être confirmé.
+//! action interdite n'est jamais proposée à la forge, et ce qui part est décrit avant d'être confirmé.
 
 use crate::forge::{MergeRequest, MrRef, MrState, PipelineStatus};
 use crate::Millis;
@@ -21,15 +21,17 @@ pub enum MrAction {
     Merge { expected_sha: String },
 }
 
-/// Ce qui part vers GitLab, une fois les règles appliquées.
+/// Ce qui part vers la forge, une fois les règles appliquées.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Planned {
     Comment(String),
     Approve,
     Rebase,
     RetryPipeline { pipeline_id: u64 },
-    Retitle(String),
-    /// Merge refusé par GitLab si la tête a bougé depuis `sha`.
+    /// Sortir du brouillon ; chaque forge a sa manière (titre, drapeau).
+    MarkReady,
+    MarkDraft,
+    /// Merge refusé par la forge si la tête a bougé depuis `sha`.
     Merge { sha: String, squash: bool },
 }
 
@@ -78,8 +80,8 @@ pub fn plan(mr: &MergeRequest, action: &MrAction, me: &str, trunks: &TrunkBranch
             }
             _ => Err(Refused::NothingToRetry),
         },
-        MrAction::MarkReady if mr.state == MrState::Draft => Ok(Planned::Retitle(ready_title(&mr.title))),
-        MrAction::MarkDraft if mr.state == MrState::Opened => Ok(Planned::Retitle(format!("Draft: {}", mr.title))),
+        MrAction::MarkReady if mr.state == MrState::Draft => Ok(Planned::MarkReady),
+        MrAction::MarkDraft if mr.state == MrState::Opened => Ok(Planned::MarkDraft),
         MrAction::MarkReady | MrAction::MarkDraft => Err(Refused::AlreadyThere),
         MrAction::Merge { expected_sha } => {
             if expected_sha.is_empty() || *expected_sha != mr.sha {
@@ -94,19 +96,6 @@ pub fn plan(mr: &MergeRequest, action: &MrAction, me: &str, trunks: &TrunkBranch
     }
 }
 
-/// Titre sans les marqueurs de brouillon que GitLab reconnaît en tête.
-fn ready_title(title: &str) -> String {
-    let mut t = title.trim_start();
-    loop {
-        let lower = t.to_ascii_lowercase();
-        let marker = ["draft:", "[draft]", "(draft)", "wip:", "[wip]"].iter().find(|m| lower.starts_with(*m));
-        match marker {
-            Some(m) => t = t[m.len()..].trim_start(),
-            None => return t.to_owned(),
-        }
-    }
-}
-
 impl Planned {
     /// Description lisible, pour la confirmation et le journal d'audit.
     pub fn describe(&self) -> String {
@@ -115,7 +104,8 @@ impl Planned {
             Planned::Approve => "approuver".into(),
             Planned::Rebase => "rebaser sur la branche cible".into(),
             Planned::RetryPipeline { pipeline_id } => format!("relancer les jobs en échec du pipeline #{pipeline_id}"),
-            Planned::Retitle(title) => format!("renommer en « {title} »"),
+            Planned::MarkReady => "marquer prête (sortir du brouillon)".into(),
+            Planned::MarkDraft => "repasser en brouillon".into(),
             Planned::Merge { sha, squash: true } => format!("merger {} avec squash", &sha[..sha.len().min(8)]),
             Planned::Merge { sha, squash: false } => format!("merger {} sans squash (wagon)", &sha[..sha.len().min(8)]),
         }
@@ -219,15 +209,14 @@ mod tests {
     }
 
     #[test]
-    fn draft_markers_are_toggled_through_the_title() {
+    fn a_draft_is_toggled_only_from_the_other_state() {
         let mut draft = mr("moi", "staging");
         draft.state = MrState::Draft;
-        draft.title = "[Draft] (draft) Draft: Ajoute le cache".into();
-        assert_eq!(plan(&draft, &MrAction::MarkReady, "moi", &trunks()), Ok(Planned::Retitle("Ajoute le cache".into())));
+        assert_eq!(plan(&draft, &MrAction::MarkReady, "moi", &trunks()), Ok(Planned::MarkReady));
         assert_eq!(plan(&draft, &MrAction::MarkDraft, "moi", &trunks()), Err(Refused::AlreadyThere));
-        let mut ready = mr("moi", "staging");
-        ready.title = "Ajoute le cache".into();
-        assert_eq!(plan(&ready, &MrAction::MarkDraft, "moi", &trunks()), Ok(Planned::Retitle("Draft: Ajoute le cache".into())));
+        let ready = mr("moi", "staging");
+        assert_eq!(plan(&ready, &MrAction::MarkDraft, "moi", &trunks()), Ok(Planned::MarkDraft));
+        assert_eq!(plan(&ready, &MrAction::MarkReady, "moi", &trunks()), Err(Refused::AlreadyThere));
     }
 
     #[test]
