@@ -1,6 +1,6 @@
 //! Dépôt source de Robiade : comparaison à `origin/main` et construction dans un worktree réservé.
 //!
-//! Un `fetch` précède la comparaison : un commit poussé d'ailleurs (GitLab, une autre machine)
+//! Un `fetch` précède la comparaison : un commit poussé d'ailleurs (la forge, une autre machine)
 //! compte aussi. Hors ligne, la ref locale sert ; mes push, faits depuis ce dépôt ou l'un de ses
 //! worktrees, l'ont déjà mise à jour.
 //! La construction ne touche jamais la copie de travail : elle a lieu dans un worktree en tête
