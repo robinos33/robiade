@@ -53,6 +53,35 @@
   const liveIn = (root: string) => app.liveAgents.filter((a) => a.projectRoot === root);
   const liveInWorktree = (path: string) => app.liveAgents.filter((a) => a.worktreePath === path);
 
+  type Section = 'projects' | 'worktrees';
+  /** Le repli est retenu sur le poste ; la clé n'existe que pour une section repliée. */
+  const foldKey = (section: Section) => `robiade.sidebar.${section}.collapsed`;
+  function storedFold(section: Section): boolean {
+    try {
+      return localStorage.getItem(foldKey(section)) === '1';
+    } catch {
+      return false;
+    }
+  }
+  const collapsed = $state<Record<Section, boolean>>({ projects: storedFold('projects'), worktrees: storedFold('worktrees') });
+  function toggle(section: Section) {
+    collapsed[section] = !collapsed[section];
+    try {
+      if (collapsed[section]) localStorage.setItem(foldKey(section), '1');
+      else localStorage.removeItem(foldKey(section));
+    } catch {
+      // Stockage inaccessible : le repli vaut pour la session.
+    }
+  }
+
+  /** Repliée, une section garde la ligne de la sélection, pour qu'on sache toujours où on est. */
+  const showGlobal = $derived(!collapsed.projects || app.project === null);
+  const shownProjects = $derived(collapsed.projects ? app.projects.filter((p) => p.root === app.project) : app.projects);
+  const shownWorktrees = $derived(collapsed.worktrees ? app.worktrees.filter((w) => w.path === app.worktree) : app.worktrees);
+  /** Agents de toutes les lignes d'une section : sa pastille, une fois repliée. */
+  const liveInProjects = $derived(app.liveAgents.filter((a) => app.projects.some((p) => p.root === a.projectRoot)));
+  const liveInWorktrees = $derived(app.liveAgents.filter((a) => app.worktrees.some((w) => w.path === a.worktreePath)));
+
   /** Menu contextuel d'un worktree, ouvert au clic droit à l'endroit du pointeur. */
   let menu = $state<{ worktree: Worktree; x: number; y: number } | null>(null);
   let removing = $state<Worktree | null>(null);
@@ -77,6 +106,20 @@
   {:else if live.length}
     <span class="dot" title="{live.length} agent(s) actif(s)"></span>
   {/if}
+{/snippet}
+
+<!-- Titre d'une section : un clic la replie ; repliée, elle montre son compte et sa pastille la plus forte. -->
+{#snippet heading(section: Section, label: string, count: number, live: Agent[])}
+  <h2 class="section-title">
+    <button class="fold" aria-expanded={!collapsed[section]} onclick={() => toggle(section)}>
+      <span class="chevron"><Icon name="next" size={12} /></span>
+      <span class="label">{label}</span>
+      {#if collapsed[section]}
+        <span class="count">{count}</span>
+        {@render dot(live)}
+      {/if}
+    </button>
+  </h2>
 {/snippet}
 
 <svelte:window onclick={closeMenu} onkeydown={closeMenu} onblur={() => (menu = null)} />
@@ -114,14 +157,16 @@
     {/each}
   </ul>
 
-  <div class="projects">
-    <h2 class="section-title">Projets</h2>
-    <button class="item" class:active={app.project === null} onclick={() => app.selectProject(null)}>
-      <Icon name="globe" />
-      <span class="label">Global</span>
-    </button>
+  <div class="projects" class:collapsed={collapsed.projects}>
+    {@render heading('projects', 'Projets', app.projects.length, liveInProjects)}
+    {#if showGlobal}
+      <button class="item" class:active={app.project === null} onclick={() => app.selectProject(null)}>
+        <Icon name="globe" />
+        <span class="label">Global</span>
+      </button>
+    {/if}
     <ul>
-      {#each app.projects as p (p.root)}
+      {#each shownProjects as p (p.root)}
         <li>
           <button class="item" class:active={app.project === p.root && app.worktree === null} onclick={() => app.selectProject(p.root)} title={p.root}>
             <Icon name="folder" />
@@ -134,10 +179,10 @@
   </div>
 
   {#if app.worktrees.length > 0}
-    <div class="projects worktrees">
-      <h2 class="section-title">Worktrees</h2>
+    <div class="projects worktrees" class:collapsed={collapsed.worktrees}>
+      {@render heading('worktrees', 'Worktrees', app.worktrees.length, liveInWorktrees)}
       <ul>
-        {#each app.worktrees as w (w.path)}
+        {#each shownWorktrees as w (w.path)}
           <li>
             <button
               class="item"
@@ -156,11 +201,14 @@
       </ul>
     </div>
   {/if}
-  <UpdateStatus />
-  <div class="foot">
-    <button class="theme" onclick={cycleTheme} title={themeTitle} aria-label={themeTitle}>
-      <Icon name={THEMES[theme.choice].icon} />
-    </button>
+  <!-- Collé en bas, même quand les sections repliées ne remplissent plus la hauteur. -->
+  <div class="bottom">
+    <UpdateStatus />
+    <div class="foot">
+      <button class="theme" onclick={cycleTheme} title={themeTitle} aria-label={themeTitle}>
+        <Icon name={THEMES[theme.choice].icon} />
+      </button>
+    </div>
   </div>
 </nav>
 
@@ -204,9 +252,19 @@
     color: #fff; background: var(--accent); border-radius: 9px; padding: 0 6px; font-weight: 650; line-height: 17px;
   }
   .projects { margin-top: 18px; display: flex; flex-direction: column; min-height: 0; flex: 1; }
-  .projects h2 { padding: 0 8px; }
   .projects ul { overflow-y: auto; margin-top: 2px; }
   .worktrees { flex: 0 1 auto; max-height: 40%; margin-top: 12px; }
+  /* Repliée, une section rend sa hauteur : Projets la prend d'office, Worktrees perd son plafond. */
+  .projects.collapsed { flex: none; }
+  .projects.collapsed + .worktrees:not(.collapsed) { flex: 1; max-height: none; }
+  .fold {
+    display: flex; align-items: center; gap: 6px; width: 100%; padding: 0 8px;
+    border: 0; background: none; font: inherit; letter-spacing: inherit; text-transform: inherit; text-align: left;
+  }
+  .fold:hover { color: var(--ink-2); }
+  .chevron { display: flex; transition: transform 120ms ease; }
+  .fold[aria-expanded='true'] .chevron { transform: rotate(90deg); }
+  .bottom { margin-top: auto; }
   .of { font-size: 11px; color: var(--ink-3); max-width: 70px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--info); }
   .menu {
