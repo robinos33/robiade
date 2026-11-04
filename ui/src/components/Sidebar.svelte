@@ -1,7 +1,7 @@
 <script lang="ts">
   import { app, type View } from '../lib/state.svelte';
   import { cycleTheme, theme, type ThemeChoice } from '../lib/theme.svelte';
-  import type { Worktree } from '../lib/types';
+  import type { Agent, Worktree } from '../lib/types';
   import Icon from './Icon.svelte';
   import Logo from './Logo.svelte';
   import ResizeHandle from './ResizeHandle.svelte';
@@ -70,6 +70,15 @@
   }
 </script>
 
+<!-- Pastille d'un ensemble d'agents vivants : l'accent si l'un attend, le bleu s'il en tourne. -->
+{#snippet dot(live: Agent[])}
+  {#if live.some((a) => a.needsAttention)}
+    <span class="dot hot" title="Un agent attend"></span>
+  {:else if live.length}
+    <span class="dot" title="{live.length} agent(s) actif(s)"></span>
+  {/if}
+{/snippet}
+
 <svelte:window onclick={closeMenu} onkeydown={closeMenu} onblur={() => (menu = null)} />
 
 <nav style:--sidebar-w={width ? `${width}px` : null}>
@@ -113,16 +122,11 @@
     </button>
     <ul>
       {#each app.projects as p (p.root)}
-        {@const live = liveIn(p.root)}
         <li>
           <button class="item" class:active={app.project === p.root && app.worktree === null} onclick={() => app.selectProject(p.root)} title={p.root}>
             <Icon name="folder" />
             <span class="label">{p.name}</span>
-            {#if live.some((a) => a.needsAttention)}
-              <span class="dot hot" title="Un agent attend"></span>
-            {:else if live.length}
-              <span class="dot" title="{live.length} agent(s) actif(s)"></span>
-            {/if}
+            {@render dot(liveIn(p.root))}
           </button>
         </li>
       {/each}
@@ -134,7 +138,6 @@
       <h2 class="section-title">Worktrees</h2>
       <ul>
         {#each app.worktrees as w (w.path)}
-          {@const live = liveInWorktree(w.path)}
           <li>
             <button
               class="item"
@@ -146,11 +149,7 @@
               <Icon name="branch" />
               <span class="label">{w.name}</span>
               {#if app.project === null}<span class="of">{w.projectName}</span>{/if}
-              {#if live.some((a) => a.needsAttention)}
-                <span class="dot hot" title="Un agent attend"></span>
-              {:else if live.length}
-                <span class="dot" title="{live.length} agent(s) actif(s)"></span>
-              {/if}
+              {@render dot(liveInWorktree(w.path))}
             </button>
           </li>
         {/each}
