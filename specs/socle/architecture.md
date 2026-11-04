@@ -58,7 +58,10 @@ d'état propre. C'est voulu ; pas d'agrégat inventé pour faire du DDD.
 
 Un `Project` relie un dépôt local à son projet GitLab : `ProjectId`, `RepoPath`, `GitlabProjectRef`,
 nom d'affichage. Détecté depuis le remote `origin` ; un dépôt dont le remote n'est pas sur
-l'instance configurée reste un projet local sans volet Forge.
+l'instance réglée reste un projet local sans volet Forge. Le cœur ne connaît pas la forme des URL
+de la forge (web d'une MR ou d'une issue, remote Git) : un port pur, `ForgeUrls`, la porte, et
+l'adaptateur du fournisseur réglé l'implémente avec `Forge`. Un autre fournisseur n'est qu'un
+adaptateur de plus ; sans forge réglée, un objet nul ne reconnaît rien et refuse tout appel.
 
 ### Agents : langage et sources
 
@@ -114,3 +117,7 @@ peuvent changer à n'importe quelle version. L'adapter les parse de façon tolé
 ignorés, champs absents → état « inconnu », jamais de panic), versionne ce qu'il sait lire, et un
 test de contrat tourne sur de vrais fichiers anonymisés à chaque montée de version de Claude Code.
 Les hooks sont la source primaire d'événements ; le registre sert à la réconciliation au démarrage.
+
+## Tickets
+
+- #26 — Socle — indépendance vis-à-vis de l'entreprise : instance GitLab, Vault et branches de tronc dans une page Réglages
