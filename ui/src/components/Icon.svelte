@@ -55,6 +55,8 @@
     <path d="m6 3.5 4.5 4.5L6 12.5" />
   {:else if name === 'code'}
     <path d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5M9.2 2.8 6.8 13.2" />
+  {:else if name === 'sidebar'}
+    <rect x="1.5" y="2.5" width="13" height="11" rx="2" /><path d="M6 2.5v11" />
   {:else if name === 'lock'}
     <rect x="3" y="7" width="10" height="7" rx="1.5" /><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
   {:else if name === 'theme-system'}

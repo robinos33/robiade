@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { fade } from 'svelte/transition';
   import { app, type View } from './lib/state.svelte';
+  import { sidebar } from './lib/sidebar.svelte';
   import Logo from './components/Logo.svelte';
   import Sidebar from './components/Sidebar.svelte';
   import NewAgent from './components/NewAgent.svelte';
@@ -52,7 +53,7 @@
 
 <svelte:window {onkeydown} />
 
-<div class="shell">
+<div class="shell" class:sidebar-collapsed={sidebar.collapsed}>
   <Sidebar />
   <main>
     {#if app.view === 'inbox'}<Inbox />

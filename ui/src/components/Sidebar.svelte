@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { sidebar, toggleSidebar } from '../lib/sidebar.svelte';
   import { app, type View } from '../lib/state.svelte';
   import { cycleTheme, theme, type ThemeChoice } from '../lib/theme.svelte';
   import type { Agent, Worktree } from '../lib/types';
@@ -124,7 +125,19 @@
 
 <svelte:window onclick={closeMenu} onkeydown={closeMenu} onblur={() => (menu = null)} />
 
-<nav style:--sidebar-w={width ? `${width}px` : null}>
+<!-- Hors de la barre, pour rester à droite des feux tricolores quand elle est repliée. -->
+<button
+  class="toggle"
+  onclick={toggleSidebar}
+  aria-expanded={!sidebar.collapsed}
+  aria-label={sidebar.collapsed ? 'Afficher la barre latérale' : 'Replier la barre latérale'}
+  title="{sidebar.collapsed ? 'Afficher' : 'Replier'} la barre latérale (⌘B)"
+>
+  <Icon name="sidebar" />
+</button>
+
+<!-- Masquée et non démontée : la largeur réglée et l'état des composants survivent au repli. -->
+<nav class:collapsed={sidebar.collapsed} style:--sidebar-w={width ? `${width}px` : null}>
   <ResizeHandle id="sidebar" edge="right" min={180} max={360} label="Largeur de la barre latérale" bind:width />
   <div class="titlebar" data-tauri-drag-region></div>
 
@@ -231,7 +244,15 @@
     width: var(--sidebar-w, 232px); flex: none; padding: 0 10px 10px;
     background: var(--bg-raised); border-right: 1px solid var(--line);
   }
+  nav.collapsed { display: none; }
   .titlebar { height: 30px; flex: none; }
+  /* Même place barre ouverte ou repliée, juste à droite des feux : `--titlebar-inset` (app.css) la réserve. */
+  .toggle {
+    position: fixed; top: 4px; left: 72px; z-index: 30;
+    display: grid; place-items: center; width: 24px; height: 22px; padding: 0;
+    border: 0; border-radius: var(--radius-sm); background: none; color: var(--ink-3);
+  }
+  .toggle:hover { background: var(--bg-hover); color: var(--ink); }
   .brand { display: flex; align-items: center; gap: 9px; padding: 4px 6px 14px; }
   .name { font-weight: 680; letter-spacing: -0.015em; font-size: 14px; flex: 1; }
   .palette { background: none; border: 0; padding: 0; }
