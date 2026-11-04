@@ -166,7 +166,7 @@
 
     <div class="grid">
       <label for="db-name">Nom</label>
-      <input id="db-name" class="field" bind:this={input} bind:value={name} maxlength="100" placeholder="Forum staging" />
+      <input id="db-name" class="field" bind:this={input} bind:value={name} maxlength="100" placeholder="ex. Boutique staging" />
 
       <span class="k">Moteur</span>
       <div class="stages" role="radiogroup" aria-label="Moteur">

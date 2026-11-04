@@ -67,7 +67,7 @@
 
 <div class="picker">
   <div class="bar">
-    <input class="field mono" list="vault-mounts" bind:value={mount} placeholder="montage, ex. forum-kv" spellcheck="false" />
+    <input class="field mono" list="vault-mounts" bind:value={mount} placeholder="montage, ex. secret" spellcheck="false" />
     <datalist id="vault-mounts">{#each mounts as m (m)}<option value={m}></option>{/each}</datalist>
     <input
       class="field mono"
