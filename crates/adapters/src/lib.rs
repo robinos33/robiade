@@ -9,6 +9,7 @@ mod forge_urls;
 pub mod git;
 pub mod gitlab;
 pub mod gitlab_urls;
+pub mod github_urls;
 pub mod hooks;
 pub mod keychain;
 pub mod legacy_settings;
