@@ -8,7 +8,7 @@ use robiade_core::databases::{Connection, Engine, Part, Probe, Source, Stage, Ta
 use robiade_core::db_browse::{Cell, Column, Cursor, Filter, FilterOp, Page, PageRequest, Relation, RelationKind, Sort};
 use robiade_core::db_console::{HistoryEntry, Outcome};
 use robiade_core::forge::{
-    Discussion, Issue, IssueRef, IssueState, MergeRequest, MrOutcomes, MrRef, MrState, PipelineStatus, GITLAB_HOST,
+    Discussion, Issue, IssueRef, IssueState, MergeRequest, MrOutcomes, MrRef, MrState, PipelineStatus,
 };
 use robiade_core::issue_actions::{IssueAction, NewIssue};
 use robiade_core::project::{self, Workspace};
@@ -564,10 +564,9 @@ pub struct IssueRefDto {
 }
 
 impl IssueRefDto {
-    /// Revalidée comme une URL d'issue de l'instance.
+    /// Revalidée : le front ne peut désigner qu'un chemin de projet.
     pub fn validate(&self) -> Option<IssueRef> {
-        IssueRef::from_url(&format!("https://{GITLAB_HOST}/{}/-/issues/{}", self.project, self.iid))
-            .filter(|r| r.project == self.project)
+        IssueRef::new(&self.project, self.iid)
     }
 }
 
@@ -660,10 +659,9 @@ impl From<MrRef> for MrRefDto {
 }
 
 impl MrRefDto {
-    /// Revalidée comme une URL de MR de l'instance : le front ne peut désigner rien d'autre.
+    /// Revalidée : le front ne peut désigner qu'un chemin de projet.
     pub fn validate(&self) -> Option<MrRef> {
-        MrRef::from_url(&format!("https://{GITLAB_HOST}/{}/-/merge_requests/{}", self.project, self.iid))
-            .filter(|r| r.project == self.project)
+        MrRef::new(&self.project, self.iid)
     }
 }
 

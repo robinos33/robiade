@@ -17,6 +17,11 @@ pub struct MrRef {
 }
 
 impl MrRef {
+    /// Référence désignée par ses parties (front, base locale) : `None` si le chemin n'en est pas un.
+    pub fn new(project: &str, iid: u64) -> Option<Self> {
+        is_project_path(project).then(|| Self { project: project.to_owned(), iid })
+    }
+
     /// `https://gitlab.example.com/<projet>/-/merge_requests/<iid>`, tel que Claude Code
     /// l'écrit dans le `pr-link` d'un transcript. Tout autre hôte ou forme renvoie `None`.
     pub fn from_url(url: &str) -> Option<Self> {
@@ -47,6 +52,11 @@ pub struct IssueRef {
 }
 
 impl IssueRef {
+    /// Référence désignée par ses parties (front, base locale) : `None` si le chemin n'en est pas un.
+    pub fn new(project: &str, iid: u64) -> Option<Self> {
+        is_project_path(project).then(|| Self { project: project.to_owned(), iid })
+    }
+
     pub fn from_url(url: &str) -> Option<Self> {
         let (project, iid) = parse_item_url(url, &["issues", "work_items"])?;
         Some(Self { project, iid })
@@ -309,6 +319,16 @@ mod tests {
         assert_eq!(MrRef::from_url("https://gitlab.example.com/a%2Fb/-/merge_requests/1"), None);
         assert_eq!(MrRef::from_url("https://gitlab.example.com/a/b/-/merge_requests/1x"), None);
         assert_eq!(MrRef::from_url("https://gitlab.example.com/a/b/-/issues/1"), None);
+    }
+
+    #[test]
+    fn a_reference_is_built_only_on_a_project_path() {
+        assert_eq!(MrRef::new("a/b-c", 3), Some(MrRef { project: "a/b-c".into(), iid: 3 }));
+        assert_eq!(IssueRef::new("a/b", 4), Some(IssueRef { project: "a/b".into(), iid: 4 }));
+        for bad in ["", "a/../b", "a//b", "a b", "a%2Fb"] {
+            assert_eq!(MrRef::new(bad, 1), None, "{bad}");
+            assert_eq!(IssueRef::new(bad, 1), None, "{bad}");
+        }
     }
 
     #[test]

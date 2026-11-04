@@ -57,7 +57,7 @@ impl SqliteTaskRepository {
         let due_on = row.get::<_, Option<String>>(5)?.and_then(|d| DueDate::parse(&d).ok());
         // Même règle pour les liens : un lien illisible est un lien absent.
         let issue = match (row.get::<_, Option<String>>(8)?, row.get::<_, Option<i64>>(9)?) {
-            (Some(project), Some(iid)) => IssueRef::parse(&format!("{project}#{iid}"), None),
+            (Some(project), Some(iid)) => u64::try_from(iid).ok().and_then(|iid| IssueRef::new(&project, iid)),
             _ => None,
         };
         let session = row.get::<_, Option<String>>(10)?.and_then(|s| SessionId::parse(&s).ok());
