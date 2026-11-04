@@ -5,6 +5,7 @@ pub mod claude_code;
 pub mod docker;
 pub mod elasticsearch;
 pub mod engines;
+mod forge_urls;
 pub mod git;
 pub mod gitlab;
 pub mod gitlab_urls;

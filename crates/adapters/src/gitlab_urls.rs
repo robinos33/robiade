@@ -3,6 +3,8 @@
 
 use robiade_core::forge::{is_project_path, ForgeUrls, IssueRef, MrRef};
 
+use crate::forge_urls::{is_web_url_of, remote_path};
+
 pub struct GitLabUrls {
     /// `hôte[:port]` des URL web, en minuscules.
     authority: String,
@@ -55,36 +57,12 @@ impl ForgeUrls for GitLabUrls {
         Some(format!("https://{}/{}/-/issues/{}", self.authority, issue.project, issue.iid))
     }
 
-    /// `https://<instance>` suivi d'un chemin, d'une requête ou d'un fragment, ou de rien. Des
-    /// identifiants (`moi@`) ou un autre port changent l'autorité : refusés. Un caractère de
-    /// contrôle ou une espace aussi : `open` ne doit recevoir qu'une URL d'un seul tenant.
     fn is_web_url(&self, url: &str) -> bool {
-        let Some(rest) = url.strip_prefix("https://") else { return false };
-        let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
-        authority.eq_ignore_ascii_case(&self.authority) && !url.chars().any(|c| c.is_control() || c.is_whitespace())
+        is_web_url_of(&self.authority, url)
     }
 
-    /// En SSH (`git@hôte:projet.git`, `ssh://git@hôte[:port]/projet.git`) ou en HTTPS. Des
-    /// identifiants dans l'URL ne sont jamais repris.
     fn project_of_remote(&self, url: &str) -> Option<String> {
-        let url = url.trim();
-        let (authority, path) = if let Some(rest) = url.strip_prefix("https://").or_else(|| url.strip_prefix("ssh://")) {
-            rest.split_once('/')?
-        } else {
-            // Forme scp : `utilisateur@hôte:chemin`.
-            let (authority, path) = url.split_once(':')?;
-            if authority.contains('/') {
-                return None;
-            }
-            (authority, path)
-        };
-        let host = authority.rsplit('@').next()?;
-        let host = host.split_once(':').map_or(host, |(h, _port)| h);
-        if !host.eq_ignore_ascii_case(self.host()) {
-            return None;
-        }
-        let path = path.trim_start_matches('/').trim_end_matches('/');
-        let path = path.strip_suffix(".git").unwrap_or(path);
+        let path = remote_path(self.host(), url)?;
         is_project_path(path).then(|| path.to_owned())
     }
 }
