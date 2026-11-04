@@ -34,7 +34,7 @@ suit le même plan : « En une phrase », « Comportement », « Règles », « 
 | [inbox.md](inbox.md) | Ce qui demande mon action maintenant |
 | [stats/session-en-cours.md](stats/session-en-cours.md) | Stats de la session en cours |
 | [stats/page-globale.md](stats/page-globale.md) | Page de stats globale, coût estimé |
-| [stats/activite-gitlab.md](stats/activite-gitlab.md) | Mes contributions GitLab dans le temps |
+| [stats/activite-gitlab.md](stats/activite-gitlab.md) | Mes contributions sur la forge dans le temps |
 | [environnements/worktrees.md](environnements/worktrees.md) | Worktrees par projet |
 | [environnements/docker.md](environnements/docker.md) | Conteneurs par projet |
 | [db/connexions.md](db/connexions.md) | Connexions DB : saisie, trousseau, Vault, lecture seule par moteur |
