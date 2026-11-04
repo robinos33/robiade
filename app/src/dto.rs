@@ -8,9 +8,10 @@ use robiade_core::databases::{Connection, Engine, Part, Probe, Source, Stage, Ta
 use robiade_core::db_browse::{Cell, Column, Cursor, Filter, FilterOp, Page, PageRequest, Relation, RelationKind, Sort};
 use robiade_core::db_console::{HistoryEntry, Outcome};
 use robiade_core::forge::{
-    Discussion, Issue, IssueRef, IssueState, MergeRequest, MrOutcomes, MrRef, MrState, PipelineStatus, GITLAB_HOST,
+    Discussion, ForgeUrls, Issue, IssueRef, IssueState, MergeRequest, MrOutcomes, MrRef, MrState, PipelineStatus,
 };
 use robiade_core::issue_actions::{IssueAction, NewIssue};
+use robiade_core::trunks::TrunkBranches;
 use robiade_core::project::{self, Workspace};
 use robiade_core::merge_actions::{AuditEntry, MrAction};
 use robiade_core::history::{EntryKind, SearchHit, SessionSummary, TokenUsage, TranscriptEntry, HIT_END, HIT_START};
@@ -538,8 +539,9 @@ pub struct TaskDto {
     pub done_at: Option<i64>,
 }
 
-impl From<&Task> for TaskDto {
-    fn from(t: &Task) -> Self {
+impl TaskDto {
+    /// `urls` : adresse de l'issue liée, sur la forge réglée.
+    pub fn new(t: &Task, urls: &dyn ForgeUrls) -> Self {
         Self {
             id: t.id().0.clone(),
             title: t.title().to_owned(),
@@ -548,7 +550,7 @@ impl From<&Task> for TaskDto {
             status: t.status().into(),
             due_on: t.due_on().map(|d| d.as_str().to_owned()),
             issue: t.issue().map(|i| IssueRefDto { project: i.project.clone(), iid: i.iid }),
-            issue_url: t.issue().map(IssueRef::web_url),
+            issue_url: t.issue().and_then(|i| urls.issue_url(i)),
             session_id: t.session().map(|s| s.as_str().to_owned()),
             created_at: t.created_at(),
             done_at: t.done_at(),
@@ -564,10 +566,9 @@ pub struct IssueRefDto {
 }
 
 impl IssueRefDto {
-    /// Revalidée comme une URL d'issue de l'instance.
+    /// Revalidée : le front ne peut désigner qu'un chemin de projet.
     pub fn validate(&self) -> Option<IssueRef> {
-        IssueRef::from_url(&format!("https://{GITLAB_HOST}/{}/-/issues/{}", self.project, self.iid))
-            .filter(|r| r.project == self.project)
+        IssueRef::new(&self.project, self.iid)
     }
 }
 
@@ -660,10 +661,9 @@ impl From<MrRef> for MrRefDto {
 }
 
 impl MrRefDto {
-    /// Revalidée comme une URL de MR de l'instance : le front ne peut désigner rien d'autre.
+    /// Revalidée : le front ne peut désigner qu'un chemin de projet.
     pub fn validate(&self) -> Option<MrRef> {
-        MrRef::from_url(&format!("https://{GITLAB_HOST}/{}/-/merge_requests/{}", self.project, self.iid))
-            .filter(|r| r.project == self.project)
+        MrRef::new(&self.project, self.iid)
     }
 }
 
@@ -697,9 +697,11 @@ pub struct ApprovalsDto {
     pub by: Vec<String>,
 }
 
-impl From<MergeRequest> for MergeRequestDto {
-    fn from(m: MergeRequest) -> Self {
-        let wagon = m.is_intermediate_wagon();
+impl MergeRequestDto {
+    /// `trunks` : troncs du projet de la MR ; `None` s'ils sont illisibles, et la MR n'est pas
+    /// marquée comme wagon.
+    pub fn new(m: MergeRequest, trunks: Option<&TrunkBranches>) -> Self {
+        let wagon = trunks.is_some_and(|t| m.is_intermediate_wagon(t));
         Self {
             project: m.mr.project,
             iid: m.mr.iid,
@@ -740,10 +742,11 @@ pub struct MrReadingDto {
 }
 
 impl MrReadingDto {
-    pub fn new(mut mr: MergeRequest, me: &str, discussions: Vec<Discussion>) -> Self {
+    pub fn new(mut mr: MergeRequest, me: &str, trunks: Option<&TrunkBranches>, discussions: Vec<Discussion>) -> Self {
         let description = std::mem::take(&mut mr.description);
         let mine = mr.author == me;
-        Self { mr: mr.into(), mine, description, discussions: discussions.into_iter().map(DiscussionDto::from).collect() }
+        let mr = MergeRequestDto::new(mr, trunks);
+        Self { mr, mine, description, discussions: discussions.into_iter().map(DiscussionDto::from).collect() }
     }
 }
 
@@ -1046,6 +1049,10 @@ pub struct EnvironmentDto {
     /// Commit dont la build est issue ; `None` hors `install.sh`.
     pub commit: Option<String>,
     pub dirty: bool,
+    /// Forge en vigueur ; `None` : pas de volet Forge.
+    pub forge: Option<crate::settings::ForgeSettingsDto>,
+    /// Vault en vigueur ; `None` : pas de source Vault pour les connexions DB.
+    pub vault: Option<crate::settings::VaultSettingsDto>,
 }
 
 #[derive(Serialize, Clone)]

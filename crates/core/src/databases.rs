@@ -7,8 +7,6 @@
 //! puis assemblées ici en une `Target`.
 
 pub const NAME_MAX_CHARS: usize = 100;
-/// Seul hôte Vault que Robiade interroge : le jeton ne part vers aucun autre.
-pub const VAULT_HOST: &str = "vault.example.com";
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ConnectionId(pub String);
@@ -558,6 +556,8 @@ pub trait DatabaseProbe: Send + Sync {
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum VaultError {
+    #[error("aucun Vault réglé : renseigne-le dans Réglages")]
+    NotConfigured,
     #[error("aucun jeton Vault : lance `vault login -method=oidc` dans un terminal")]
     NoToken,
     #[error("jeton Vault expiré ou révoqué : relance `vault login -method=oidc` dans un terminal")]
@@ -574,6 +574,21 @@ pub enum VaultError {
 
 /// Lecture d'un moteur KV v2. Les deux premières méthodes ne rendent que des noms ; seule `read`
 /// rend une valeur, pour la connexion en cours.
+/// Aucun Vault réglé : tout appel est refusé.
+pub struct NoVault;
+
+impl Vault for NoVault {
+    fn paths(&self, _: &str, _: &str) -> Result<Vec<String>, VaultError> {
+        Err(VaultError::NotConfigured)
+    }
+    fn keys(&self, _: &str, _: &str) -> Result<Vec<String>, VaultError> {
+        Err(VaultError::NotConfigured)
+    }
+    fn read(&self, _: &VaultRef) -> Result<String, VaultError> {
+        Err(VaultError::NotConfigured)
+    }
+}
+
 pub trait Vault: Send + Sync {
     /// Chemins des secrets sous `prefix`, en descendant dans les dossiers.
     fn paths(&self, mount: &str, prefix: &str) -> Result<Vec<String>, VaultError>;
@@ -587,7 +602,7 @@ mod tests {
     use super::*;
 
     fn vault(path: &str, key: &str) -> Source {
-        Source::Vault(VaultRef { mount: "forum-kv".into(), path: path.into(), key: key.into() })
+        Source::Vault(VaultRef { mount: "shop-kv".into(), path: path.into(), key: key.into() })
     }
 
     fn create(stage: Stage, read_only: bool, fields: Vec<(Part, Source)>) -> Result<Connection, DbError> {

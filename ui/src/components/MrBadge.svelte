@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { openUrl } from '@tauri-apps/plugin-opener';
   import { mrNumber, mrRefOf } from '../lib/format';
   import { app } from '../lib/state.svelte';
   import type { MrState } from '../lib/types';
@@ -28,7 +27,7 @@
   onclick={(e) => {
     e.stopPropagation();
     if (ref) app.read({ kind: 'mr', ...ref, webUrl: url }, e);
-    else void openUrl(url);
+    else app.openUrl(url);
   }}
 >
   <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">

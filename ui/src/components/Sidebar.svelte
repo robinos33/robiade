@@ -141,7 +141,7 @@
   </button>
 
   <ul class="nav">
-    {#each NAV as item (item.view)}
+    {#each NAV.filter((i) => i.view !== 'mr' || app.env?.forge) as item (item.view)}
       {@const n = badge(item.view)}
       <li>
         <button class="item" class:active={app.view === item.view} onclick={() => (app.view = item.view)}>
@@ -207,6 +207,9 @@
     <div class="foot">
       <button class="theme" onclick={cycleTheme} title={themeTitle} aria-label={themeTitle}>
         <Icon name={THEMES[theme.choice].icon} />
+      </button>
+      <button class="theme" class:active={app.view === 'settings'} onclick={() => (app.view = 'settings')} title="Réglages (⌘,)" aria-label="Réglages">
+        <Icon name="settings" />
       </button>
     </div>
   </div>
@@ -282,6 +285,6 @@
     display: grid; place-items: center; width: 28px; height: 28px; padding: 0;
     border: 0; border-radius: var(--radius-sm); background: none; color: var(--ink-3);
   }
-  .theme:hover { background: var(--bg-hover); color: var(--ink); }
+  .theme:hover, .theme.active { background: var(--bg-hover); color: var(--ink); }
   .dot.hot { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 </style>

@@ -275,7 +275,31 @@ export type Update =
 /** Fermeture à confirmer ; `relaunch` : pour relancer l'app et prendre une mise à jour. */
 export interface QuitRequest { agents: Agent[]; relaunch: boolean }
 
-export interface Environment { claudePath: string | null; home: string; commit: string | null; dirty: boolean }
+export interface Environment {
+  claudePath: string | null;
+  home: string;
+  commit: string | null;
+  dirty: boolean;
+  /** Forge en vigueur depuis le lancement ; `null` : pas de volet Forge. */
+  forge: ForgeSettings | null;
+  /** Vault en vigueur depuis le lancement ; `null` : pas de source Vault. */
+  vault: VaultSettings | null;
+}
+
+export interface ForgeSettings { provider: 'gitlab'; url: string; tokenService: string }
+export interface VaultSettings { url: string; tokenService: string }
+/** Réglages enregistrés ; `restartNeeded` : ils diffèrent de ceux en vigueur. */
+export interface Settings {
+  forge: ForgeSettings | null;
+  vault: VaultSettings | null;
+  restartNeeded: boolean;
+  defaultForgeTokenService: string;
+  defaultVaultTokenService: string;
+}
+/** Branches de tronc d'un dépôt : réglées (`configured`), sinon la branche par défaut du remote. */
+export interface RepositoryTrunks { repository: string; configured: string[] | null; remoteDefault: string | null }
+/** Enregistrement fait (`settings`), ou suspendu à la confirmation de `confirmHost`. */
+export interface SaveOutcome { settings: Settings | null; confirmHost: string | null }
 
 export interface Project { root: string; name: string; lastActivityAt: number; sessions: number; gitlabProject: string | null }
 /** Un worktree, connu par les sessions qui y ont tourné ou par git ; `git` est absent tant qu'il n'est pas relu. */

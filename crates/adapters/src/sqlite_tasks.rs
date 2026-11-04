@@ -57,7 +57,7 @@ impl SqliteTaskRepository {
         let due_on = row.get::<_, Option<String>>(5)?.and_then(|d| DueDate::parse(&d).ok());
         // Même règle pour les liens : un lien illisible est un lien absent.
         let issue = match (row.get::<_, Option<String>>(8)?, row.get::<_, Option<i64>>(9)?) {
-            (Some(project), Some(iid)) => IssueRef::parse(&format!("{project}#{iid}"), None),
+            (Some(project), Some(iid)) => u64::try_from(iid).ok().and_then(|iid| IssueRef::new(&project, iid)),
             _ => None,
         };
         let session = row.get::<_, Option<String>>(10)?.and_then(|s| SessionId::parse(&s).ok());
@@ -153,7 +153,7 @@ mod tests {
         let mut task = Task::create(TaskId("a".into()), "Écrire la spec", Some("/p".into()), 1).unwrap();
         repo.save(&task).unwrap();
         task.schedule(Some(DueDate::parse("2026-11-02").unwrap()));
-        task.link_issue(Some(IssueRef { project: "shop/boutique".into(), iid: 12 }));
+        task.link_issue(Some(IssueRef { project: "acme/shop".into(), iid: 12 }));
         task.link_session(Some(SessionId::parse("0b7f3c2e-9a41-4d3b-8e6f-1c2d3e4f5a6b").unwrap()));
         task.move_to(TaskStatus::Done, 5);
         repo.save(&task).unwrap();

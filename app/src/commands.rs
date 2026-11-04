@@ -70,6 +70,8 @@ pub fn environment(app: tauri::AppHandle, state: State<AppState>) -> Environment
         home: app.path().home_dir().map(|h| h.to_string_lossy().into_owned()).unwrap_or_default(),
         commit: crate::updates::COMMIT.map(str::to_owned),
         dirty: crate::updates::dirty(),
+        forge: state.applied.forge.as_ref().map(Into::into),
+        vault: state.applied.vault.as_ref().map(Into::into),
     }
 }
 
@@ -142,7 +144,7 @@ pub async fn stats(
     let mut agents = state.agents.activity_since(at - window_days * 86_400_000);
     agents.retain(|a| in_scope(a.project_path()));
     Ok(OverviewDto::new(
-        stats::overview(&summaries, project_of, at, offset_ms, window_days),
+        stats::overview(&summaries, project_of, &*state.forge_urls, at, offset_ms, window_days),
         stats::agents_overview(&agents, at - window_days * 86_400_000, at),
     ))
 }
@@ -169,7 +171,7 @@ pub async fn gitlab_activity(
 
 #[tauri::command]
 pub fn list_tasks(state: State<AppState>) -> CmdResult<Vec<TaskDto>> {
-    Ok(state.tasks.all().map_err(|e| e.to_string())?.iter().map(TaskDto::from).collect())
+    Ok(state.tasks.all().map_err(|e| e.to_string())?.iter().map(|t| TaskDto::new(t, &*state.forge_urls)).collect())
 }
 
 #[tauri::command]
@@ -183,7 +185,7 @@ pub fn create_task(
     let mut task = Task::create(id, &title, project_path, now()).map_err(|e| e.to_string())?;
     task.schedule(due_on.as_deref().map(DueDate::parse).transpose().map_err(|e| e.to_string())?);
     state.tasks.save(&task).map_err(|e| e.to_string())?;
-    Ok((&task).into())
+    Ok(TaskDto::new(&task, &*state.forge_urls))
 }
 
 #[tauri::command]
@@ -205,7 +207,7 @@ pub fn update_task(
         task.move_to(status.into(), now());
     }
     state.tasks.save(&task).map_err(|e| e.to_string())?;
-    Ok((&task).into())
+    Ok(TaskDto::new(&task, &*state.forge_urls))
 }
 
 /// Pose ou retire (`None`) l'échéance : une commande à part, `update_task` ne sachant pas distinguer
@@ -215,7 +217,7 @@ pub fn schedule_task(state: State<AppState>, id: String, due_on: Option<String>)
     let mut task = state.tasks.get(&TaskId(id)).map_err(|e| e.to_string())?;
     task.schedule(due_on.as_deref().map(DueDate::parse).transpose().map_err(|e| e.to_string())?);
     state.tasks.save(&task).map_err(|e| e.to_string())?;
-    Ok((&task).into())
+    Ok(TaskDto::new(&task, &*state.forge_urls))
 }
 
 /// Lie ou délie (`None`) une issue d'équipe. `reference` est saisie à la main : URL, `projet#12`, ou
@@ -227,7 +229,7 @@ pub fn link_task_issue(state: State<AppState>, id: String, reference: Option<Str
         None => None,
         Some(raw) => {
             let gitlab_project = task.project_path().and_then(|p| state.workspaces.resolve(p).gitlab_project);
-            let issue = IssueRef::parse(raw, gitlab_project.as_deref());
+            let issue = IssueRef::parse(raw, gitlab_project.as_deref(), &*state.forge_urls);
             Some(issue.ok_or_else(|| match gitlab_project {
                 Some(_) => format!("issue non reconnue : {raw} (attendu #12, groupe/projet#12 ou son URL)"),
                 None => format!("issue non reconnue : {raw} (attendu groupe/projet#12 ou son URL)"),
@@ -236,7 +238,7 @@ pub fn link_task_issue(state: State<AppState>, id: String, reference: Option<Str
     };
     task.link_issue(issue);
     state.tasks.save(&task).map_err(|e| e.to_string())?;
-    Ok((&task).into())
+    Ok(TaskDto::new(&task, &*state.forge_urls))
 }
 
 /// Lie ou délie (`None`) une session Claude Code.
@@ -245,7 +247,7 @@ pub fn link_task_session(state: State<AppState>, id: String, session_id: Option<
     let mut task = state.tasks.get(&TaskId(id)).map_err(|e| e.to_string())?;
     task.link_session(session_id.as_deref().map(SessionId::parse).transpose().map_err(|e| e.to_string())?);
     state.tasks.save(&task).map_err(|e| e.to_string())?;
-    Ok((&task).into())
+    Ok(TaskDto::new(&task, &*state.forge_urls))
 }
 
 #[tauri::command]
@@ -501,15 +503,21 @@ pub async fn working_diff(state: State<'_, AppState>, id: String, path: String) 
 
 /// Mes MR ouvertes et celles qui attendent ma review, lues ensemble sur GitLab.
 #[tauri::command]
-pub async fn merge_requests(state: State<'_, AppState>) -> CmdResult<ForgeDto> {
-    let forge = state.forge.clone();
+pub async fn merge_requests(app: tauri::AppHandle) -> CmdResult<ForgeDto> {
     tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let forge = &state.forge;
         let (mine, reviews) = std::thread::scope(|s| {
             let reviews = s.spawn(|| forge.review_requests());
             (forge.my_merge_requests(), reviews.join().unwrap_or_else(|_| Ok(vec![])))
         });
-        let dto = |mrs: Vec<_>| mrs.into_iter().map(MergeRequestDto::from).collect();
-        Ok(ForgeDto { mine: dto(mine?), reviews: dto(reviews?) })
+        let (mine, reviews) = (mine?, reviews?);
+        let trunks = state.trunks.of_projects(mine.iter().chain(&reviews).map(|m| m.mr.project.as_str()));
+        let dto = |mrs: Vec<robiade_core::forge::MergeRequest>| {
+            let of = |m: &robiade_core::forge::MergeRequest| trunks.get(&m.mr.project).cloned();
+            mrs.into_iter().map(|m| { let t = of(&m); MergeRequestDto::new(m, t.as_ref()) }).collect()
+        };
+        Ok(ForgeDto { mine: dto(mine), reviews: dto(reviews) })
     })
     .await
     .map_err(|e| e.to_string())?
@@ -533,11 +541,13 @@ pub async fn issues(state: State<'_, AppState>, project: Option<String>) -> CmdR
 /// Une MR lue à l'ouverture du panneau de lecture : état, approbations, description et fils
 /// d'échanges, lus en parallèle. Rien n'est gardé : GitLab reste la source.
 #[tauri::command]
-pub async fn read_merge_request(state: State<'_, AppState>, target: MrRefDto) -> CmdResult<MrReadingDto> {
+pub async fn read_merge_request(app: tauri::AppHandle, target: MrRefDto) -> CmdResult<MrReadingDto> {
     let mr = target.validate().ok_or("MR invalide")?;
-    let forge = state.forge.clone();
     tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let forge = &state.forge;
         std::thread::scope(|s| {
+            let trunks = s.spawn(|| state.trunks.of_project(&mr.project));
             let approvals = s.spawn(|| forge.approvals(&mr));
             let discussions = s.spawn(|| forge.merge_request_discussions(&mr));
             let mut found = forge.merge_request(&mr)?;
@@ -545,7 +555,8 @@ pub async fn read_merge_request(state: State<'_, AppState>, target: MrRefDto) ->
             // Des approbations illisibles ne cachent pas la MR : l'en-tête s'en passe.
             found.approvals = approvals.join().ok().and_then(Result::ok);
             let discussions = discussions.join().map_err(|_| ForgeError::Api("lecture interrompue".into()))??;
-            Ok(MrReadingDto::new(found, &me, discussions))
+            let trunks = trunks.join().ok().and_then(Result::ok);
+            Ok(MrReadingDto::new(found, &me, trunks.as_ref(), discussions))
         })
     })
     .await
@@ -580,7 +591,9 @@ fn planned(
     let mr = target.validate().ok_or("MR invalide")?;
     let current = state.forge.merge_request(&mr).map_err(|e| e.to_string())?;
     let me = state.forge.me().map_err(|e| e.to_string())?;
-    let planned = robiade_core::merge_actions::plan(&current, &action.into(), &me).map_err(|e| e.to_string())?;
+    let trunks = state.trunks.of_project(&mr.project).map_err(|e| e.to_string())?;
+    let planned =
+        robiade_core::merge_actions::plan(&current, &action.into(), &me, &trunks).map_err(|e| e.to_string())?;
     Ok((current, planned))
 }
 
@@ -729,10 +742,7 @@ pub async fn prepare_issue_start(
         let issue_ref = issue.validate().ok_or("issue invalide")?;
         let repository = issue_repository(&state, &project_root, &issue_ref)?;
         let found = state.forge.issue(&issue_ref).map_err(|e| e.to_string())?;
-        let bases = state.worktrees.bases(&repository).map_err(|e| e.to_string())?;
-        if bases.is_empty() {
-            return Err("aucune base origin/staging, origin/main ni origin/master dans ce dépôt".into());
-        }
+        let bases = crate::trunks::bases(&state, &repository)?;
         let branch = issue_start::branch_name(&found);
         Ok(IssueStartDto {
             repository: repository.clone(),
@@ -795,10 +805,7 @@ pub async fn prepare_task_start(app: tauri::AppHandle, project_root: String, id:
         let state = app.state::<AppState>();
         let task = state.tasks.get(&TaskId(id)).map_err(|e| e.to_string())?;
         let (repository, issue) = task_start_context(&state, &project_root, &task)?;
-        let bases = state.worktrees.bases(&repository).map_err(|e| e.to_string())?;
-        if bases.is_empty() {
-            return Err("aucune base origin/staging, origin/main ni origin/master dans ce dépôt".into());
-        }
+        let bases = crate::trunks::bases(&state, &repository)?;
         let branch = task_start::branch_name(&task, issue.as_ref());
         Ok(IssueStartDto {
             repository: repository.clone(),
@@ -860,6 +867,7 @@ fn launch_in_worktree(state: &AppState, launch: Launch, cols: u16, rows: u16) ->
     if prompt.is_empty() || prompt.chars().count() > issue_start::PROMPT_MAX_CHARS {
         return Err("prompt vide ou trop long".into());
     }
+    crate::trunks::check_base(state, &launch.repository, &launch.base)?;
     let dir = issue_start::worktree_dir(&launch.repository, &launch.branch);
     let fetched =
         state.worktrees.create(&launch.repository, &launch.branch, &launch.base, &dir).map_err(|e| e.to_string())?;
@@ -870,7 +878,7 @@ fn launch_in_worktree(state: &AppState, launch: Launch, cols: u16, rows: u16) ->
 }
 
 /// Dépôt principal désigné par l'interface : ni worktree, ni sous-dossier, ni dossier hors Git.
-fn main_repository(state: &AppState, raw: &str) -> CmdResult<String> {
+pub(crate) fn main_repository(state: &AppState, raw: &str) -> CmdResult<String> {
     let dir = project_dir(raw)?.to_string_lossy().into_owned();
     let workspace = state.workspaces.resolve(&dir);
     if workspace.project_root != dir || workspace.worktree.is_some() || !workspace.is_repository {
@@ -916,10 +924,11 @@ pub async fn prepare_worktree_creation(
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
         let repository = main_repository(&state, &repository)?;
-        let bases = state.worktrees.bases(&repository).map_err(|e| e.to_string())?;
+        let trunks = state.trunks.of_repository(&repository)?;
+        let bases = state.worktrees.bases(&repository, trunks.as_ref()).map_err(|e| e.to_string())?;
         let dir = issue_start::worktree_dir(&repository, branch.trim());
         let blocker = if bases.is_empty() {
-            Some("aucune base origin/staging, origin/main ni origin/master dans ce dépôt".into())
+            Some(crate::trunks::no_base(trunks.as_ref()))
         } else {
             creation_blocker(branch.trim(), &dir)
         };
@@ -939,6 +948,7 @@ pub async fn create_worktree(app: tauri::AppHandle, repository: String, branch: 
         if let Some(blocker) = creation_blocker(&branch, &dir) {
             return Err(blocker);
         }
+        crate::trunks::check_base(&state, &repository, &base)?;
         state.worktrees.create(&repository, &branch, &base, &dir).map_err(|e| e.to_string())
     })
     .await
@@ -1049,6 +1059,17 @@ fn existing_inside(root: &Path, relative: &str) -> CmdResult<PathBuf> {
     }
     let parent = parent.canonicalize().map_err(|_| outside())?;
     parent.starts_with(root).then(|| parent.join(name)).ok_or_else(outside)
+}
+
+/// Ouvre une page de la forge réglée dans le navigateur. Toute autre URL est refusée : l'interface
+/// affiche des liens venus de GitLab et de la sortie des agents, non fiables.
+#[tauri::command]
+pub fn open_forge_url(state: State<AppState>, url: String) -> CmdResult<()> {
+    if !state.forge_urls.is_web_url(&url) {
+        return Err("lien hors de l'instance configurée : non ouvert".into());
+    }
+    let status = std::process::Command::new("/usr/bin/open").arg(&url).status().map_err(|e| e.to_string())?;
+    status.success().then_some(()).ok_or_else(|| "le navigateur n'a pas pu ouvrir ce lien".into())
 }
 
 /// `open` de macOS, lancé directement : aucun shell n'interprète les arguments.
@@ -1166,7 +1187,7 @@ pub async fn merge_request_states(
     let known: Vec<(String, MrRef)> = urls
         .into_iter()
         .take(MAX_OUTCOME_LOOKUPS)
-        .filter_map(|url| MrRef::from_url(&url).map(|r| (url, r)))
+        .filter_map(|url| state.forge_urls.merge_request(&url).map(|r| (url, r)))
         .collect();
     let refs: Vec<MrRef> = known.iter().map(|(_, r)| r.clone()).collect();
     let states = state.mr_states.clone();

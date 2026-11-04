@@ -9,6 +9,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use robiade_core::issue_start::is_valid_branch;
+use robiade_core::trunks::TrunkBranches;
 use robiade_core::vcs::{ChangeKind, FileChange, LinkedWorktree, VcsError, WorkingTree, Worktrees};
 
 /// Arbre vide de Git : base de comparaison d'un dépôt sans commit.
@@ -25,8 +26,6 @@ const HARDENING: &[&str] = &["-c", "core.fsmonitor=false", "-c", "core.quotepath
 /// Options de `git diff` qui n'exécutent rien de déclaré par le dépôt.
 const SAFE_DIFF: &[&str] = &["--no-color", "--no-ext-diff", "--no-textconv", "--ignore-submodules=all", "-M"];
 
-/// Bases proposées pour une branche de ticket, par ordre de préférence.
-const BASES: &[&str] = &["origin/staging", "origin/main", "origin/master"];
 /// Un fetch plus long est abandonné : la base locale sert.
 const FETCH_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -274,19 +273,32 @@ impl Worktrees for GitCli {
         Ok(parse_worktrees(&self.run(repository, &["worktree", "list", "--porcelain", "-z"])?))
     }
 
-    fn bases(&self, repository: &str) -> Result<Vec<String>, VcsError> {
+    fn bases(&self, repository: &str, trunks: Option<&TrunkBranches>) -> Result<Vec<String>, VcsError> {
+        let wanted: Vec<String> = match trunks {
+            Some(trunks) => trunks.as_slice().iter().map(|b| format!("origin/{b}")).collect(),
+            // Posé par `git clone`, ou par `git remote set-head origin --auto`.
+            None => match self.run(repository, &["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]) {
+                Ok(out) => vec![String::from_utf8_lossy(&out).trim().to_owned()],
+                Err(VcsError::NotARepository) => return Err(VcsError::NotARepository),
+                Err(_) => return Ok(vec![]),
+            },
+        };
+        let wanted: Vec<String> = wanted.into_iter().filter(|b| remote_branch_of(b).is_some()).collect();
+        if wanted.is_empty() {
+            return Ok(wanted);
+        }
         let mut args = vec!["for-each-ref", "--format=%(refname:short)"];
-        let refs: Vec<String> = BASES.iter().map(|b| format!("refs/remotes/{b}")).collect();
+        let refs: Vec<String> = wanted.iter().map(|b| format!("refs/remotes/{b}")).collect();
         args.extend(refs.iter().map(String::as_str));
         let found = String::from_utf8_lossy(&self.run(repository, &args)?).into_owned();
-        Ok(BASES.iter().filter(|b| found.lines().any(|l| l == **b)).map(|b| (*b).to_owned()).collect())
+        Ok(wanted.into_iter().filter(|b| found.lines().any(|l| l == b)).collect())
     }
 
     fn create(&self, repository: &str, branch: &str, base: &str, dir: &str) -> Result<bool, VcsError> {
-        if !BASES.contains(&base) || !is_valid_branch(branch) || !dir.starts_with('/') || Path::new(dir).exists() {
+        let accepted = is_valid_branch(branch) && dir.starts_with('/') && !Path::new(dir).exists();
+        let Some(remote_branch) = remote_branch_of(base).filter(|_| accepted) else {
             return Err(VcsError::Git("branche, base ou dossier refusé".into()));
-        }
-        let remote_branch = base.trim_start_matches("origin/");
+        };
         let fetched = self.fetch(repository, remote_branch);
         let out = self
             .write_command(repository)
@@ -325,6 +337,11 @@ impl Worktrees for GitCli {
         }
         Ok(())
     }
+}
+
+/// `origin/<branche>` → `<branche>`, si c'est un nom de branche valide : rien d'autre ne sert de base.
+fn remote_branch_of(base: &str) -> Option<&str> {
+    base.strip_prefix("origin/").filter(|b| is_valid_branch(b))
 }
 
 impl GitCli {
@@ -479,7 +496,10 @@ worktree /tmp/y\0HEAD c\0detached\0prunable gitdir file points to non-existent l
 
         let git_cli = GitCli::default();
         let r = repo.to_str().unwrap();
-        assert_eq!(git_cli.bases(r).unwrap(), ["origin/staging"]);
+        let trunks = |names: &[&str]| TrunkBranches::new(names).unwrap();
+        assert_eq!(git_cli.bases(r, Some(&trunks(&["staging", "main", "master"]))).unwrap(), ["origin/staging"]);
+        assert_eq!(git_cli.bases(r, Some(&trunks(&["main"]))).unwrap(), Vec::<String>::new(), "main absent d'origin");
+        assert_eq!(git_cli.bases(r, None).unwrap(), ["origin/staging"], "sans réglage : origin/HEAD");
         let dir = repo.join(".claude/worktrees/ticket-1-x");
         let d = dir.to_str().unwrap();
         assert_eq!(git_cli.create(r, "ticket-1-x", "origin/staging", d), Ok(true));
@@ -488,6 +508,7 @@ worktree /tmp/y\0HEAD c\0detached\0prunable gitdir file points to non-existent l
         assert!(git_cli.create(r, "ticket-1-x", "origin/staging", d).is_err(), "dossier existant");
         assert!(git_cli.create(r, "-x", "origin/staging", &format!("{d}2")).is_err());
         assert!(git_cli.create(r, "y", "HEAD", &format!("{d}3")).is_err());
+        assert!(git_cli.create(r, "y", "origin/-x", &format!("{d}4")).is_err());
 
         assert_eq!(git_cli.branch(d), Ok(Some("ticket-1-x".to_owned())));
         let listed = git_cli.list(r).unwrap();
@@ -515,6 +536,9 @@ worktree /tmp/y\0HEAD c\0detached\0prunable gitdir file points to non-existent l
         assert!(!forced.exists());
         assert!(origin.join("a.txt").exists(), "la cible d'un lien n'est pas touchée");
         git(&repo, &["rev-parse", "--verify", "--quiet", "refs/heads/ticket-2-y"]);
+
+        git(&repo, &["remote", "set-head", "origin", "--delete"]);
+        assert_eq!(git_cli.bases(r, None).unwrap(), Vec::<String>::new(), "origin/HEAD absent : aucune base devinée");
         std::fs::remove_dir_all(base).unwrap();
     }
 }

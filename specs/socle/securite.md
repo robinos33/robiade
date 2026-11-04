@@ -12,9 +12,11 @@ Le niveau d'exigence est celui d'un outil d'administration.
 - **Aucun port réseau en écoute.** Le canal hooks → ADE est un socket Unix dans
   `~/Library/Application Support/ade/`, permissions `0600`, et l'ADE vérifie l'UID du pair
   (`getpeereid`).
-- Sorties réseau **sur liste blanche** : `gitlab.example.com` et les hôtes DB déclarés.
-- Tauri : capabilities minimales commande par commande ; pas de plugin `shell` ni `fs` exposé au
-  front ; CSP stricte (`default-src 'self'`, pas d'`unsafe-inline`, pas d'`unsafe-eval`) ; aucun
+- Sorties réseau **sur liste blanche** : les hôtes configurés (forge et Vault, voir les
+  [réglages](reglages.md)) et les hôtes DB déclarés.
+- Tauri : capabilities minimales commande par commande ; pas de plugin `shell`, `fs` ni `opener`
+  exposé au front : une page s'ouvre dans le navigateur par une commande Rust qui n'accepte qu'une
+  URL `https` de l'instance de forge réglée, sans identifiants ni autre port ; CSP stricte (`default-src 'self'`, pas d'`unsafe-inline`, pas d'`unsafe-eval`) ; aucun
   contenu distant chargé dans la WebView.
 
 ### Secrets
@@ -37,7 +39,7 @@ Le niveau d'exigence est celui d'un outil d'administration.
   clés privées, `auth.json`…) ne sont lus qu'à ma demande ; le reste passe par le même masquage
   de jetons que l'historique.
 - Liens du terminal d'un agent (⌘+clic) : la sortie d'un agent n'est pas fiable (page, issue ou
-  fichier relu). Une seule fonction d'ouverture : `http`/`https` vers le navigateur, `file://`
+  fichier relu). Une seule fonction d'ouverture : une page de la forge réglée vers le navigateur (tout autre lien web reste sans effet), `file://`
   vers le visualiseur de Robiade, jamais vers une autre app ; tout autre schéma est ignoré, sans
   boîte de dialogue. Un `file://` est décodé et résolu (`..`, liens) côté Rust, puis lu seulement
   s'il est un asset de l'agent ou s'il reste dans son dossier de travail, avec les règles de
@@ -68,5 +70,6 @@ Le niveau d'exigence est celui d'un outil d'administration.
 
 - #7 — Code : onglet de navigation et lecture des fichiers d'un projet
 - #11 — Terminal : ⌘+clic sur un lien
+- #26 — Socle — indépendance vis-à-vis de l'entreprise : instance GitLab, Vault et branches de tronc dans une page Réglages
 - #13 — Terminal : chemins cliquables, ⌘F, glisser-déposer, taille de police
 - #15 — App : mise à jour automatique depuis main au démarrage

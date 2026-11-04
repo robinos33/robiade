@@ -7,7 +7,9 @@ mod containers;
 mod db_sessions;
 mod dto;
 mod forge;
+mod settings;
 mod task_cli;
+mod trunks;
 mod updates;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,21 +18,21 @@ use std::sync::Arc;
 use robiade_adapters::claude_code::TranscriptStore;
 use robiade_adapters::docker::DockerEngine;
 use robiade_adapters::git::GitCli;
-use robiade_adapters::gitlab::GitLab;
 use robiade_adapters::sqlite_agents::SqliteAgentJournal;
 use robiade_adapters::engines::Engines;
 use robiade_adapters::sqlite_audit::SqliteAuditLog;
 use robiade_adapters::sqlite_connections::SqliteConnectionRepository;
 use robiade_adapters::sqlite_console_history::SqliteConsoleHistory;
 use robiade_adapters::sqlite_search::SearchIndex;
-use robiade_adapters::vault::VaultKv;
+use robiade_adapters::sqlite_settings::{self, SqliteSettings};
+use robiade_adapters::sqlite_trunks::SqliteTrunks;
 use robiade_adapters::workspace::WorkspaceResolver;
 use robiade_adapters::sqlite_tasks::SqliteTaskRepository;
-use robiade_adapters::{backup, hooks, shell_env, task_backup};
+use robiade_adapters::{backup, hooks, legacy_settings, shell_env, task_backup};
 use robiade_core::containers::Containers;
 use robiade_core::databases::{DatabaseProbe, Vault};
 use robiade_core::db_browse::DatabaseBrowser;
-use robiade_core::forge::Forge;
+use robiade_core::forge::{Forge, ForgeUrls};
 use robiade_core::merge_actions::AuditLog;
 use robiade_core::vcs::{WorkingTree, Worktrees};
 use tauri::{Emitter, Manager};
@@ -45,6 +47,7 @@ pub struct AppState {
     pub vcs: Arc<dyn WorkingTree>,
     pub worktrees: Arc<dyn Worktrees>,
     pub forge: Arc<dyn Forge>,
+    pub forge_urls: Arc<dyn ForgeUrls>,
     pub mr_states: Arc<forge::MrStates>,
     pub contributions: Arc<forge::Contributions>,
     pub audit: Arc<dyn AuditLog>,
@@ -57,6 +60,10 @@ pub struct AppState {
     pub db_sessions: db_sessions::DbSessions,
     pub console_history: SqliteConsoleHistory,
     pub updates: Arc<updates::Updates>,
+    pub settings: SqliteSettings,
+    pub trunks: trunks::Trunks,
+    /// Réglages lus au démarrage, ceux que la forge et le Vault utilisent.
+    pub applied: settings::Applied,
     /// Fermeture confirmée dans l'interface malgré des agents au travail.
     pub quit_confirmed: AtomicBool,
 }
@@ -147,7 +154,6 @@ fn main() {
     }
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             main_window(app)?;
@@ -157,8 +163,14 @@ fn main() {
             let data_dir = own_dir(app.path().app_data_dir()?);
             std::fs::create_dir_all(&data_dir)?;
             let home = app.path().home_dir()?;
+            // Avant tout autre dépôt : une base qui a déjà des tables vient d'une version antérieure.
+            let earlier_profile = sqlite_settings::is_earlier_profile(&data_dir.join("robiade.db"))?;
+            let settings =
+                SqliteSettings::open(&data_dir.join("robiade.db"), earlier_profile, || legacy_settings::seed(&home))?;
+            let applied = settings::Applied { forge: settings.forge()?, vault: settings.vault()? };
+            let (forge, forge_urls) = settings::forge_of(applied.forge.as_ref());
 
-            let workspaces = Arc::new(WorkspaceResolver::default());
+            let workspaces = Arc::new(WorkspaceResolver::new(forge_urls.clone()));
             let login = shell_env::resolve();
             let updates = Arc::new(updates::Updates::default());
             let build_path = login.path.clone();
@@ -203,29 +215,37 @@ fn main() {
                 std::thread::sleep(std::time::Duration::from_secs(3600));
             });
 
-            let gitlab: Arc<dyn Forge> = Arc::new(GitLab::default());
             let docker: Arc<dyn Containers> = Arc::new(DockerEngine::new(home.clone())?);
+            let tasks = SqliteTaskRepository::open(&data_dir.join("robiade.db"))?;
+            let trunk_store = SqliteTrunks::open(&data_dir.join("robiade.db"), earlier_profile, || {
+                trunks::known_repositories(&*transcripts, &tasks, &workspaces)
+            })?;
+            let trunks = trunks::Trunks::new(trunk_store, workspaces.clone(), forge.clone());
             app.manage(AppState {
                 transcripts,
                 search,
                 workspaces,
-                tasks: SqliteTaskRepository::open(&data_dir.join("robiade.db"))?,
+                tasks,
+                trunks,
                 agents: registry,
                 vcs: git.clone(),
                 worktrees: git,
-                forge: gitlab.clone(),
-                mr_states: Arc::new(forge::MrStates::new(gitlab.clone())),
-                contributions: Arc::new(forge::Contributions::new(gitlab)),
+                forge: forge.clone(),
+                forge_urls,
+                mr_states: Arc::new(forge::MrStates::new(forge.clone())),
+                contributions: Arc::new(forge::Contributions::new(forge)),
                 audit: Arc::new(SqliteAuditLog::open(&data_dir.join("robiade.db"))?),
                 log_streams: containers::LogStreams::new(app.handle().clone(), docker.clone()),
                 docker,
                 connections: SqliteConnectionRepository::open(&data_dir.join("robiade.db"))?,
-                vault: Arc::new(VaultKv::new(home.clone())),
+                vault: settings::vault_of(applied.vault.as_ref(), home.clone()),
                 databases: Arc::new(Engines),
                 browser: Arc::new(Engines),
                 db_sessions: db_sessions::DbSessions::default(),
                 console_history: SqliteConsoleHistory::open(&data_dir.join("robiade.db"))?,
                 updates,
+                settings,
+                applied,
                 quit_confirmed: AtomicBool::new(false),
             });
             Ok(())
@@ -287,6 +307,7 @@ fn main() {
             commands::prepare_worktree_removal,
             commands::remove_worktree,
             commands::reveal_in_finder,
+            commands::open_forge_url,
             commands::audit_log,
             commands::containers,
             commands::prepare_container_action,
@@ -312,6 +333,11 @@ fn main() {
             commands::update_status,
             commands::relaunch,
             commands::quit,
+            settings::settings,
+            settings::save_forge_settings,
+            settings::save_vault_settings,
+            trunks::repository_trunks,
+            trunks::save_repository_trunks,
         ])
         .build(tauri::generate_context!())
         .expect("échec du démarrage de Robiade")

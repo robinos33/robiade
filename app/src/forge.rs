@@ -63,7 +63,7 @@ impl MrStates {
                     Ok(found) => {
                         known.insert((*mr).clone(), (found.state, now));
                     }
-                    Err(e @ (ForgeError::NoToken | ForgeError::Unauthorized)) => return Err(e),
+                    Err(e @ (ForgeError::NotConfigured | ForgeError::NoToken(_) | ForgeError::Unauthorized)) => return Err(e),
                     Err(_) => {
                         self.unreadable.lock().unwrap_or_else(|e| e.into_inner()).insert((*mr).clone(), now);
                     }
@@ -181,6 +181,9 @@ mod tests {
             unreachable!()
         }
         fn project_issues(&self, _: &str) -> Result<Vec<Issue>, ForgeError> {
+            unreachable!()
+        }
+        fn default_branch(&self, _: &str) -> Result<String, ForgeError> {
             unreachable!()
         }
         fn execute(&self, _: &MrRef, _: &Planned) -> Result<(), ForgeError> {

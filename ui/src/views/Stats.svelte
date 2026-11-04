@@ -44,6 +44,7 @@
 
   $effect(() => {
     const g = granularity;
+    if (!app.env?.forge) return;
     const request = ++activityRequest;
     activityLoading = true;
     api.gitlabActivity(g).then(
@@ -259,6 +260,7 @@
         </div>
       </div>
 
+      {#if app.env?.forge}
       <div class="panel">
         <div class="panel-head">
           <h2 class="section-title">Activité GitLab</h2>
@@ -308,6 +310,7 @@
           </div>
         {/if}
       </div>
+      {/if}
     {/if}
   </div>
 </section>

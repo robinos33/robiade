@@ -2,6 +2,8 @@
 //! Lecture seule : Robiade montre les diffs, il ne commite ni n'annule rien. Seule écriture, à ma
 //! demande : créer un worktree, ou le supprimer (`Worktrees`).
 
+use crate::trunks::TrunkBranches;
+
 /// Nature d'un changement par rapport au dernier commit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChangeKind {
@@ -59,8 +61,10 @@ pub struct LinkedWorktree {
 pub trait Worktrees: Send + Sync {
     /// Worktrees liés de `repository`, dans l'ordre de git ; le dépôt principal n'en fait pas partie.
     fn list(&self, repository: &str) -> Result<Vec<LinkedWorktree>, VcsError>;
-    /// Branches de base proposées (`origin/staging`, `origin/main`, `origin/master`), celles qui existent.
-    fn bases(&self, repository: &str) -> Result<Vec<String>, VcsError>;
+    /// Bases proposées pour un worktree, `origin/<branche>`, par ordre de préférence : les branches de
+    /// tronc réglées qui existent sur `origin`, ou, sans réglage, la branche par défaut du remote
+    /// (`origin/HEAD`). Vide si aucune n'existe.
+    fn bases(&self, repository: &str, trunks: Option<&TrunkBranches>) -> Result<Vec<String>, VcsError>;
     /// Met `base` à jour depuis `origin` si possible, puis crée `branch` à partir d'elle dans `dir`.
     /// Renvoie `false` si la mise à jour a échoué et que la base locale a servi.
     fn create(&self, repository: &str, branch: &str, base: &str, dir: &str) -> Result<bool, VcsError>;

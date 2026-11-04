@@ -3,23 +3,29 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
-use robiade_core::project::{gitlab_project_of_remote, repository_of_gitdir, Workspace};
+use robiade_core::forge::ForgeUrls;
+use robiade_core::project::{repository_of_gitdir, Workspace};
 
-#[derive(Default)]
 pub struct WorkspaceResolver {
+    /// Reconnaît le projet de forge du remote `origin`.
+    urls: Arc<dyn ForgeUrls>,
     /// La nature d'un dossier ne change pas pendant une session, sauf quand Robiade supprime un
     /// worktree (`forget`) : on ne lit le disque qu'une fois.
     cache: Mutex<HashMap<String, Workspace>>,
 }
 
 impl WorkspaceResolver {
+    pub fn new(urls: Arc<dyn ForgeUrls>) -> Self {
+        Self { urls, cache: Mutex::default() }
+    }
+
     pub fn resolve(&self, path: &str) -> Workspace {
         if let Some(found) = self.cache.lock().ok().and_then(|c| c.get(path).cloned()) {
             return found;
         }
-        let found = locate(Path::new(path)).unwrap_or_else(|| Workspace::outside_git(path));
+        let found = locate(Path::new(path), &*self.urls).unwrap_or_else(|| Workspace::outside_git(path));
         if let Ok(mut cache) = self.cache.lock() {
             cache.insert(path.to_owned(), found.clone());
         }
@@ -36,12 +42,12 @@ impl WorkspaceResolver {
 }
 
 /// Remonte depuis `path` jusqu'au premier `.git` : un sous-dossier appartient à son dépôt.
-fn locate(path: &Path) -> Option<Workspace> {
+fn locate(path: &Path, urls: &dyn ForgeUrls) -> Option<Workspace> {
     let top = path.ancestors().find(|dir| dir.join(".git").exists())?;
     let dot_git = top.join(".git");
     let top_str = top.to_string_lossy().into_owned();
     if dot_git.is_dir() {
-        let gitlab_project = gitlab_project_of(top);
+        let gitlab_project = gitlab_project_of(top, urls);
         return Some(Workspace { project_root: top_str, worktree: None, is_repository: true, gitlab_project });
     }
     let content = std::fs::read_to_string(&dot_git).ok()?;
@@ -51,15 +57,15 @@ fn locate(path: &Path) -> Option<Workspace> {
         project_root: repository.to_owned(),
         worktree: Some(top_str),
         is_repository: Path::new(repository).join(".git").is_dir(),
-        gitlab_project: gitlab_project_of(Path::new(repository)),
+        gitlab_project: gitlab_project_of(Path::new(repository), urls),
     })
 }
 
-/// Projet GitLab du dépôt, lu dans `.git/config` sans lancer git : rien de ce que la config déclare
+/// Projet de forge du dépôt, lu dans `.git/config` sans lancer git : rien de ce que la config déclare
 /// ne s'exécute. Les `include` ne sont pas suivis ; un `origin` déclaré là n'est pas vu.
-fn gitlab_project_of(repository: &Path) -> Option<String> {
+fn gitlab_project_of(repository: &Path, urls: &dyn ForgeUrls) -> Option<String> {
     let config = std::fs::read_to_string(repository.join(".git").join("config")).ok()?;
-    gitlab_project_of_remote(&origin_url(&config)?)
+    urls.project_of_remote(&origin_url(&config)?)
 }
 
 /// `url` de la section `[remote "origin"]` d'une config Git.
@@ -85,6 +91,7 @@ fn origin_url(config: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::gitlab_urls::GitLabUrls;
 
     #[test]
     fn tells_the_main_tree_from_a_linked_worktree() {
@@ -95,14 +102,14 @@ mod tests {
         std::fs::write(
             repo.join(".git/config"),
             "[core]\n\tbare = false\n[remote \"upstream\"]\n\turl = git@gitlab.example.com:autre/x.git\n\
-             [remote \"origin\"]\n\turl = git@gitlab.example.com:shop/boutique.git\n",
+             [remote \"origin\"]\n\turl = git@gitlab.example.com:acme/shop.git\n",
         )
         .unwrap();
         std::fs::create_dir_all(repo.join("sub")).unwrap();
         std::fs::create_dir_all(&wt).unwrap();
         std::fs::write(wt.join(".git"), format!("gitdir: {}\n", repo.join(".git/worktrees/repo-wt-fix").display()))
             .unwrap();
-        let resolver = WorkspaceResolver::default();
+        let resolver = WorkspaceResolver::new(Arc::new(GitLabUrls::new("gitlab.example.com")));
         let repo_str = repo.to_string_lossy().into_owned();
 
         let main = resolver.resolve(&repo.join("sub").to_string_lossy());
@@ -112,8 +119,8 @@ mod tests {
         assert_eq!(linked.project_root, repo_str);
         assert_eq!(linked.worktree_name(), Some("repo-wt-fix"));
         assert!(linked.is_repository);
-        assert_eq!(main.gitlab_project.as_deref(), Some("shop/boutique"));
-        assert_eq!(linked.gitlab_project.as_deref(), Some("shop/boutique"));
+        assert_eq!(main.gitlab_project.as_deref(), Some("acme/shop"));
+        assert_eq!(linked.gitlab_project.as_deref(), Some("acme/shop"));
 
         let gone = resolver.resolve(&base.join("disparu").to_string_lossy());
         assert!(!gone.is_repository);

@@ -17,6 +17,7 @@
   import Environments from './views/Environments.svelte';
   import Databases from './views/Databases.svelte';
   import Code from './views/Code.svelte';
+  import Settings from './views/Settings.svelte';
   import ReadingPanel from './components/ReadingPanel.svelte';
 
   const KEYS: Record<string, View> = { '1': 'inbox', '2': 'agents', '3': 'history', '4': 'tasks', '5': 'stats', '6': 'mr', '7': 'env', '8': 'code' };
@@ -43,6 +44,7 @@
     else if (e.key === 'n' || e.key === 't') app.newAgent(); // ⌘T, comme un onglet de terminal
     else if (e.key === 'o') app.resumeOpen = !app.resumeOpen;
     else if (e.key === 'p') app.findFile();
+    else if (e.key === ',') app.view = 'settings'; // ⌘, : les réglages, comme toute app macOS
     else return;
     e.preventDefault();
   }
@@ -61,6 +63,7 @@
     {:else if app.view === 'env'}<Environments />
     {:else if app.view === 'db'}<Databases />
     {:else if app.view === 'code'}<Code />
+    {:else if app.view === 'settings'}<Settings />
     {:else}<Stats />{/if}
   </main>
   {#if app.reading}<ReadingPanel target={app.reading} />{/if}

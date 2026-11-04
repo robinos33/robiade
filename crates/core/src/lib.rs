@@ -22,9 +22,11 @@ pub mod merge_actions;
 pub mod pricing;
 pub mod project;
 pub mod secrets;
+pub mod settings;
 pub mod stats;
 pub mod task_start;
 pub mod tasks;
+pub mod trunks;
 pub mod updates;
 pub mod vcs;
 

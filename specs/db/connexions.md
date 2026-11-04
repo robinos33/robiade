@@ -9,7 +9,9 @@ base dev locale), affiche la prod en rouge, et n'est en lecture seule que si le 
   MongoDB, Elasticsearch**.
   - **Connexions** : nom, moteur, environnement (dev / staging / prod), projet optionnel. Chaque
     champ (URL, hôte, port, base, utilisateur, mot de passe) vient d'une valeur saisie, du
-    trousseau ou d'une clé Vault choisie dans la liste des secrets d'un montage. Une URL ou un mot
+    trousseau ou d'une clé Vault choisie dans la liste des secrets d'un montage. Vault est
+    optionnel et se règle dans les [réglages](../socle/reglages.md) ; sans lui, la source Vault
+    n'est plus proposée, et une connexion qui y puise déjà échoue à l'ouverture en le disant. Une URL ou un mot
     de passe ne se saisit en clair que pour une connexion dev vers la machine locale (hôte en clair,
     `localhost`/`127.0.0.1`/`::1`) ; il n'est alors jamais renvoyé à l'interface. La production est rouge partout où elle apparaît
     (badge PROD, ligne, formulaire) et une connexion de prod montre son nom et son hôte résolu
@@ -48,3 +50,7 @@ joint donc plus.
 Seule exception au « rien en clair » : une base **dev locale**, dont le mot de passe est déjà en
 clair dans le `.env` du projet, se saisit en clair et reste dans `robiade.db` ; staging, prod et dev
 distant passent par Vault ou le trousseau.
+
+## Tickets
+
+- #26 — Socle — indépendance vis-à-vis de l'entreprise : instance GitLab, Vault et branches de tronc dans une page Réglages

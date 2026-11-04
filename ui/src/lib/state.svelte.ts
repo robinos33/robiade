@@ -1,11 +1,10 @@
 import { listen } from '@tauri-apps/api/event';
-import { openUrl } from '@tauri-apps/plugin-opener';
 import { api } from './api';
 import { localDay } from './format';
 import { writeOutput } from './terminals';
 import type { Agent, Environment, Forge, GitWorktree, MergeRequest, MrState, Project, QuitRequest, ReadingTarget, Session, Task, Update, Workspace, Worktree } from './types';
 
-export type View = 'inbox' | 'agents' | 'history' | 'mr' | 'tasks' | 'stats' | 'env' | 'db' | 'code';
+export type View = 'inbox' | 'agents' | 'history' | 'mr' | 'tasks' | 'stats' | 'env' | 'db' | 'code' | 'settings';
 
 const ATTENTION_ORDER: Record<string, number> = { awaitingPermission: 0, failed: 1, awaitingInput: 2 };
 
@@ -207,7 +206,7 @@ class AppState {
   /** Lit l'état des MR des sessions récentes ; le cache côté Rust évite de relire les MR closes. */
   async refreshMrStates() {
     const urls = [...new Set(this.history.slice(0, 200).flatMap((s) => (s.mergeRequestUrl ? [s.mergeRequestUrl] : [])))];
-    if (urls.length === 0) return;
+    if (urls.length === 0 || !this.env?.forge) return;
     try {
       this.mrStates = { ...this.mrStates, ...(await api.mergeRequestStates(urls)) };
     } catch {
@@ -216,7 +215,7 @@ class AppState {
   }
 
   async refreshForge() {
-    if (this.forgeLoading) return;
+    if (this.forgeLoading || !this.env?.forge) return;
     this.forgeLoading = true;
     try {
       this.forge = await api.mergeRequests();
@@ -320,8 +319,13 @@ class AppState {
 
   /** Ouvre une issue ou une MR dans le panneau de lecture ; avec ⌘, dans le navigateur, comme avant. */
   read(target: ReadingTarget, e?: MouseEvent) {
-    if (e?.metaKey) void openUrl(target.webUrl);
+    if (e?.metaKey) this.openUrl(target.webUrl);
     else this.reading = target;
+  }
+
+  /** Page de la forge dans le navigateur ; un refus (autre hôte) s'affiche. */
+  openUrl(url: string) {
+    api.openForgeUrl(url).catch((e) => this.notify(String(e)));
   }
 
   openSession(id: string) {

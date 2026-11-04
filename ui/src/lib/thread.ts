@@ -4,8 +4,6 @@ import type { ColorScheme } from './theme.svelte';
 import { dateTime } from './format';
 import type { Discussion } from './types';
 
-const GITLAB = 'https://gitlab.example.com';
-
 const escape = (text: string) =>
   text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c);
 
@@ -13,13 +11,13 @@ const escape = (text: string) =>
  * Markdown de GitLab. Une image jointe (`/uploads/…`) est servie derrière authentification, que
  * l'iframe n'a pas : elle s'affiche comme son adresse sur GitLab, sans être chargée.
  */
-function gitlabMarkdown(project: string) {
+function gitlabMarkdown(instance: string, project: string) {
   return new Marked({
     gfm: true,
     async: false,
     renderer: {
       image({ href, text }) {
-        const url = href.startsWith('/uploads/') ? `${GITLAB}/${project}${href}` : href;
+        const url = href.startsWith('/uploads/') ? `${instance}/${project}${href}` : href;
         return `<span class="asset">Image jointe${text ? ` « ${escape(text)} »` : ''} : <span class="url">${escape(url)}</span></span>`;
       },
     },
@@ -51,8 +49,8 @@ const THREAD_STYLE = `<style>
  * s'affiche dans une iframe `sandbox=""` : rien ne s'y exécute. L'échappement des auteurs sert au
  * rendu, pas à la sécurité.
  */
-export function threadPage(project: string, description: string, discussions: Discussion[], scheme: ColorScheme): string {
-  const md = gitlabMarkdown(project);
+export function threadPage(instance: string, project: string, description: string, discussions: Discussion[], scheme: ColorScheme): string {
+  const md = gitlabMarkdown(instance, project);
   const render = (text: string) => md.parse(text) as string;
   const intro = description.trim() ? render(description) : '<p class="empty">Pas de description.</p>';
   const threads = discussions.map((d) => {

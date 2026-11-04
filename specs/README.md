@@ -22,6 +22,7 @@ suit le même plan : « En une phrase », « Comportement », « Règles », « 
 | [socle/securite.md](socle/securite.md) | Principes de sécurité transverses |
 | [socle/ux.md](socle/ux.md) | Principes d'interface, structure de l'écran, budgets de performance |
 | [socle/mise-a-jour.md](socle/mise-a-jour.md) | Mise à jour de l'app depuis `origin/main` au lancement |
+| [socle/reglages.md](socle/reglages.md) | Page Réglages : instance de forge, Vault, branches de tronc par projet |
 | [agents/lancement.md](agents/lancement.md) | Lancer `claude` dans un PTY, sessions de l'ADE seules, cycle de vie |
 | [agents/status.md](agents/status.md) | Machine à états d'une session, indicateurs de sa ligne |
 | [agents/statusline.md](agents/statusline.md) | Contexte consommé et quotas lus par la statusline |
@@ -49,7 +50,7 @@ suit le même plan : « En une phrase », « Comportement », « Règles », « 
 ### Dans le périmètre
 - **Agents** : sessions Claude Code **lancées par l'ADE** sur cette machine. Les lancer, leur parler
   dans le terminal intégré, voir leur status, consulter leur historique.
-- **Forge** : MR, pipelines et issues GitLab (`gitlab.example.com` uniquement). Voir et agir.
+- **Forge** : MR, pipelines et issues GitLab, sur l'instance réglée ([réglages](socle/reglages.md)). Voir et agir.
   Les issues GitLab sont les **tâches d'équipe** : l'ADE les consomme, GitLab reste la source.
 - **Tâches perso** : par projet et globales. **L'ADE en est la source de vérité** — c'est la
   seule donnée métier qu'il possède.

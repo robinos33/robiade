@@ -117,13 +117,13 @@ mod tests {
 
     fn issue(title: &str, description: &str) -> Issue {
         Issue {
-            issue: IssueRef { project: "shop/boutique".into(), iid: 5021 },
+            issue: IssueRef { project: "acme/shop".into(), iid: 5021 },
             title: title.into(),
             state: IssueState::Opened,
             description: description.into(),
             labels: vec![],
             assignees: vec![],
-            web_url: "https://gitlab.example.com/shop/boutique/-/work_items/5021".into(),
+            web_url: "https://gitlab.example.com/acme/shop/-/work_items/5021".into(),
             updated_at: 0,
             due_date: None,
             merge_requests: 0,
@@ -150,15 +150,15 @@ mod tests {
 
     #[test]
     fn the_worktree_lives_under_the_claude_convention() {
-        let dir = worktree_dir("/r/boutique/", "feature/ticket-1");
-        assert_eq!(dir, "/r/boutique/.claude/worktrees/feature-ticket-1");
-        assert_eq!(crate::project::root_of(&dir), "/r/boutique");
+        let dir = worktree_dir("/r/shop/", "feature/ticket-1");
+        assert_eq!(dir, "/r/shop/.claude/worktrees/feature-ticket-1");
+        assert_eq!(crate::project::root_of(&dir), "/r/shop");
     }
 
     #[test]
     fn the_prompt_quotes_a_truncated_description() {
         let prompt = initial_prompt(&issue("Cache", &"x".repeat(DESCRIPTION_MAX_CHARS + 10)), "ticket-5021-cache");
-        assert!(prompt.contains("shop/boutique#5021") && prompt.contains("`ticket-5021-cache`"));
+        assert!(prompt.contains("acme/shop#5021") && prompt.contains("`ticket-5021-cache`"));
         assert!(prompt.contains("description tronquée"));
         assert!(prompt.chars().count() < PROMPT_MAX_CHARS);
     }

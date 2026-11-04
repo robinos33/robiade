@@ -33,7 +33,7 @@ impl AgentProcess {
             .openpty(PtySize { rows: spec.rows, cols: spec.cols, pixel_width: 0, pixel_height: 0 })
             .map_err(|e| e.to_string())?;
         let mut cmd = CommandBuilder::new(spec.claude);
-        // Un Robiade lancé depuis Claude Code ferait de l'agent un sous-agent sans transcript (#16).
+        // Un Robiade lancé depuis Claude Code ferait de l'agent un sous-agent sans transcript (robiade#16).
         // Lancé depuis iTerm, il ferait croire à Claude Code qu'il tourne dans iTerm.
         for (name, _) in std::env::vars_os() {
             if name.to_str().is_some_and(|n| is_leaked_claude_var(n) || is_parent_terminal_var(n)) {
@@ -46,7 +46,7 @@ impl AgentProcess {
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
         // Sans OSC 8, Claude Code affiche les URL en clair : xterm les reconnaît, et ⌘ décide seul
-        // de leur soulignement (#11). Sinon tout dépendrait de l'environnement hérité.
+        // de leur soulignement (robiade#11). Sinon tout dépendrait de l'environnement hérité.
         cmd.env("FORCE_HYPERLINK", "0");
         for (k, v) in spec.env {
             cmd.env(k, v);
@@ -106,7 +106,7 @@ fn is_leaked_claude_var(name: &str) -> bool {
 
 /// Variable qui décrit le terminal d'où Robiade a été lancé : le PTY d'un agent n'en est pas un.
 /// Celles d'iTerm désignent sa session : le hook global `cc-status` d'iTerm y notifierait
-/// l'agent, en double de la notification de Robiade (#9).
+/// l'agent, en double de la notification de Robiade (robiade#9).
 fn is_parent_terminal_var(name: &str) -> bool {
     matches!(name, "TERM_PROGRAM" | "TERM_PROGRAM_VERSION" | "LC_TERMINAL" | "LC_TERMINAL_VERSION")
         || name.starts_with("ITERM_")
