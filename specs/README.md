@@ -50,8 +50,8 @@ suit le même plan : « En une phrase », « Comportement », « Règles », « 
 ### Dans le périmètre
 - **Agents** : sessions Claude Code **lancées par l'ADE** sur cette machine. Les lancer, leur parler
   dans le terminal intégré, voir leur status, consulter leur historique.
-- **Forge** : MR, pipelines et issues GitLab, sur l'instance réglée ([réglages](socle/reglages.md)). Voir et agir.
-  Les issues GitLab sont les **tâches d'équipe** : l'ADE les consomme, GitLab reste la source.
+- **Forge** : MR, pipelines et issues, sur GitLab ou GitHub, une instance réglée ([réglages](socle/reglages.md)). Voir et agir.
+  Les issues sont les **tâches d'équipe** : l'ADE les consomme, la forge reste la source.
 - **Tâches perso** : par projet et globales. **L'ADE en est la source de vérité** — c'est la
   seule donnée métier qu'il possède.
 - **Environnements** : worktrees Git, conteneurs Docker, et un client DB (console de requêtes +
