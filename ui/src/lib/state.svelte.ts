@@ -1,5 +1,4 @@
 import { listen } from '@tauri-apps/api/event';
-import { openUrl } from '@tauri-apps/plugin-opener';
 import { api } from './api';
 import { localDay } from './format';
 import { writeOutput } from './terminals';
@@ -320,8 +319,13 @@ class AppState {
 
   /** Ouvre une issue ou une MR dans le panneau de lecture ; avec ⌘, dans le navigateur, comme avant. */
   read(target: ReadingTarget, e?: MouseEvent) {
-    if (e?.metaKey) void openUrl(target.webUrl);
+    if (e?.metaKey) this.openUrl(target.webUrl);
     else this.reading = target;
+  }
+
+  /** Page de la forge dans le navigateur ; un refus (autre hôte) s'affiche. */
+  openUrl(url: string) {
+    api.openForgeUrl(url).catch((e) => this.notify(String(e)));
   }
 
   openSession(id: string) {

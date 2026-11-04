@@ -1053,6 +1053,17 @@ fn existing_inside(root: &Path, relative: &str) -> CmdResult<PathBuf> {
     parent.starts_with(root).then(|| parent.join(name)).ok_or_else(outside)
 }
 
+/// Ouvre une page de la forge réglée dans le navigateur. Toute autre URL est refusée : l'interface
+/// affiche des liens venus de GitLab et de la sortie des agents, non fiables.
+#[tauri::command]
+pub fn open_forge_url(state: State<AppState>, url: String) -> CmdResult<()> {
+    if !state.forge_urls.is_web_url(&url) {
+        return Err("lien hors de l'instance configurée : non ouvert".into());
+    }
+    let status = std::process::Command::new("/usr/bin/open").arg(&url).status().map_err(|e| e.to_string())?;
+    status.success().then_some(()).ok_or_else(|| "le navigateur n'a pas pu ouvrir ce lien".into())
+}
+
 /// `open` de macOS, lancé directement : aucun shell n'interprète les arguments.
 fn open(args: &[&str]) -> CmdResult<()> {
     let status = std::process::Command::new("/usr/bin/open").args(args).status().map_err(|e| e.to_string())?;

@@ -151,7 +151,6 @@ fn main() {
     }
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             main_window(app)?;
@@ -297,6 +296,7 @@ fn main() {
             commands::prepare_worktree_removal,
             commands::remove_worktree,
             commands::reveal_in_finder,
+            commands::open_forge_url,
             commands::audit_log,
             commands::containers,
             commands::prepare_container_action,

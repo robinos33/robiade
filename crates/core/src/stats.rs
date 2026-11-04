@@ -240,6 +240,9 @@ mod tests {
         fn project_of_remote(&self, _: &str) -> Option<String> {
             None
         }
+        fn is_web_url(&self, _: &str) -> bool {
+            false
+        }
     }
 
     #[test]

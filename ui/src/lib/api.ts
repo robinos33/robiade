@@ -118,6 +118,8 @@ export const api = {
   /** Relance pour prendre la mise à jour ; des agents vivants passent d'abord par la confirmation. */
   relaunch: () => invoke<void>('relaunch'),
   quit: (relaunch: boolean) => invoke<void>('quit', { relaunch }),
+  /** Page de la forge réglée, dans le navigateur ; toute autre URL est refusée par Rust. */
+  openForgeUrl: (url: string) => invoke<void>('open_forge_url', { url }),
   settings: () => invoke<Settings>('settings'),
   /** Sans `confirmedHost`, un nouvel hôte n'est pas enregistré : la réponse le donne à confirmer. */
   saveForgeSettings: (forge: ForgeSettings | null, confirmedHost: string | null) =>

@@ -60,6 +60,8 @@ pub trait ForgeUrls: Send + Sync {
     fn issue_url(&self, issue: &IssueRef) -> Option<String>;
     /// Projet d'une URL de remote Git, s'il est sur l'instance.
     fn project_of_remote(&self, url: &str) -> Option<String>;
+    /// URL web de l'instance, en `https`, sans identifiants : la seule que Robiade ouvre dans le navigateur.
+    fn is_web_url(&self, url: &str) -> bool;
 }
 
 /// Aucune forge réglée : aucune adresse n'est reconnue, et tout appel est refusé.
@@ -77,6 +79,9 @@ impl ForgeUrls for NoForge {
     }
     fn project_of_remote(&self, _: &str) -> Option<String> {
         None
+    }
+    fn is_web_url(&self, _: &str) -> bool {
+        false
     }
 }
 
@@ -377,6 +382,9 @@ mod tests {
         }
         fn project_of_remote(&self, _: &str) -> Option<String> {
             None
+        }
+        fn is_web_url(&self, _: &str) -> bool {
+            false
         }
     }
 

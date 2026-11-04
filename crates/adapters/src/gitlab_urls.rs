@@ -55,6 +55,15 @@ impl ForgeUrls for GitLabUrls {
         Some(format!("https://{}/{}/-/issues/{}", self.authority, issue.project, issue.iid))
     }
 
+    /// `https://<instance>` suivi d'un chemin, d'une requête ou d'un fragment, ou de rien. Des
+    /// identifiants (`moi@`) ou un autre port changent l'autorité : refusés. Un caractère de
+    /// contrôle ou une espace aussi : `open` ne doit recevoir qu'une URL d'un seul tenant.
+    fn is_web_url(&self, url: &str) -> bool {
+        let Some(rest) = url.strip_prefix("https://") else { return false };
+        let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+        authority.eq_ignore_ascii_case(&self.authority) && !url.chars().any(|c| c.is_control() || c.is_whitespace())
+    }
+
     /// En SSH (`git@hôte:projet.git`, `ssh://git@hôte[:port]/projet.git`) ou en HTTPS. Des
     /// identifiants dans l'URL ne sont jamais repris.
     fn project_of_remote(&self, url: &str) -> Option<String> {
@@ -130,6 +139,27 @@ mod tests {
         assert_eq!(project("https://gitlab.example.com.evil.io/a/b.git"), None);
         assert_eq!(project("https://evil.io/x@gitlab.example.com/a/b.git"), None);
         assert_eq!(project("/Users/r/depot-local"), None);
+    }
+
+    #[test]
+    fn only_web_pages_of_the_instance_are_opened() {
+        let urls = urls();
+        assert!(urls.is_web_url("https://gitlab.example.com/a/b/-/merge_requests/1"));
+        assert!(urls.is_web_url("https://GITLAB.example.com"));
+        assert!(urls.is_web_url("https://gitlab.example.com?x#y"));
+        for bad in [
+            "http://gitlab.example.com/a",
+            "https://gitlab.example.com.evil.io/a",
+            "https://moi@gitlab.example.com/a",
+            "https://gitlab.example.com@evil.io/a",
+            "https://gitlab.example.com:8443/a",
+            "https://gitlab.example.com/a b",
+            "https://gitlab.example.com/a\n",
+            "file:///etc/passwd",
+            "https://github.com/a/b",
+        ] {
+            assert!(!urls.is_web_url(bad), "{bad}");
+        }
     }
 
     #[test]

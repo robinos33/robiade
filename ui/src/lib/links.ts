@@ -1,4 +1,3 @@
-import { openUrl } from '@tauri-apps/plugin-opener';
 import { api } from './api';
 import { fileSize } from './format';
 import type { AssetContent } from './types';
@@ -60,7 +59,8 @@ export function openLink(uri: string, onfile: (uri: string) => void) {
   } catch {
     return;
   }
-  if (url.protocol === 'http:' || url.protocol === 'https:') void openUrl(url.href);
+  // Rust n'ouvre que les pages de la forge réglée ; un autre lien reste sans effet, comme avant.
+  if (url.protocol === 'http:' || url.protocol === 'https:') api.openForgeUrl(url.href).catch(() => {});
   else if (url.protocol === 'file:') onfile(uri);
 }
 

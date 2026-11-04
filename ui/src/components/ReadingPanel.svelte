@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { openUrl } from '@tauri-apps/plugin-opener';
   import { untrack } from 'svelte';
   import { cubicOut } from 'svelte/easing';
   import { prefersReducedMotion } from 'svelte/motion';
@@ -87,7 +86,7 @@
         <span class="ref mono">{target.kind === 'mr' ? '!' : '#'}{target.iid}</span>
         <span class="proj ellipsis" title={target.project}>{target.project}</span>
         <span class="spacer"></span>
-        <button class="btn ghost small" title="Ouvrir dans le navigateur" onclick={() => void openUrl(target.webUrl)}>
+        <button class="btn ghost small" title="Ouvrir dans le navigateur" onclick={() => app.openUrl(target.webUrl)}>
           Ouvrir dans GitLab
         </button>
         <button class="btn ghost small close" title="Fermer (Échap)" aria-label="Fermer" onclick={() => (app.reading = null)}>✕</button>
