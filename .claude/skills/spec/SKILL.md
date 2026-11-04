@@ -1,6 +1,6 @@
 ---
 name: spec
-description: Tient à jour la spécification de Robiade, rangée dans specs/ avec un fichier par feature. Ce skill lit le diff d'un ticket et l'issue GitLab, trouve la ou les features touchées, met à jour leur fichier ou en crée un, et commite chaque feature dans un commit docs(spec) séparé du code. À invoquer quand un ticket est fini et sur le point d'être poussé (« c'est bon, on pousse », « prépare la MR »), quand une décision vient d'être prise en conversation (« on part là-dessus », « tranché »), ou quand on rédige un ticket, pour qu'il cite les fichiers de specs/ concernés. Mode contrôle à la demande (« la spec de la console est-elle à jour ? ») : comparer une feature au code et lister les écarts, sans rien modifier. Ne pas invoquer pour un refactor, du style ou un correctif qui rétablit un comportement déjà spécifié.
+description: Tient à jour la spécification de Robiade, rangée dans specs/ avec un fichier par feature. Ce skill lit le diff d'un ticket et l'issue GitHub, trouve la ou les features touchées, met à jour leur fichier ou en crée un, et commite chaque feature dans un commit docs(spec) séparé du code. À invoquer quand un ticket est fini et sur le point d'être poussé (« c'est bon, on pousse », « prépare la MR »), quand une décision vient d'être prise en conversation (« on part là-dessus », « tranché »), ou quand on rédige un ticket, pour qu'il cite les fichiers de specs/ concernés. Mode contrôle à la demande (« la spec de la console est-elle à jour ? ») : comparer une feature au code et lister les écarts, sans rien modifier. Ne pas invoquer pour un refactor, du style ou un correctif qui rétablit un comportement déjà spécifié.
 ---
 
 # Spec par feature
@@ -44,8 +44,8 @@ Ne jamais faire `git diff origin/main..HEAD` : dès que `main` a avancé, ce dif
 les commits des autres. Si un diff global est nécessaire, utiliser `git diff origin/main...HEAD`
 (trois points).
 
-Pour trouver l'issue, chercher dans cet ordre : un argument, la branche (`ticket-<iid>-…`), puis
-un `Closes #N` ou `Refs #N` dans les commits. La lire avec `glab issue view <iid> --comments`. Si
+Pour trouver l'issue, chercher dans cet ordre : un argument, la branche (`ticket-<n>-…`), puis
+un `Closes #N` ou `Refs #N` dans les commits. La lire avec `gh issue view <n> --comments`. Si
 aucune issue n'est trouvée, travailler sur le diff seul et le dire.
 
 ### 2. Trier ce qui compte
