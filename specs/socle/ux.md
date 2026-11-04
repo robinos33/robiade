@@ -24,6 +24,13 @@ performance, communs à toutes les vues.
   repli est mémorisé sur le poste. Repliée, elle montre son nombre d'éléments et la pastille la
   plus forte de ses lignes (un agent qui attend reste visible), garde la ligne de la sélection
   et rend sa hauteur à l'autre section. La navigation ne se replie pas : le clavier la couvre.
+- La barre latérale entière se replie et se rouvre par un bouton posé juste à droite des feux
+  tricolores, au même endroit dans les deux états et quel que soit l'onglet, par ⌘B ou par la
+  palette. Repliée, elle ne prend aucune largeur, sans rail d'icônes ; l'en-tête des vues réserve
+  la place des feux et du bouton, et reste glissable pour déplacer la fenêtre. Le bouton porte
+  alors un compteur : en accent, les agents qui attendent et les échéances tombées, tous projets
+  confondus ; sinon, en bleu, les agents qui tournent. Le repli est mémorisé sur le poste, et la
+  barre se rouvre à la largeur réglée avant.
 - Le panneau de détail d'un agent héberge son terminal ; on peut le détacher dans une fenêtre.
 - Dans le terminal, ⌘+clic ouvre un lien, comme dans iTerm ; ⌘ enfoncé, le lien survolé est
   souligné. Sans ⌘, un clic reste un clic dans le terminal. Claude Code y affiche ses URL en
@@ -94,8 +101,9 @@ performance, communs à toutes les vues.
   ligne serait envoyée. Les caractères de contrôle sont retirés avant le collage, sauf tabulation
   et fins de ligne : un titre d'issue venu de GitLab pourrait sinon fermer le bracketed paste et
   envoyer la suite.
-- **Le terminal se recale une fois, au relâchement d'une poignée.** Chaque recalage envoie un
-  redimensionnement au PTY et fait redessiner tout l'écran à Claude Code.
+- **Le terminal se recale une fois, au relâchement d'une poignée ou au repli de la barre
+  latérale**, qui est instantané. Chaque recalage envoie un redimensionnement au PTY et fait
+  redessiner tout l'écran à Claude Code.
 - Les raccourcis de Robiade (⌘F, ⌘+, ⌘−, ⌘0) ne partent jamais dans le PTY.
 - Un dépôt de fichiers dont un nom contient un caractère de contrôle, retour à la ligne compris,
   est refusé en entier, avec un message : l'antislash ne le neutraliserait pas.
@@ -131,6 +139,13 @@ performance, communs à toutes les vues.
 - Décidé le 2026-11-04 : `Projets` repliée garde la ligne du projet sélectionné, ou « Global »,
   même quand c'est un worktree qui est sélectionné (issue #27). Le projet reste le contexte : sans
   elle, la section ne dirait plus où l'on est dès qu'on entre dans un worktree.
+- Décidé le 2026-11-04 : un seul bouton replie et rouvre la barre latérale, au même endroit, là où
+  l'issue #30 en décrivait deux (l'un dans l'en-tête de la barre, l'autre pour la rouvrir). Le
+  geste ne change pas de place et le focus ne se perd pas avec un bouton qui disparaît.
+- Décidé le 2026-11-04 : barre repliée, le bouton porte un compteur plutôt qu'une simple pastille,
+  et l'accent compte aussi les échéances tombées, que la barre ouverte signale déjà en accent
+  (issue #30). Il s'aligne sur les feux tricolores, pas sur le titre de l'en-tête, sans déplacer
+  les feux.
 
 ## Écarté
 
@@ -138,6 +153,11 @@ performance, communs à toutes les vues.
   un diff d'une autre vue n'aurait jamais pu être repris.
 - Recalage du terminal à chaque image (`requestAnimationFrame`) pendant le glisser : encore un
   redimensionnement du PTY par colonne franchie, soit des dizaines par glisser (issue #23).
+- Un mode rail pour la barre repliée (icônes de la navigation, initiale des projets et des
+  worktrees), écarté le 2026-11-04 (issue #30) : une initiale ne distingue pas des worktrees nommés
+  d'après leurs branches (`ticket-…`) ni deux projets de même initiale, et le rail reprend une
+  partie de la largeur rendue. Le compteur du bouton garde les signaux, ⌘K et ⌘1–⌘8 la navigation.
+  À rouvrir dans un ticket à part si le besoin se confirme à l'usage.
 
 ## Tickets
 
@@ -148,3 +168,4 @@ performance, communs à toutes les vues.
 - #21 — Interface : écran de démarrage
 - #23 — Interface — panneaux latéraux redimensionnables
 - #27 — Barre latérale — replier les sections Projets et Worktrees
+- #30 — Barre latérale — bouton pour replier la barre entière, et ⌘B

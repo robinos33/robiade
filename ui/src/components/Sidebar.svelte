@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { sidebar, toggleSidebar } from '../lib/sidebar.svelte';
   import { app, type View } from '../lib/state.svelte';
   import { cycleTheme, theme, type ThemeChoice } from '../lib/theme.svelte';
   import type { Agent, Worktree } from '../lib/types';
@@ -35,6 +36,25 @@
   const hot = (view: View) => view === 'inbox' || (view === 'tasks' && app.dueTasks.length > 0);
   /** Échéances tombées hors du projet affiché : signalées partout, comptées seulement chez elles. */
   const dueElsewhere = $derived(app.allDueTasks.length - app.dueTasks.length);
+
+  /**
+   * Signal le plus fort de la barre, que son bouton porte une fois repliée : l'accent compte les
+   * agents qui attendent et les échéances tombées, de tous les projets ; sinon, le bleu compte les
+   * agents qui tournent. Un agent qui attend ne disparaît pas avec la barre.
+   */
+  const signal = $derived.by(() => {
+    const waiting = app.agents.filter((a) => a.needsAttention).length;
+    const due = app.allDueTasks.length;
+    if (waiting + due > 0) {
+      const parts = [waiting && `${waiting} agent(s) en attente`, due && `${due} échéance(s) tombée(s)`];
+      return { hot: true, count: waiting + due, text: parts.filter(Boolean).join(', ') };
+    }
+    const live = app.liveAgents.length;
+    return live ? { hot: false, count: live, text: `${live} agent(s) actif(s)` } : null;
+  });
+  const toggleLabel = $derived(
+    sidebar.collapsed ? `Afficher la barre latérale${signal ? ` · ${signal.text}` : ''}` : 'Replier la barre latérale',
+  );
 
   /** Commit de la build, au survol du nom : c'est lui qui dit si une mise à jour a été prise. */
   const build = $derived.by(() => {
@@ -124,7 +144,20 @@
 
 <svelte:window onclick={closeMenu} onkeydown={closeMenu} onblur={() => (menu = null)} />
 
-<nav style:--sidebar-w={width ? `${width}px` : null}>
+<!-- Hors de la barre, pour rester à droite des feux tricolores quand elle est repliée. -->
+<button
+  class="toggle"
+  onclick={toggleSidebar}
+  aria-expanded={!sidebar.collapsed}
+  aria-label={toggleLabel}
+  title="{toggleLabel} (⌘B)"
+>
+  <Icon name="sidebar" />
+  {#if sidebar.collapsed && signal}<span class="signal" class:hot={signal.hot}>{signal.count}</span>{/if}
+</button>
+
+<!-- Masquée et non démontée : la largeur réglée et l'état des composants survivent au repli. -->
+<nav class:collapsed={sidebar.collapsed} style:--sidebar-w={width ? `${width}px` : null}>
   <ResizeHandle id="sidebar" edge="right" min={180} max={360} label="Largeur de la barre latérale" bind:width />
   <div class="titlebar" data-tauri-drag-region></div>
 
@@ -231,7 +264,23 @@
     width: var(--sidebar-w, 232px); flex: none; padding: 0 10px 10px;
     background: var(--bg-raised); border-right: 1px solid var(--line);
   }
+  nav.collapsed { display: none; }
   .titlebar { height: 30px; flex: none; }
+  /* Même place barre ouverte ou repliée, juste à droite des feux : `--titlebar-inset` (app.css) la réserve. */
+  .toggle {
+    position: fixed; top: 4px; left: 72px; z-index: 30;
+    display: grid; place-items: center; width: 24px; height: 22px; padding: 0;
+    border: 0; border-radius: var(--radius-sm); background: none; color: var(--ink-3);
+  }
+  .toggle:hover { background: var(--bg-hover); color: var(--ink); }
+  /* En coin, pour que le bouton garde sa largeur : `--titlebar-inset` couvre un compte à deux chiffres. */
+  .signal {
+    position: absolute; top: -3px; left: 15px; min-width: 15px; height: 15px; padding: 0 4px;
+    border-radius: 8px; background: var(--info); box-shadow: 0 0 0 2px var(--bg);
+    color: #fff; font-size: 10px; font-weight: 650; line-height: 15px; text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .signal.hot { background: var(--accent); }
   .brand { display: flex; align-items: center; gap: 9px; padding: 4px 6px 14px; }
   .name { font-weight: 680; letter-spacing: -0.015em; font-size: 14px; flex: 1; }
   .palette { background: none; border: 0; padding: 0; }

@@ -27,6 +27,8 @@
   --chart-muted: light-dark(#f1d9cd, #3a2a24);
   --radius: 8px;
   --radius-sm: 5px;
+  /* Feux tricolores de macOS (TitleBarStyle::Overlay) et bouton de la barre latérale, à leur droite. */
+  --titlebar-inset: 116px;
   --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, sans-serif;
   --mono: 'SF Mono', 'JetBrains Mono', ui-monospace, Menlo, monospace;
   --shadow: 0 12px 40px light-dark(rgb(0 0 0 / 0.12), rgb(0 0 0 / 0.45)), 0 0 0 1px var(--line-strong);
@@ -85,6 +87,8 @@ kbd {
 }
 .page-head h1 { font-size: 15px; font-weight: 620; margin: 0; letter-spacing: -0.01em; }
 .page-head .spacer { flex: 1; }
+/* Barre latérale repliée : les feux tricolores et le bouton qui la rouvre se posent sur l'en-tête. */
+.shell.sidebar-collapsed .page-head { padding-left: var(--titlebar-inset); }
 
 .empty {
   display: grid; place-items: center; text-align: center;
