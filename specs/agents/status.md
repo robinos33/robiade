@@ -32,3 +32,27 @@ initial vient du registre, puis les hooks prennent le relais.
 - **Dernière activité** (« il y a 4 min ») et durée de la session.
 - **Sous-agents en cours**, s'il y en a.
 - Coût et tokens : dans le détail seulement, pas sur la ligne.
+
+**Barre au-dessus du terminal** — elle reprend le nom de l'onglet, l'état, le mode, le chemin, la
+branche et la MR. Quand la place manque, le chemin cède d'abord, puis la branche et le titre de la
+MR, le nom en dernier ; les actions jamais. Sous 720 px de barre, les libellés s'effacent et
+restent au survol : les actions passent en icône seule, l'état en pastille seule, un mode
+permissif en triangle seul. Un mode non permissif disparaît, comme sur la ligne de la liste.
+
+## Décisions
+
+- Décidé le 2026-11-04 : sous 720 px de barre, un mode non permissif (`Demande tout`,
+  `Éditions acceptées`, `Plan`) disparaît au lieu de garder une pastille sans libellé ; la place
+  revient à la branche et à la MR (issue #24). Risque résiduel : barre étroite, ces modes ne se
+  lisent plus nulle part, le panneau Session ne les affiche pas.
+
+## Écarté
+
+- Une pastille neutre en icône seule pour un mode non permissif, qui garderait le survol : une
+  icône qui ne dit rien au premier coup d'œil, ou une icône par mode, c'est trop pour ce badge.
+- Mesurer la barre en JS pour basculer la variante compacte des badges : la container query fait
+  le même travail en CSS.
+
+## Tickets
+
+- #24 — Agents — barre du terminal : badges d'état et de mode compacts quand la barre est étroite

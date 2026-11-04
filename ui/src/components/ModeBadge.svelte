@@ -13,10 +13,14 @@
   const label = $derived(mode ? (LABELS[mode] ?? mode) : null);
 </script>
 
+<!--
+  `compact-hide` : ce qu'un conteneur étroit peut masquer en CSS, comme la prop `compact`.
+  Un mode permissif garde son triangle ; un mode non permissif disparaît en entier.
+-->
 {#if label && (permissive || !compact)}
-  <span class="mode" class:permissive title="Mode de permission : {mode}">
+  <span class="mode" class:permissive class:compact-hide={!permissive} title="Mode de permission : {label}">
     {#if permissive}<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M8 2.5 14 13H2zM8 6.5v3M8 11.3v.01" /></svg>{/if}
-    {label}
+    <span class="compact-hide">{label}</span>
   </span>
 {/if}
 

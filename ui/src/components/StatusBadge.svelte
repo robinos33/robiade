@@ -34,7 +34,8 @@
       <path d="M2.5 6h7" class="stroke" />
     {/if}
   </svg>
-  {#if !compact}<span>{LABELS[status]}</span>{/if}
+  <!-- `compact-hide` : ce qu'un conteneur étroit peut masquer en CSS, la pastille et le survol restent. -->
+  {#if !compact}<span class="compact-hide">{LABELS[status]}</span>{/if}
 </span>
 
 <style>
