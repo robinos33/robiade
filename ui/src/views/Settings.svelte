@@ -1,11 +1,13 @@
 <script lang="ts">
   import { api } from '../lib/api';
   import { app } from '../lib/state.svelte';
-  import type { RepositoryTrunks, SaveOutcome, Settings } from '../lib/types';
+  import { FORGE_NAMES } from '../lib/forge';
+  import type { ForgeProvider, RepositoryTrunks, SaveOutcome, Settings } from '../lib/types';
 
   let settings = $state<Settings | null>(null);
   let error = $state<string | null>(null);
 
+  let forgeProvider = $state<ForgeProvider>('gitlab');
   let forgeUrl = $state('');
   let forgeService = $state('');
   let vaultUrl = $state('');
@@ -17,6 +19,7 @@
 
   function fill(s: Settings) {
     settings = s;
+    forgeProvider = s.forge?.provider ?? 'gitlab';
     forgeUrl = s.forge?.url ?? '';
     forgeService = s.forge?.tokenService ?? '';
     vaultUrl = s.vault?.url ?? '';
@@ -28,8 +31,13 @@
   });
 
   const forgeChanged = $derived(
-    settings !== null && (forgeUrl.trim() !== (settings.forge?.url ?? '') || forgeService.trim() !== (settings.forge?.tokenService ?? '')),
+    settings !== null
+      && (forgeProvider !== (settings.forge?.provider ?? 'gitlab')
+        || forgeUrl.trim() !== (settings.forge?.url ?? '')
+        || forgeService.trim() !== (settings.forge?.tokenService ?? '')),
   );
+  /** Service proposé quand le champ est vide : celui du fournisseur choisi. */
+  const forgeDefaultService = $derived(settings?.providers.find((p) => p.id === forgeProvider)?.defaultTokenService ?? '');
   const vaultChanged = $derived(
     settings !== null && (vaultUrl.trim() !== (settings.vault?.url ?? '') || vaultService.trim() !== (settings.vault?.tokenService ?? '')),
   );
@@ -40,7 +48,7 @@
     try {
       let outcome: SaveOutcome;
       if (what === 'forge') {
-        const forge = forgeUrl.trim() ? { provider: 'gitlab' as const, url: forgeUrl.trim(), tokenService: forgeService.trim() } : null;
+        const forge = forgeUrl.trim() ? { provider: forgeProvider, url: forgeUrl.trim(), tokenService: forgeService.trim() } : null;
         outcome = await api.saveForgeSettings(forge, confirmedHost);
       } else {
         const vault = vaultUrl.trim() ? { url: vaultUrl.trim(), tokenService: vaultService.trim() } : null;
@@ -48,7 +56,7 @@
       }
       if (outcome.confirmHost) {
         const service = (what === 'forge' ? forgeService : vaultService).trim()
-          || (what === 'forge' ? settings?.defaultForgeTokenService : settings?.defaultVaultTokenService) || '';
+          || (what === 'forge' ? forgeDefaultService : settings?.defaultVaultTokenService) || '';
         pending = { what, host: outcome.confirmHost, service };
       } else if (outcome.settings) {
         pending = null;
@@ -121,19 +129,26 @@
         </p>
         <label>
           <span>Fournisseur</span>
-          <select class="field" disabled><option>GitLab</option></select>
+          <select class="field" bind:value={forgeProvider}>
+            {#each settings.providers as p (p.id)}<option value={p.id}>{FORGE_NAMES[p.id]}</option>{/each}
+          </select>
         </label>
         <label>
           <span>URL de l'instance</span>
-          <input class="field mono" bind:value={forgeUrl} placeholder="https://gitlab.example.com" spellcheck="false" autocomplete="off" />
+          <input class="field mono" bind:value={forgeUrl} placeholder={forgeProvider === 'github' ? 'https://github.com' : 'https://gitlab.example.com'} spellcheck="false" autocomplete="off" />
         </label>
         <label>
           <span>Service du trousseau du jeton</span>
-          <input class="field mono" bind:value={forgeService} placeholder={settings.defaultForgeTokenService} spellcheck="false" autocomplete="off" />
+          <input class="field mono" bind:value={forgeService} placeholder={forgeDefaultService} spellcheck="false" autocomplete="off" />
         </label>
         <p class="muted small">
           Le jeton se saisit dans un vrai terminal :
-          <code>security add-generic-password -s {forgeService.trim() || settings.defaultForgeTokenService} -a "$USER" -w</code>
+          <code>security add-generic-password -s {forgeService.trim() || forgeDefaultService} -a "$USER" -w</code>
+          {#if forgeProvider === 'github'}
+            <br />Un jeton fine-grained limité aux dépôts suivis suffit. Lecture et écriture : Contents
+            (merge, rebase), Pull requests, Issues, Actions (relancer des jobs) ; lecture : Commit
+            statuses. Sur github.com, il part vers <code>api.github.com</code>.
+          {/if}
         </p>
         <footer>
           <button class="btn primary" disabled={!forgeChanged || busy} onclick={() => void save('forge')}>Enregistrer</button>

@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use robiade_core::settings::{
-    ForgeProvider, ForgeSettings, InstanceUrl, KeychainService, SettingsError, VaultSettings, DEFAULT_FORGE_TOKEN_SERVICE,
+    ForgeProvider, ForgeSettings, InstanceUrl, KeychainService, SettingsError, VaultSettings,
     DEFAULT_VAULT_TOKEN_SERVICE,
 };
 use rusqlite::{params, OptionalExtension};
@@ -93,10 +93,11 @@ impl SqliteSettings {
         let (Some(provider), Some(url)) = (self.get(FORGE_PROVIDER)?, self.get(FORGE_URL)?) else { return Ok(None) };
         let service = self.get(FORGE_TOKEN_SERVICE)?.unwrap_or_default();
         Ok((|| {
+            let provider = ForgeProvider::parse(&provider).ok()?;
             Some(ForgeSettings {
-                provider: ForgeProvider::parse(&provider).ok()?,
+                provider,
                 url: InstanceUrl::parse(&url).ok()?,
-                token_service: KeychainService::parse(&service, DEFAULT_FORGE_TOKEN_SERVICE).ok()?,
+                token_service: KeychainService::parse(&service, provider.default_token_service()).ok()?,
             })
         })())
     }
@@ -130,6 +131,7 @@ impl SqliteSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use robiade_core::settings::DEFAULT_FORGE_TOKEN_SERVICE;
 
     fn db(name: &str) -> std::path::PathBuf {
         let path = std::env::temp_dir().join(format!("robiade-settings-{name}-{}.db", std::process::id()));
