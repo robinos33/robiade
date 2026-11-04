@@ -7,6 +7,7 @@
   import ContainerLogs from '../components/ContainerLogs.svelte';
   import ResizeHandle from '../components/ResizeHandle.svelte';
   import WorktreeCreateDialog from '../components/WorktreeCreateDialog.svelte';
+  import WorktreeBranch from '../components/WorktreeBranch.svelte';
   import WorktreeRemoveDialog from '../components/WorktreeRemoveDialog.svelte';
 
   /** Largeur des logs choisie à la poignée ; `null` garde celle de la feuille de style. */
@@ -123,18 +124,19 @@
       {#if app.worktrees.length > 0}
         <div class="block">
           <h2 class="section-title">Worktrees</h2>
-          <ul class="list">
+          <!-- Une grille partagée par toutes les lignes (`subgrid`) : la branche est une colonne, alignée d'une ligne à l'autre. -->
+          <ul class="list wt-list" class:global={app.project === null}>
             {#each app.worktrees as w (w.path)}
               {@const live = liveIn(w.path)}
-              <li class="row" class:active={w.path === app.worktree}>
-                <div class="main" title={w.path}>
-                  <span class="dot" class:running={live.length > 0} title="{live.length} agent(s) actif(s)"></span>
-                  <span class="name ellipsis">{w.name}</span>
-                  {#if app.project === null}<span class="tag">{w.projectName}</span>{/if}
-                  <span class="mono muted ellipsis branch">{w.git ? (w.git.branch ?? 'tête détachée') : ''}</span>
+              <li class="row wt-row" class:active={w.path === app.worktree}>
+                <span class="dot" class:running={live.length > 0} title="{live.length} agent(s) actif(s)"></span>
+                <span class="name ellipsis" title={w.path}>{w.name}</span>
+                <WorktreeBranch git={w.git} />
+                {#if app.project === null}<span class="tag project ellipsis">{w.projectName}</span>{/if}
+                <span class="state">
                   {#if w.git?.locked}<span class="tag">verrouillé</span>{/if}
-                  <span class="muted status ellipsis" class:dirty={!!w.git?.changes}>{changesLabel(w)}</span>
-                </div>
+                  <span class="muted" class:dirty={!!w.git?.changes}>{changesLabel(w)}</span>
+                </span>
                 <div class="actions">
                   <button class="btn small" onclick={() => void app.spawn(w.path)}>Agent</button>
                   <button class="btn small" onclick={() => (removing = w)}>Supprimer…</button>
@@ -238,7 +240,17 @@
     border: 0; background: none; text-align: left;
   }
   .name { font-weight: 550; flex: none; max-width: 40%; }
-  .ports, .branch { flex: none; max-width: 30%; }
+  .ports { flex: none; max-width: 30%; }
+  /* Point · nom · branche · [projet] · état · actions ; les colonnes `auto` prennent la largeur de la plus large ligne. */
+  .wt-list { display: grid; grid-template-columns: 8px minmax(0, 1fr) minmax(0, 1fr) auto auto; }
+  .wt-list.global { grid-template-columns: 8px minmax(0, 1fr) minmax(0, 1fr) auto auto auto; }
+  .wt-row {
+    grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center;
+    column-gap: 12px; height: 36px; padding-left: 10px;
+  }
+  .wt-row .name { max-width: none; }
+  .project { max-width: 160px; }
+  .state { display: flex; align-items: center; justify-content: flex-end; gap: 8px; font-size: 12px; white-space: nowrap; }
   .dirty { color: var(--attention); }
   .status { flex: 1; min-width: 0; text-align: right; font-size: 12px; }
   .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
