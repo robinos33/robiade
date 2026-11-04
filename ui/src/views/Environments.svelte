@@ -7,7 +7,9 @@
   import ContainerLogs from '../components/ContainerLogs.svelte';
   import ResizeHandle from '../components/ResizeHandle.svelte';
   import WorktreeCreateDialog from '../components/WorktreeCreateDialog.svelte';
+  import WorktreeBranch from '../components/WorktreeBranch.svelte';
   import WorktreeRemoveDialog from '../components/WorktreeRemoveDialog.svelte';
+  import WorktreesCloseDialog from '../components/WorktreesCloseDialog.svelte';
 
   /** Largeur des logs choisie à la poignée ; `null` garde celle de la feuille de style. */
   let logsWidth = $state<number | null>(null);
@@ -25,6 +27,11 @@
   $effect(() => void untrack(() => app.refreshWorktrees()));
 
   const liveIn = (path: string) => app.liveAgents.filter((a) => a.worktreePath === path);
+
+  /** Ce que `remove_worktree(path, 0)` accepterait : arbre propre, sans agent actif, non verrouillé. */
+  const clean = $derived(app.worktrees.filter((w) => w.git?.changes === 0 && !w.git.locked && liveIn(w.path).length === 0));
+  /** Figée au clic : la liste relue pendant la fermeture ne doit pas changer celle du dialogue. */
+  let closing = $state.raw<Worktree[] | null>(null);
 
   function changesLabel(w: Worktree): string {
     const n = w.git?.changes;
@@ -122,19 +129,25 @@
     <div class="scroll">
       {#if app.worktrees.length > 0}
         <div class="block">
-          <h2 class="section-title">Worktrees</h2>
-          <ul class="list">
+          <div class="block-head">
+            <h2 class="section-title">Worktrees</h2>
+            <button class="btn small" disabled={clean.length === 0} onclick={() => (closing = clean)}>
+              Fermer les propres ({clean.length})
+            </button>
+          </div>
+          <!-- Une grille partagée par toutes les lignes (`subgrid`) : la branche est une colonne, alignée d'une ligne à l'autre. -->
+          <ul class="list wt-list" class:global={app.project === null}>
             {#each app.worktrees as w (w.path)}
               {@const live = liveIn(w.path)}
-              <li class="row" class:active={w.path === app.worktree}>
-                <div class="main" title={w.path}>
-                  <span class="dot" class:running={live.length > 0} title="{live.length} agent(s) actif(s)"></span>
-                  <span class="name ellipsis">{w.name}</span>
-                  {#if app.project === null}<span class="tag">{w.projectName}</span>{/if}
-                  <span class="mono muted ellipsis branch">{w.git ? (w.git.branch ?? 'tête détachée') : ''}</span>
+              <li class="row wt-row" class:active={w.path === app.worktree}>
+                <span class="dot" class:running={live.length > 0} title="{live.length} agent(s) actif(s)"></span>
+                <span class="name ellipsis" title={w.path}>{w.name}</span>
+                <WorktreeBranch git={w.git} />
+                {#if app.project === null}<span class="tag project ellipsis">{w.projectName}</span>{/if}
+                <span class="state">
                   {#if w.git?.locked}<span class="tag">verrouillé</span>{/if}
-                  <span class="muted status ellipsis" class:dirty={!!w.git?.changes}>{changesLabel(w)}</span>
-                </div>
+                  <span class="muted" class:dirty={!!w.git?.changes}>{changesLabel(w)}</span>
+                </span>
                 <div class="actions">
                   <button class="btn small" onclick={() => void app.spawn(w.path)}>Agent</button>
                   <button class="btn small" onclick={() => (removing = w)}>Supprimer…</button>
@@ -222,6 +235,7 @@
   <WorktreeCreateDialog repository={app.project} onclose={() => (creating = false)} />
 {/if}
 {#if removing}<WorktreeRemoveDialog worktree={removing} onclose={() => (removing = null)} />{/if}
+{#if closing}<WorktreesCloseDialog worktrees={closing} onclose={() => (closing = null)} />{/if}
 
 <style>
   .page { display: flex; flex-direction: column; min-height: 0; flex: 1; }
@@ -229,6 +243,8 @@
   .body.split { grid-template-columns: minmax(420px, 1fr) var(--logs-w, minmax(420px, 1.2fr)); }
   .scroll { overflow-y: auto; padding: 22px 24px 40px; display: flex; flex-direction: column; gap: 24px; max-width: 1100px; }
   .section-title { display: flex; align-items: baseline; gap: 10px; }
+  .block-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+  .block-head .section-title { margin: 0; }
   .origin { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--ink-3); }
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
   .row { display: flex; align-items: center; gap: 8px; border-radius: var(--radius-sm); border-bottom: 1px solid var(--line); }
@@ -238,7 +254,17 @@
     border: 0; background: none; text-align: left;
   }
   .name { font-weight: 550; flex: none; max-width: 40%; }
-  .ports, .branch { flex: none; max-width: 30%; }
+  .ports { flex: none; max-width: 30%; }
+  /* Point · nom · branche · [projet] · état · actions ; les colonnes `auto` prennent la largeur de la plus large ligne. */
+  .wt-list { display: grid; grid-template-columns: 8px minmax(0, 1fr) minmax(0, 1fr) auto auto; }
+  .wt-list.global { grid-template-columns: 8px minmax(0, 1fr) minmax(0, 1fr) auto auto auto; }
+  .wt-row {
+    grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center;
+    column-gap: 12px; height: 36px; padding-left: 10px;
+  }
+  .wt-row .name { max-width: none; }
+  .project { max-width: 160px; }
+  .state { display: flex; align-items: center; justify-content: flex-end; gap: 8px; font-size: 12px; white-space: nowrap; }
   .dirty { color: var(--attention); }
   .status { flex: 1; min-width: 0; text-align: right; font-size: 12px; }
   .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
