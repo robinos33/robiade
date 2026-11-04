@@ -40,6 +40,7 @@ Tauri 2, cœur Rust en architecture hexagonale (`crates/core` sans aucune I/O, `
 pour le reste), interface en Svelte 5. macOS arm64.
 
 ```sh
+git clone https://github.com/robinos33/robiade.git && cd robiade
 npm install && npm --prefix ui install
 scripts/install.sh # construit et installe /Applications/Robiade.app
 npm run dev        # application en mode développement, données à part (dossier dev/)
@@ -49,8 +50,8 @@ ui/demo/screens.sh # régénère les captures (données de démo, serveur Vite l
 
 L'application installée et un `npm run dev` peuvent tourner en même temps : le second range sa
 base, son socket de hooks et son index dans un sous-dossier `dev/`. Modifier le dépôt ne touche
-donc plus l'application de tous les jours ; une nouvelle version se prend en relançant
-`scripts/install.sh`, puis l'application.
+donc plus l'application de tous les jours. L'application installée se met à jour seule depuis
+`origin/main` du clone, au lancement ([détails](specs/socle/mise-a-jour.md)).
 
 La spécification est dans [specs/](specs/README.md), un fichier par feature, avec ses décisions ;
 l'index, le périmètre et les jalons sont dans [specs/README.md](specs/README.md).
