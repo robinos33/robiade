@@ -1,4 +1,4 @@
-//! MR et issues sur l'API REST de GitLab, instance configurée uniquement, avec le token du trousseau.
+//! MR et issues sur l'API REST de GitLab, instance réglée uniquement, avec le token du trousseau.
 //! Les écritures passent toutes par `execute`, `execute_on_issue` et `create_issue`, avec une action
 //! déjà validée par le domaine.
 
@@ -8,8 +8,8 @@ use std::time::Duration;
 use rayon::prelude::*;
 use robiade_core::contributions::Contribution;
 use robiade_core::forge::{
-    is_project_path, is_username, readable, Approvals, Discussion, Forge, ForgeError, Issue, IssueRef, IssueState, MergeRequest,
-    MrRef, MrState, Note, PipelineStatus, GITLAB_HOST,
+    is_project_path, is_username, readable, Approvals, Discussion, Forge, ForgeError, ForgeUrls, Issue, IssueRef, IssueState,
+    MergeRequest, MrRef, MrState, Note, PipelineStatus,
 };
 use robiade_core::issue_actions::{IssuePlanned, NewIssue};
 use robiade_core::merge_actions::Planned;
@@ -18,6 +18,7 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use serde_json::json;
 
+use crate::gitlab_urls::GitLabUrls;
 use crate::keychain;
 
 /// Service du trousseau qui porte le token (le même que mes scripts).
@@ -32,13 +33,16 @@ const MAX_DISCUSSION_PAGES: usize = 10;
 pub struct GitLab {
     http: ureq::Agent,
     api: String,
+    /// Forme des URL de l'instance : une MR ou une issue d'un autre hôte est ignorée.
+    urls: GitLabUrls,
     /// Lu au premier appel, oublié sur un 401 pour relire un token renouvelé.
     token: Mutex<Option<SecretString>>,
     username: Mutex<Option<String>>,
 }
 
-impl Default for GitLab {
-    fn default() -> Self {
+impl GitLab {
+    /// `authority` : `hôte[:port]` de l'instance, seul hôte vers lequel le token part.
+    pub fn new(authority: &str) -> Self {
         let http = ureq::Agent::config_builder()
             .https_only(true)
             // Aucune redirection : le token, porté par un en-tête maison, la suivrait vers un autre hôte.
@@ -47,11 +51,15 @@ impl Default for GitLab {
             .user_agent("robiade")
             .build()
             .into();
-        Self { http, api: format!("https://{GITLAB_HOST}/api/v4"), token: Mutex::default(), username: Mutex::default() }
+        Self {
+            http,
+            api: format!("https://{authority}/api/v4"),
+            urls: GitLabUrls::new(authority),
+            token: Mutex::default(),
+            username: Mutex::default(),
+        }
     }
-}
 
-impl GitLab {
     fn token(&self) -> Result<SecretString, ForgeError> {
         let mut cached = self.token.lock().unwrap_or_else(|e| e.into_inner());
         if cached.is_none() {
@@ -227,7 +235,7 @@ impl Forge for GitLab {
         });
         let raw = self.request(false, &format!("/projects/{}/issues", new.project.replace('/', "%2F")), body)?;
         let created: ApiIssue = serde_json::from_str(&raw).map_err(|e| ForgeError::Api(e.to_string()))?;
-        IssueRef::from_url(&created.web_url).ok_or_else(|| ForgeError::Api("issue hors de l'instance configurée".into()))
+        self.urls.issue(&created.web_url).ok_or_else(|| ForgeError::Api("issue hors de l'instance configurée".into()))
     }
 
     fn my_merge_requests(&self) -> Result<Vec<MergeRequest>, ForgeError> {
@@ -236,9 +244,9 @@ impl Forge for GitLab {
         let mut mrs: Vec<MergeRequest> = listed
             .into_par_iter()
             .filter_map(|m| {
-                let r = MrRef::from_url(&m.web_url)?;
+                let r = self.urls.merge_request(&m.web_url)?;
                 let detailed = self.single(&r.project, r.iid).ok();
-                let mut mr = to_domain(detailed.unwrap_or(m))?;
+                let mut mr = to_domain(detailed.unwrap_or(m), &self.urls)?;
                 mr.approvals = self.approvals(&r).ok();
                 Some(mr)
             })
@@ -251,14 +259,14 @@ impl Forge for GitLab {
         let me = self.username()?;
         let listed =
             self.list(&format!("scope=all&wip=no&reviewer_username={me}&not%5Bapproved_by_usernames%5D%5B%5D={me}"))?;
-        let mut mrs: Vec<MergeRequest> = listed.into_iter().filter_map(to_domain).filter(|m| m.author != me).collect();
+        let mut mrs: Vec<MergeRequest> = listed.into_iter().filter_map(|m| to_domain(m, &self.urls)).filter(|m| m.author != me).collect();
         mrs.sort_by_key(|m| std::cmp::Reverse(m.updated_at));
         Ok(mrs)
     }
 
     fn merge_request(&self, mr: &MrRef) -> Result<MergeRequest, ForgeError> {
         let found = self.single(&mr.project, mr.iid)?;
-        to_domain(found).ok_or_else(|| ForgeError::Api("MR hors de l'instance configurée".into()))
+        to_domain(found, &self.urls).ok_or_else(|| ForgeError::Api("MR hors de l'instance configurée".into()))
     }
 
     fn approvals(&self, mr: &MrRef) -> Result<Approvals, ForgeError> {
@@ -289,7 +297,7 @@ impl Forge for GitLab {
     }
 
     fn my_issues(&self) -> Result<Vec<Issue>, ForgeError> {
-        Ok(sorted_issues(self.get(&format!("/issues?scope=assigned_to_me&state=opened&per_page={PER_PAGE}"))?))
+        Ok(sorted_issues(self.get(&format!("/issues?scope=assigned_to_me&state=opened&per_page={PER_PAGE}"))?, &self.urls))
     }
 
     fn issue(&self, issue: &IssueRef) -> Result<Issue, ForgeError> {
@@ -298,7 +306,7 @@ impl Forge for GitLab {
         }
         let path = format!("/projects/{}/issues/{}", issue.project.replace('/', "%2F"), issue.iid);
         let found: ApiIssue = self.get(&path)?;
-        issue_to_domain(found).ok_or_else(|| ForgeError::Api("issue hors de l'instance configurée".into()))
+        issue_to_domain(found, &self.urls).ok_or_else(|| ForgeError::Api("issue hors de l'instance configurée".into()))
     }
 
     fn my_contributions(&self, from: Millis, to: Millis) -> Result<Vec<Contribution>, ForgeError> {
@@ -329,12 +337,12 @@ impl Forge for GitLab {
             return Err(ForgeError::NotFound);
         }
         let path = format!("/projects/{}/issues?state=opened&per_page={PER_PAGE}", project.replace('/', "%2F"));
-        Ok(sorted_issues(self.get(&path)?))
+        Ok(sorted_issues(self.get(&path)?, &self.urls))
     }
 }
 
-fn sorted_issues(listed: Vec<ApiIssue>) -> Vec<Issue> {
-    let mut issues: Vec<Issue> = listed.into_iter().filter_map(issue_to_domain).collect();
+fn sorted_issues(listed: Vec<ApiIssue>, urls: &GitLabUrls) -> Vec<Issue> {
+    let mut issues: Vec<Issue> = listed.into_iter().filter_map(|i| issue_to_domain(i, urls)).collect();
     issues.sort_by_key(|i| std::cmp::Reverse(i.updated_at));
     issues
 }
@@ -357,15 +365,15 @@ struct ApiIssue {
     merge_requests_count: u32,
 }
 
-/// `None` pour une issue hors de l'instance configurée ou dans un état inconnu.
-fn issue_to_domain(i: ApiIssue) -> Option<Issue> {
+/// `None` pour une issue hors de l'instance ou dans un état inconnu.
+fn issue_to_domain(i: ApiIssue, urls: &GitLabUrls) -> Option<Issue> {
     let state = match i.state.as_str() {
         "opened" => IssueState::Opened,
         "closed" => IssueState::Closed,
         _ => return None,
     };
     Some(Issue {
-        issue: IssueRef::from_url(&i.web_url)?,
+        issue: urls.issue(&i.web_url)?,
         title: i.title,
         state,
         description: i.description.unwrap_or_default(),
@@ -556,8 +564,8 @@ fn resolved() -> bool {
     true
 }
 
-/// `None` pour une MR dont l'URL n'est pas sur l'instance configurée ou dont l'état est inconnu.
-fn to_domain(m: ApiMergeRequest) -> Option<MergeRequest> {
+/// `None` pour une MR dont l'URL n'est pas sur l'instance ou dont l'état est inconnu.
+fn to_domain(m: ApiMergeRequest, urls: &GitLabUrls) -> Option<MergeRequest> {
     let state = match (m.state.as_str(), m.draft) {
         ("merged", _) => MrState::Merged,
         ("closed", _) => MrState::Closed,
@@ -566,7 +574,7 @@ fn to_domain(m: ApiMergeRequest) -> Option<MergeRequest> {
         _ => return None,
     };
     Some(MergeRequest {
-        mr: MrRef::from_url(&m.web_url)?,
+        mr: urls.merge_request(&m.web_url)?,
         title: m.title,
         description: m.description.unwrap_or_default(),
         author: m.author.username,
@@ -590,8 +598,12 @@ mod tests {
     use super::*;
     use robiade_core::contributions::ContributionKind;
 
+    fn instance() -> GitLabUrls {
+        GitLabUrls::new("gitlab.example.com")
+    }
+
     fn parse(json: &str) -> Option<MergeRequest> {
-        to_domain(serde_json::from_str(json).unwrap())
+        to_domain(serde_json::from_str(json).unwrap(), &instance())
     }
 
     #[test]
@@ -621,7 +633,7 @@ mod tests {
                 "due_date":"2026-11-02","merge_requests_count":1}"#,
         )
         .unwrap();
-        let issue = issue_to_domain(issue).unwrap();
+        let issue = issue_to_domain(issue, &instance()).unwrap();
         assert_eq!(issue.issue, IssueRef { project: "shop/boutique".into(), iid: 5021 });
         assert_eq!((issue.assignees, issue.due_date.as_deref()), (vec!["robinos33".to_owned()], Some("2026-11-02")));
         assert_eq!(issue.state, IssueState::Closed);
@@ -679,7 +691,7 @@ mod tests {
     }
 
     #[test]
-    fn ignores_merge_requests_outside_the_configured_instance() {
+    fn ignores_merge_requests_outside_the_instance() {
         let elsewhere = r#"{"title":"x","state":"merged","source_branch":"a","target_branch":"b",
             "web_url":"https://gitlab.com/a/b/-/merge_requests/1","updated_at":"2026-10-26T13:43:40Z",
             "author":{"username":"x"}}"#;

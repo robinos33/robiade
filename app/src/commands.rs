@@ -142,7 +142,7 @@ pub async fn stats(
     let mut agents = state.agents.activity_since(at - window_days * 86_400_000);
     agents.retain(|a| in_scope(a.project_path()));
     Ok(OverviewDto::new(
-        stats::overview(&summaries, project_of, at, offset_ms, window_days),
+        stats::overview(&summaries, project_of, &*state.forge_urls, at, offset_ms, window_days),
         stats::agents_overview(&agents, at - window_days * 86_400_000, at),
     ))
 }
@@ -169,7 +169,7 @@ pub async fn gitlab_activity(
 
 #[tauri::command]
 pub fn list_tasks(state: State<AppState>) -> CmdResult<Vec<TaskDto>> {
-    Ok(state.tasks.all().map_err(|e| e.to_string())?.iter().map(TaskDto::from).collect())
+    Ok(state.tasks.all().map_err(|e| e.to_string())?.iter().map(|t| TaskDto::new(t, &*state.forge_urls)).collect())
 }
 
 #[tauri::command]
@@ -183,7 +183,7 @@ pub fn create_task(
     let mut task = Task::create(id, &title, project_path, now()).map_err(|e| e.to_string())?;
     task.schedule(due_on.as_deref().map(DueDate::parse).transpose().map_err(|e| e.to_string())?);
     state.tasks.save(&task).map_err(|e| e.to_string())?;
-    Ok((&task).into())
+    Ok(TaskDto::new(&task, &*state.forge_urls))
 }
 
 #[tauri::command]
@@ -205,7 +205,7 @@ pub fn update_task(
         task.move_to(status.into(), now());
     }
     state.tasks.save(&task).map_err(|e| e.to_string())?;
-    Ok((&task).into())
+    Ok(TaskDto::new(&task, &*state.forge_urls))
 }
 
 /// Pose ou retire (`None`) l'échéance : une commande à part, `update_task` ne sachant pas distinguer
@@ -215,7 +215,7 @@ pub fn schedule_task(state: State<AppState>, id: String, due_on: Option<String>)
     let mut task = state.tasks.get(&TaskId(id)).map_err(|e| e.to_string())?;
     task.schedule(due_on.as_deref().map(DueDate::parse).transpose().map_err(|e| e.to_string())?);
     state.tasks.save(&task).map_err(|e| e.to_string())?;
-    Ok((&task).into())
+    Ok(TaskDto::new(&task, &*state.forge_urls))
 }
 
 /// Lie ou délie (`None`) une issue d'équipe. `reference` est saisie à la main : URL, `projet#12`, ou
@@ -227,7 +227,7 @@ pub fn link_task_issue(state: State<AppState>, id: String, reference: Option<Str
         None => None,
         Some(raw) => {
             let gitlab_project = task.project_path().and_then(|p| state.workspaces.resolve(p).gitlab_project);
-            let issue = IssueRef::parse(raw, gitlab_project.as_deref());
+            let issue = IssueRef::parse(raw, gitlab_project.as_deref(), &*state.forge_urls);
             Some(issue.ok_or_else(|| match gitlab_project {
                 Some(_) => format!("issue non reconnue : {raw} (attendu #12, groupe/projet#12 ou son URL)"),
                 None => format!("issue non reconnue : {raw} (attendu groupe/projet#12 ou son URL)"),
@@ -236,7 +236,7 @@ pub fn link_task_issue(state: State<AppState>, id: String, reference: Option<Str
     };
     task.link_issue(issue);
     state.tasks.save(&task).map_err(|e| e.to_string())?;
-    Ok((&task).into())
+    Ok(TaskDto::new(&task, &*state.forge_urls))
 }
 
 /// Lie ou délie (`None`) une session Claude Code.
@@ -245,7 +245,7 @@ pub fn link_task_session(state: State<AppState>, id: String, session_id: Option<
     let mut task = state.tasks.get(&TaskId(id)).map_err(|e| e.to_string())?;
     task.link_session(session_id.as_deref().map(SessionId::parse).transpose().map_err(|e| e.to_string())?);
     state.tasks.save(&task).map_err(|e| e.to_string())?;
-    Ok((&task).into())
+    Ok(TaskDto::new(&task, &*state.forge_urls))
 }
 
 #[tauri::command]
@@ -1166,7 +1166,7 @@ pub async fn merge_request_states(
     let known: Vec<(String, MrRef)> = urls
         .into_iter()
         .take(MAX_OUTCOME_LOOKUPS)
-        .filter_map(|url| MrRef::from_url(&url).map(|r| (url, r)))
+        .filter_map(|url| state.forge_urls.merge_request(&url).map(|r| (url, r)))
         .collect();
     let refs: Vec<MrRef> = known.iter().map(|(_, r)| r.clone()).collect();
     let states = state.mr_states.clone();

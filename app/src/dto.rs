@@ -8,7 +8,7 @@ use robiade_core::databases::{Connection, Engine, Part, Probe, Source, Stage, Ta
 use robiade_core::db_browse::{Cell, Column, Cursor, Filter, FilterOp, Page, PageRequest, Relation, RelationKind, Sort};
 use robiade_core::db_console::{HistoryEntry, Outcome};
 use robiade_core::forge::{
-    Discussion, Issue, IssueRef, IssueState, MergeRequest, MrOutcomes, MrRef, MrState, PipelineStatus,
+    Discussion, ForgeUrls, Issue, IssueRef, IssueState, MergeRequest, MrOutcomes, MrRef, MrState, PipelineStatus,
 };
 use robiade_core::issue_actions::{IssueAction, NewIssue};
 use robiade_core::project::{self, Workspace};
@@ -538,8 +538,9 @@ pub struct TaskDto {
     pub done_at: Option<i64>,
 }
 
-impl From<&Task> for TaskDto {
-    fn from(t: &Task) -> Self {
+impl TaskDto {
+    /// `urls` : adresse de l'issue liée, sur la forge réglée.
+    pub fn new(t: &Task, urls: &dyn ForgeUrls) -> Self {
         Self {
             id: t.id().0.clone(),
             title: t.title().to_owned(),
@@ -548,7 +549,7 @@ impl From<&Task> for TaskDto {
             status: t.status().into(),
             due_on: t.due_on().map(|d| d.as_str().to_owned()),
             issue: t.issue().map(|i| IssueRefDto { project: i.project.clone(), iid: i.iid }),
-            issue_url: t.issue().map(IssueRef::web_url),
+            issue_url: t.issue().and_then(|i| urls.issue_url(i)),
             session_id: t.session().map(|s| s.as_str().to_owned()),
             created_at: t.created_at(),
             done_at: t.done_at(),

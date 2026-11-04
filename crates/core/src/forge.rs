@@ -1,13 +1,10 @@
-//! Forge : MR et issues GitLab, lues sur l'instance configurée. Couche anti-corruption : le domaine ne
+//! Forge : MR et issues GitLab, lues sur l'instance réglée. Couche anti-corruption : le domaine ne
 //! garde que ce qu'il affiche ou ce sur quoi il raisonne, GitLab reste la source.
 
 use crate::contributions::Contribution;
 use crate::issue_actions::{IssuePlanned, NewIssue};
 use crate::merge_actions::Planned;
 use crate::Millis;
-
-/// Seule instance GitLab connue de Robiade : tout autre hôte est ignoré.
-pub const GITLAB_HOST: &str = "gitlab.example.com";
 
 /// Une MR désignée sans ambiguïté : chemin complet du projet et numéro dans ce projet.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -21,30 +18,9 @@ impl MrRef {
     pub fn new(project: &str, iid: u64) -> Option<Self> {
         is_project_path(project).then(|| Self { project: project.to_owned(), iid })
     }
-
-    /// `https://gitlab.example.com/<projet>/-/merge_requests/<iid>`, tel que Claude Code
-    /// l'écrit dans le `pr-link` d'un transcript. Tout autre hôte ou forme renvoie `None`.
-    pub fn from_url(url: &str) -> Option<Self> {
-        let (project, iid) = parse_item_url(url, &["merge_requests"])?;
-        Some(Self { project, iid })
-    }
 }
 
-/// `https://<instance>/<projet>/-/<genre>/<iid>[/…]` → projet et numéro, pour l'un des genres donnés.
-fn parse_item_url(url: &str, kinds: &[&str]) -> Option<(String, u64)> {
-    let rest = url.strip_prefix("https://")?.strip_prefix(GITLAB_HOST)?.strip_prefix('/')?;
-    let (project, tail) = rest.split_once("/-/")?;
-    let (kind, tail) = tail.split_once('/')?;
-    let iid = tail.split(['/', '?', '#']).next()?;
-    if !kinds.contains(&kind) || !is_project_path(project) || iid.is_empty() || !iid.bytes().all(|b| b.is_ascii_digit())
-    {
-        return None;
-    }
-    Some((project.to_owned(), iid.parse().ok()?))
-}
-
-/// Une issue désignée sans ambiguïté. GitLab 19 la publie en `/-/work_items/<iid>`, les liens plus
-/// anciens en `/-/issues/<iid>` : les deux désignent la même issue.
+/// Une issue désignée sans ambiguïté.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct IssueRef {
     pub project: String,
@@ -57,28 +33,50 @@ impl IssueRef {
         is_project_path(project).then(|| Self { project: project.to_owned(), iid })
     }
 
-    pub fn from_url(url: &str) -> Option<Self> {
-        let (project, iid) = parse_item_url(url, &["issues", "work_items"])?;
-        Some(Self { project, iid })
-    }
-
-    /// Référence saisie à la main, comme GitLab l'écrit : son URL, `groupe/projet#12`, ou `#12`
-    /// dans `default_project` (le projet GitLab du contexte, s'il y en a un).
-    pub fn parse(raw: &str, default_project: Option<&str>) -> Option<Self> {
+    /// Référence saisie à la main, comme la forge l'écrit : son URL, `groupe/projet#12`, ou `#12`
+    /// dans `default_project` (le projet de forge du contexte, s'il y en a un).
+    pub fn parse(raw: &str, default_project: Option<&str>, urls: &dyn ForgeUrls) -> Option<Self> {
         let raw = raw.trim();
         if raw.starts_with("https://") {
-            return Self::from_url(raw);
+            return urls.issue(raw);
         }
         let (project, iid) = raw.split_once('#')?;
         let project = if project.is_empty() { default_project? } else { project };
-        if !is_project_path(project) || iid.is_empty() || !iid.bytes().all(|b| b.is_ascii_digit()) {
+        if iid.is_empty() || !iid.bytes().all(|b| b.is_ascii_digit()) {
             return None;
         }
-        Some(Self { project: project.to_owned(), iid: iid.parse().ok()? })
+        Self::new(project, iid.parse().ok()?)
     }
+}
 
-    pub fn web_url(&self) -> String {
-        format!("https://{GITLAB_HOST}/{}/-/issues/{}", self.project, self.iid)
+/// Forme des adresses de la forge : URL web d'une MR ou d'une issue, remote Git. Le cœur ne la
+/// connaît pas ; l'adaptateur de la forge réglée la porte. Pur : aucun appel réseau.
+pub trait ForgeUrls: Send + Sync {
+    /// URL web d'une MR de l'instance ; `None` pour tout autre hôte ou forme.
+    fn merge_request(&self, url: &str) -> Option<MrRef>;
+    /// URL web d'une issue de l'instance ; `None` pour tout autre hôte ou forme.
+    fn issue(&self, url: &str) -> Option<IssueRef>;
+    /// URL web d'une issue ; `None` sans forge réglée.
+    fn issue_url(&self, issue: &IssueRef) -> Option<String>;
+    /// Projet d'une URL de remote Git, s'il est sur l'instance.
+    fn project_of_remote(&self, url: &str) -> Option<String>;
+}
+
+/// Aucune forge réglée : aucune adresse n'est reconnue.
+pub struct NoForge;
+
+impl ForgeUrls for NoForge {
+    fn merge_request(&self, _: &str) -> Option<MrRef> {
+        None
+    }
+    fn issue(&self, _: &str) -> Option<IssueRef> {
+        None
+    }
+    fn issue_url(&self, _: &IssueRef) -> Option<String> {
+        None
+    }
+    fn project_of_remote(&self, _: &str) -> Option<String> {
+        None
     }
 }
 
@@ -308,20 +306,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_merge_requests_of_the_configured_instance_are_recognised() {
-        let mr = MrRef::from_url("https://gitlab.example.com/a/b-c/d_e/-/merge_requests/42");
-        assert_eq!(mr, Some(MrRef { project: "a/b-c/d_e".into(), iid: 42 }));
-        let with_tail = MrRef::from_url("https://gitlab.example.com/a/b/-/merge_requests/7/diffs#x");
-        assert_eq!(with_tail.map(|m| m.iid), Some(7));
-        assert_eq!(MrRef::from_url("https://gitlab.com/a/b/-/merge_requests/1"), None);
-        assert_eq!(MrRef::from_url("https://gitlab.example.com.evil.io/a/-/merge_requests/1"), None);
-        assert_eq!(MrRef::from_url("https://gitlab.example.com/a/../b/-/merge_requests/1"), None);
-        assert_eq!(MrRef::from_url("https://gitlab.example.com/a%2Fb/-/merge_requests/1"), None);
-        assert_eq!(MrRef::from_url("https://gitlab.example.com/a/b/-/merge_requests/1x"), None);
-        assert_eq!(MrRef::from_url("https://gitlab.example.com/a/b/-/issues/1"), None);
-    }
-
-    #[test]
     fn a_reference_is_built_only_on_a_project_path() {
         assert_eq!(MrRef::new("a/b-c", 3), Some(MrRef { project: "a/b-c".into(), iid: 3 }));
         assert_eq!(IssueRef::new("a/b", 4), Some(IssueRef { project: "a/b".into(), iid: 4 }));
@@ -331,26 +315,33 @@ mod tests {
         }
     }
 
-    #[test]
-    fn an_issue_is_recognised_under_both_of_its_urls() {
-        let expected = Some(IssueRef { project: "shop/boutique".into(), iid: 5021 });
-        let base = "https://gitlab.example.com/shop/boutique/-";
-        assert_eq!(IssueRef::from_url(&format!("{base}/work_items/5021")), expected);
-        assert_eq!(IssueRef::from_url(&format!("{base}/issues/5021")), expected);
-        assert_eq!(IssueRef::from_url(&format!("{base}/merge_requests/1")), None);
+    /// Reconnaît une seule URL d'issue, pour vérifier que le cœur lui délègue la forme URL.
+    struct OneIssue;
+
+    impl ForgeUrls for OneIssue {
+        fn merge_request(&self, _: &str) -> Option<MrRef> {
+            None
+        }
+        fn issue(&self, url: &str) -> Option<IssueRef> {
+            (url == "https://forge/p/12").then(|| IssueRef { project: "shop/boutique".into(), iid: 12 })
+        }
+        fn issue_url(&self, _: &IssueRef) -> Option<String> {
+            None
+        }
+        fn project_of_remote(&self, _: &str) -> Option<String> {
+            None
+        }
     }
 
     #[test]
-    fn an_issue_is_typed_as_gitlab_writes_it() {
-        let issue = IssueRef { project: "shop/boutique".into(), iid: 12 };
-        assert_eq!(issue.web_url(), "https://gitlab.example.com/shop/boutique/-/issues/12");
-        let expected = Some(issue);
-        assert_eq!(IssueRef::parse(" #12 ", Some("shop/boutique")), expected);
-        assert_eq!(IssueRef::parse("shop/boutique#12", Some("autre/projet")), expected);
-        assert_eq!(IssueRef::parse("shop/boutique#12", None), expected);
-        assert_eq!(IssueRef::parse("https://gitlab.example.com/shop/boutique/-/issues/12", None), expected);
-        for bad in ["#12", "12", "a/../b#1", "a b#1", "a/b#", "a/b#1x", "https://gitlab.com/a/b/-/issues/1"] {
-            assert_eq!(IssueRef::parse(bad, None), None, "{bad}");
+    fn an_issue_is_typed_as_the_forge_writes_it() {
+        let expected = Some(IssueRef { project: "shop/boutique".into(), iid: 12 });
+        assert_eq!(IssueRef::parse(" #12 ", Some("shop/boutique"), &OneIssue), expected);
+        assert_eq!(IssueRef::parse("shop/boutique#12", Some("autre/projet"), &OneIssue), expected);
+        assert_eq!(IssueRef::parse("shop/boutique#12", None, &OneIssue), expected);
+        assert_eq!(IssueRef::parse("https://forge/p/12", None, &OneIssue), expected);
+        for bad in ["#12", "12", "a/../b#1", "a b#1", "a/b#", "a/b#1x", "https://forge/p/13"] {
+            assert_eq!(IssueRef::parse(bad, None, &OneIssue), None, "{bad}");
         }
     }
 

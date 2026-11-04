@@ -17,6 +17,7 @@ use robiade_adapters::claude_code::TranscriptStore;
 use robiade_adapters::docker::DockerEngine;
 use robiade_adapters::git::GitCli;
 use robiade_adapters::gitlab::GitLab;
+use robiade_adapters::gitlab_urls::GitLabUrls;
 use robiade_adapters::sqlite_agents::SqliteAgentJournal;
 use robiade_adapters::engines::Engines;
 use robiade_adapters::sqlite_audit::SqliteAuditLog;
@@ -30,7 +31,7 @@ use robiade_adapters::{backup, hooks, shell_env, task_backup};
 use robiade_core::containers::Containers;
 use robiade_core::databases::{DatabaseProbe, Vault};
 use robiade_core::db_browse::DatabaseBrowser;
-use robiade_core::forge::Forge;
+use robiade_core::forge::{Forge, ForgeUrls};
 use robiade_core::merge_actions::AuditLog;
 use robiade_core::vcs::{WorkingTree, Worktrees};
 use tauri::{Emitter, Manager};
@@ -45,6 +46,7 @@ pub struct AppState {
     pub vcs: Arc<dyn WorkingTree>,
     pub worktrees: Arc<dyn Worktrees>,
     pub forge: Arc<dyn Forge>,
+    pub forge_urls: Arc<dyn ForgeUrls>,
     pub mr_states: Arc<forge::MrStates>,
     pub contributions: Arc<forge::Contributions>,
     pub audit: Arc<dyn AuditLog>,
@@ -60,6 +62,9 @@ pub struct AppState {
     /// Fermeture confirmée dans l'interface malgré des agents au travail.
     pub quit_confirmed: AtomicBool,
 }
+
+/// Instance GitLab, en attendant les réglages.
+const FORGE_HOST: &str = "gitlab.example.com";
 
 pub fn now() -> i64 {
     std::time::SystemTime::now()
@@ -158,7 +163,8 @@ fn main() {
             std::fs::create_dir_all(&data_dir)?;
             let home = app.path().home_dir()?;
 
-            let workspaces = Arc::new(WorkspaceResolver::default());
+            let forge_urls: Arc<dyn ForgeUrls> = Arc::new(GitLabUrls::new(FORGE_HOST));
+            let workspaces = Arc::new(WorkspaceResolver::new(forge_urls.clone()));
             let login = shell_env::resolve();
             let updates = Arc::new(updates::Updates::default());
             let build_path = login.path.clone();
@@ -203,7 +209,7 @@ fn main() {
                 std::thread::sleep(std::time::Duration::from_secs(3600));
             });
 
-            let gitlab: Arc<dyn Forge> = Arc::new(GitLab::default());
+            let gitlab: Arc<dyn Forge> = Arc::new(GitLab::new(FORGE_HOST));
             let docker: Arc<dyn Containers> = Arc::new(DockerEngine::new(home.clone())?);
             app.manage(AppState {
                 transcripts,
@@ -214,6 +220,7 @@ fn main() {
                 vcs: git.clone(),
                 worktrees: git,
                 forge: gitlab.clone(),
+                forge_urls,
                 mr_states: Arc::new(forge::MrStates::new(gitlab.clone())),
                 contributions: Arc::new(forge::Contributions::new(gitlab)),
                 audit: Arc::new(SqliteAuditLog::open(&data_dir.join("robiade.db"))?),

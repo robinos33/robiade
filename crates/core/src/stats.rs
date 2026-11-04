@@ -4,7 +4,7 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::agents::Agent;
-use crate::forge::MrRef;
+use crate::forge::{ForgeUrls, MrRef};
 use crate::history::{SessionSummary, TokenUsage};
 use crate::pricing::{self, Estimate};
 use crate::Millis;
@@ -56,9 +56,11 @@ pub struct Overview {
 
 /// `utc_offset_ms` : décalage du fuseau local, pour que « aujourd'hui » soit le mien.
 /// `project_of` : racine du projet d'un dossier de travail (lire le disque est l'affaire des adapters).
+/// `urls` : reconnaît les MR de la forge parmi les `pr-link` des sessions.
 pub fn overview(
     sessions: &[SessionSummary],
     project_of: impl Fn(&str) -> String,
+    urls: &dyn ForgeUrls,
     now: Millis,
     utc_offset_ms: Millis,
     window_days: i64,
@@ -85,7 +87,7 @@ pub fn overview(
             models.entry(model).or_default().add(usage);
         }
         out.merge_requests += u32::from(s.merge_request_url.is_some());
-        out.merge_request_refs.extend(s.merge_request_url.as_deref().and_then(MrRef::from_url));
+        out.merge_request_refs.extend(s.merge_request_url.as_deref().and_then(|u| urls.merge_request(u)));
         if let Some(d) = days.get_mut(&local_day(s.started_at.max(now - window_days * DAY_MS))) {
             d.sessions += 1;
             d.tokens += s.tokens.total();
@@ -165,6 +167,7 @@ fn median(sorted: &[Millis]) -> Option<Millis> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::forge::NoForge;
 
     fn session(project: &str, at: Millis, output: u64, tools: &[(&str, u32)]) -> SessionSummary {
         SessionSummary {
@@ -193,7 +196,7 @@ mod tests {
             session("b", now - DAY_MS, 7, &[("Bash", 1), ("Read", 4)]),
             session("a", now - 30 * DAY_MS, 100, &[]),
         ];
-        let o = overview(&sessions, str::to_owned, now, 0, 7);
+        let o = overview(&sessions, str::to_owned, &NoForge, now, 0, 7);
         assert_eq!(o.sessions, 2);
         assert_eq!(o.days.len(), 7);
         assert_eq!(o.days.last().unwrap().sessions, 1);
@@ -211,7 +214,7 @@ mod tests {
             vec![("claude-opus-5-5".into(), usage.clone()), ("claude-haiku-4-5-20251001".into(), usage.clone())];
         let mut b = session("b", now, 0, &[]);
         b.tokens_by_model = vec![("claude-opus-5-5".into(), usage.clone()), ("modele-inconnu".into(), usage)];
-        let o = overview(&[a, b], str::to_owned, now, 0, 7);
+        let o = overview(&[a, b], str::to_owned, &NoForge, now, 0, 7);
         assert!((o.cost.dollars - (20.0 + 5.0 + 20.0)).abs() < 1e-9);
         assert_eq!(o.cost.unpriced_tokens, 1_000_000);
         assert_eq!(o.models[0].model, "claude-opus-5-5");
@@ -220,15 +223,34 @@ mod tests {
         assert!((project_a.cost.dollars - 25.0).abs() < 1e-9);
     }
 
+    /// Reconnaît les MR de `https://forge/a/b`, pour vérifier que les `pr-link` lui sont confiés.
+    struct OneForge;
+
+    impl ForgeUrls for OneForge {
+        fn merge_request(&self, url: &str) -> Option<MrRef> {
+            let iid = url.strip_prefix("https://forge/a/b/-/merge_requests/")?;
+            MrRef::new("a/b", iid.parse().ok()?)
+        }
+        fn issue(&self, _: &str) -> Option<crate::forge::IssueRef> {
+            None
+        }
+        fn issue_url(&self, _: &crate::forge::IssueRef) -> Option<String> {
+            None
+        }
+        fn project_of_remote(&self, _: &str) -> Option<String> {
+            None
+        }
+    }
+
     #[test]
     fn collects_each_merge_request_of_the_period_once() {
         let now = 10 * DAY_MS;
-        let url = "https://gitlab.example.com/a/b/-/merge_requests/";
+        let url = "https://forge/a/b/-/merge_requests/";
         let mut sessions = [session("a", now, 0, &[]), session("a", now - 1, 0, &[]), session("a", now - 2, 0, &[])];
         sessions[0].merge_request_url = Some(format!("{url}1"));
         sessions[1].merge_request_url = Some(format!("{url}1"));
         sessions[2].merge_request_url = Some("https://github.com/a/b/pull/2".into());
-        let o = overview(&sessions, str::to_owned, now, 0, 7);
+        let o = overview(&sessions, str::to_owned, &OneForge, now, 0, 7);
         assert_eq!(o.merge_requests, 3);
         assert_eq!(o.merge_request_refs.into_iter().collect::<Vec<_>>(), [MrRef { project: "a/b".into(), iid: 1 }]);
     }
@@ -255,9 +277,9 @@ mod tests {
             .iter()
             .map(|m| SessionSummary { started_at: now - m * 60_000, ..session("a", now, 0, &[]) })
             .collect();
-        assert_eq!(overview(&sessions, str::to_owned, now, 0, 7).median_duration_ms, Some(25 * 60_000));
+        assert_eq!(overview(&sessions, str::to_owned, &NoForge, now, 0, 7).median_duration_ms, Some(25 * 60_000));
         sessions.truncate(3);
-        assert_eq!(overview(&sessions, str::to_owned, now, 0, 7).median_duration_ms, Some(20 * 60_000));
-        assert_eq!(overview(&[], str::to_owned, now, 0, 7).median_duration_ms, None);
+        assert_eq!(overview(&sessions, str::to_owned, &NoForge, now, 0, 7).median_duration_ms, Some(20 * 60_000));
+        assert_eq!(overview(&[], str::to_owned, &NoForge, now, 0, 7).median_duration_ms, None);
     }
 }

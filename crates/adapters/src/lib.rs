@@ -7,6 +7,7 @@ pub mod elasticsearch;
 pub mod engines;
 pub mod git;
 pub mod gitlab;
+pub mod gitlab_urls;
 pub mod hooks;
 pub mod keychain;
 pub mod mariadb;
