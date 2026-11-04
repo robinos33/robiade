@@ -310,6 +310,14 @@ impl Forge for GitLab {
         issue_to_domain(found, &self.urls).ok_or_else(|| ForgeError::Api("issue hors de l'instance configurée".into()))
     }
 
+    fn default_branch(&self, project: &str) -> Result<String, ForgeError> {
+        if !is_project_path(project) {
+            return Err(ForgeError::NotFound);
+        }
+        let found: ApiProject = self.get(&format!("/projects/{}", project.replace('/', "%2F")))?;
+        found.default_branch.ok_or_else(|| ForgeError::Api("projet sans branche par défaut".into()))
+    }
+
     fn my_contributions(&self, from: Millis, to: Millis) -> Result<Vec<Contribution>, ForgeError> {
         // `after` et `before` sont des dates exclusives, dans un fuseau que l'API ne précise pas :
         // un jour de marge de chaque côté, puis le tri exact sur l'horodatage de chaque événement.
@@ -340,6 +348,12 @@ impl Forge for GitLab {
         let path = format!("/projects/{}/issues?state=opened&per_page={PER_PAGE}", project.replace('/', "%2F"));
         Ok(sorted_issues(self.get(&path)?, &self.urls))
     }
+}
+
+#[derive(Deserialize)]
+struct ApiProject {
+    /// Absente d'un projet sans dépôt.
+    default_branch: Option<String>,
 }
 
 fn sorted_issues(listed: Vec<ApiIssue>, urls: &GitLabUrls) -> Vec<Issue> {

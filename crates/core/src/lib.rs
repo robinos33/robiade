@@ -26,6 +26,7 @@ pub mod settings;
 pub mod stats;
 pub mod task_start;
 pub mod tasks;
+pub mod trunks;
 pub mod updates;
 pub mod vcs;
 

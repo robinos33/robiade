@@ -9,6 +9,7 @@ mod dto;
 mod forge;
 mod settings;
 mod task_cli;
+mod trunks;
 mod updates;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -23,7 +24,8 @@ use robiade_adapters::sqlite_audit::SqliteAuditLog;
 use robiade_adapters::sqlite_connections::SqliteConnectionRepository;
 use robiade_adapters::sqlite_console_history::SqliteConsoleHistory;
 use robiade_adapters::sqlite_search::SearchIndex;
-use robiade_adapters::sqlite_settings::SqliteSettings;
+use robiade_adapters::sqlite_settings::{self, SqliteSettings};
+use robiade_adapters::sqlite_trunks::SqliteTrunks;
 use robiade_adapters::workspace::WorkspaceResolver;
 use robiade_adapters::sqlite_tasks::SqliteTaskRepository;
 use robiade_adapters::{backup, hooks, legacy_settings, shell_env, task_backup};
@@ -59,6 +61,7 @@ pub struct AppState {
     pub console_history: SqliteConsoleHistory,
     pub updates: Arc<updates::Updates>,
     pub settings: SqliteSettings,
+    pub trunks: trunks::Trunks,
     /// Réglages lus au démarrage, ceux que la forge et le Vault utilisent.
     pub applied: settings::Applied,
     /// Fermeture confirmée dans l'interface malgré des agents au travail.
@@ -161,7 +164,9 @@ fn main() {
             std::fs::create_dir_all(&data_dir)?;
             let home = app.path().home_dir()?;
             // Avant tout autre dépôt : une base qui a déjà des tables vient d'une version antérieure.
-            let settings = SqliteSettings::open(&data_dir.join("robiade.db"), || legacy_settings::seed(&home))?;
+            let earlier_profile = sqlite_settings::is_earlier_profile(&data_dir.join("robiade.db"))?;
+            let settings =
+                SqliteSettings::open(&data_dir.join("robiade.db"), earlier_profile, || legacy_settings::seed(&home))?;
             let applied = settings::Applied { forge: settings.forge()?, vault: settings.vault()? };
             let (forge, forge_urls) = settings::forge_of(applied.forge.as_ref());
 
@@ -211,11 +216,17 @@ fn main() {
             });
 
             let docker: Arc<dyn Containers> = Arc::new(DockerEngine::new(home.clone())?);
+            let tasks = SqliteTaskRepository::open(&data_dir.join("robiade.db"))?;
+            let trunk_store = SqliteTrunks::open(&data_dir.join("robiade.db"), earlier_profile, || {
+                trunks::known_repositories(&*transcripts, &tasks, &workspaces)
+            })?;
+            let trunks = trunks::Trunks::new(trunk_store, workspaces.clone(), forge.clone());
             app.manage(AppState {
                 transcripts,
                 search,
                 workspaces,
-                tasks: SqliteTaskRepository::open(&data_dir.join("robiade.db"))?,
+                tasks,
+                trunks,
                 agents: registry,
                 vcs: git.clone(),
                 worktrees: git,
@@ -325,6 +336,8 @@ fn main() {
             settings::settings,
             settings::save_forge_settings,
             settings::save_vault_settings,
+            trunks::repository_trunks,
+            trunks::save_repository_trunks,
         ])
         .build(tauri::generate_context!())
         .expect("échec du démarrage de Robiade")

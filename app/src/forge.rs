@@ -183,6 +183,9 @@ mod tests {
         fn project_issues(&self, _: &str) -> Result<Vec<Issue>, ForgeError> {
             unreachable!()
         }
+        fn default_branch(&self, _: &str) -> Result<String, ForgeError> {
+            unreachable!()
+        }
         fn execute(&self, _: &MrRef, _: &Planned) -> Result<(), ForgeError> {
             unreachable!()
         }

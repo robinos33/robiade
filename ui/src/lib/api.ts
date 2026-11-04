@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
-  Agent, AssetContent, IssueReading, MrReading, ProjectFile, ProjectFiles, Container, ContributionBucket, Granularity, DbConnection, DbConnectionInput, DbConsoleHistory, DbConsoleReply, DbFinishedWrite, DbOverview, DbPage, DbPageRequest, DbProbe, DbTarget, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, SaveOutcome, SearchHit, Session, Settings, ForgeSettings, VaultSettings, Task, TaskStatus, GitWorktree, Update, WorktreeCreation, WorktreeRemoval,
+  Agent, AssetContent, IssueReading, MrReading, ProjectFile, ProjectFiles, Container, ContributionBucket, Granularity, DbConnection, DbConnectionInput, DbConsoleHistory, DbConsoleReply, DbFinishedWrite, DbOverview, DbPage, DbPageRequest, DbProbe, DbTarget, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, RepositoryTrunks, SaveOutcome, SearchHit, Session, Settings, ForgeSettings, VaultSettings, Task, TaskStatus, GitWorktree, Update, WorktreeCreation, WorktreeRemoval,
 } from './types';
 
 export const api = {
@@ -126,4 +126,8 @@ export const api = {
     invoke<SaveOutcome>('save_forge_settings', { forge, confirmedHost }),
   saveVaultSettings: (vault: VaultSettings | null, confirmedHost: string | null) =>
     invoke<SaveOutcome>('save_vault_settings', { vault, confirmedHost }),
+  repositoryTrunks: (repository: string) => invoke<RepositoryTrunks>('repository_trunks', { repository }),
+  /** Dans l'ordre ; une liste vide retire le réglage. */
+  saveRepositoryTrunks: (repository: string, branches: string[]) =>
+    invoke<RepositoryTrunks>('save_repository_trunks', { repository, branches }),
 };

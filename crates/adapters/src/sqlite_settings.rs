@@ -31,27 +31,33 @@ fn storage(e: impl std::fmt::Display) -> SettingsError {
     SettingsError::Storage(e.to_string())
 }
 
+/// Nombre de tables de la base nommées `name`, ou de toutes.
+pub(crate) fn table_count(conn: &rusqlite::Connection, name: Option<&str>) -> rusqlite::Result<i64> {
+    conn.query_row(
+        "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND (?1 IS NULL OR name = ?1)",
+        params![name],
+        |r| r.get(0),
+    )
+}
+
+/// Une base qui a déjà des tables vient d'une version antérieure, où la forge, le Vault et les
+/// troncs étaient fixés dans le code. À demander avant d'ouvrir le moindre dépôt de la base.
+pub fn is_earlier_profile(path: &Path) -> Result<bool, SettingsError> {
+    let conn = rusqlite::Connection::open(path).map_err(storage)?;
+    Ok(table_count(&conn, None).map_err(storage)? > 0)
+}
+
 impl SqliteSettings {
-    /// À ouvrir avant tout autre dépôt de `robiade.db` : une base qui a déjà des tables sans celle-ci
-    /// vient d'une version antérieure, dont `legacy` reprend les réglages, une seule fois. Une base
-    /// neuve démarre sans forge ni Vault.
-    pub fn open(path: &Path, legacy: impl FnOnce() -> Seed) -> Result<Self, SettingsError> {
+    /// `earlier_profile` (voir `is_earlier_profile`) : `legacy` reprend les réglages, une seule
+    /// fois, à la création de la table. Une base neuve démarre sans forge ni Vault.
+    pub fn open(path: &Path, earlier_profile: bool, legacy: impl FnOnce() -> Seed) -> Result<Self, SettingsError> {
         let conn = rusqlite::Connection::open(path).map_err(storage)?;
         conn.execute_batch("PRAGMA journal_mode = WAL;").map_err(storage)?;
-        let tables = |name: Option<&str>| -> Result<i64, SettingsError> {
-            conn.query_row(
-                "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND (?1 IS NULL OR name = ?1)",
-                params![name],
-                |r| r.get(0),
-            )
-            .map_err(storage)
-        };
-        let created = tables(Some("setting"))? == 0;
-        let earlier_profile = created && tables(None)? > 0;
+        let created = table_count(&conn, Some("setting")).map_err(storage)? == 0;
         conn.execute_batch("CREATE TABLE IF NOT EXISTS setting (key TEXT PRIMARY KEY, value TEXT NOT NULL);")
             .map_err(storage)?;
         let store = Self { conn: Mutex::new(conn) };
-        if earlier_profile {
+        if created && earlier_profile {
             let seed = legacy();
             store.save_forge(seed.forge.as_ref())?;
             store.save_vault(seed.vault.as_ref())?;
@@ -149,7 +155,8 @@ mod tests {
     #[test]
     fn a_new_profile_starts_without_forge_nor_vault() {
         let path = db("neuf");
-        let settings = SqliteSettings::open(&path, || panic!("aucune reprise sur une base neuve")).unwrap();
+        assert!(!is_earlier_profile(&path).unwrap());
+        let settings = SqliteSettings::open(&path, false, || panic!("aucune reprise sur une base neuve")).unwrap();
         assert_eq!((settings.forge().unwrap(), settings.vault().unwrap()), (None, None));
         std::fs::remove_file(path).unwrap();
     }
@@ -159,11 +166,12 @@ mod tests {
         let path = db("ancien");
         rusqlite::Connection::open(&path).unwrap().execute_batch("CREATE TABLE task (id TEXT);").unwrap();
         let seed = Seed { forge: Some(forge("gitlab.example.com")), vault: Some(vault("vault.example.com:8200")) };
-        let settings = SqliteSettings::open(&path, || seed.clone()).unwrap();
+        assert!(is_earlier_profile(&path).unwrap());
+        let settings = SqliteSettings::open(&path, true, || seed.clone()).unwrap();
         assert_eq!(settings.forge().unwrap(), seed.forge);
         assert_eq!(settings.vault().unwrap(), seed.vault);
         drop(settings);
-        let reopened = SqliteSettings::open(&path, || panic!("reprise déjà faite")).unwrap();
+        let reopened = SqliteSettings::open(&path, true, || panic!("reprise déjà faite")).unwrap();
         assert_eq!(reopened.forge().unwrap(), seed.forge);
         std::fs::remove_file(path).unwrap();
     }
@@ -171,7 +179,7 @@ mod tests {
     #[test]
     fn a_setting_is_replaced_or_removed_as_a_whole() {
         let path = db("ecriture");
-        let settings = SqliteSettings::open(&path, Seed::default).unwrap();
+        let settings = SqliteSettings::open(&path, false, Seed::default).unwrap();
         settings.save_forge(Some(&forge("a.example.com"))).unwrap();
         settings.save_forge(Some(&forge("b.example.com"))).unwrap();
         assert_eq!(settings.forge().unwrap(), Some(forge("b.example.com")));

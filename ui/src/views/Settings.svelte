@@ -1,7 +1,7 @@
 <script lang="ts">
   import { api } from '../lib/api';
   import { app } from '../lib/state.svelte';
-  import type { SaveOutcome, Settings } from '../lib/types';
+  import type { RepositoryTrunks, SaveOutcome, Settings } from '../lib/types';
 
   let settings = $state<Settings | null>(null);
   let error = $state<string | null>(null);
@@ -58,6 +58,33 @@
       error = String(e);
     } finally {
       busy = false;
+    }
+  }
+
+  /** Troncs par dépôt, et leur saisie : noms séparés par des virgules, dans l'ordre de préférence. */
+  let trunks = $state<Record<string, RepositoryTrunks | string>>({});
+  let trunkInput = $state<Record<string, string>>({});
+
+  const showTrunks = (root: string, t: RepositoryTrunks) => {
+    trunks[root] = t;
+    trunkInput[root] = t.configured?.join(', ') ?? '';
+  };
+
+  $effect(() => {
+    for (const p of app.projects) {
+      if (p.root in trunks) continue;
+      trunks[p.root] = 'Lecture…';
+      api.repositoryTrunks(p.root).then((t) => showTrunks(p.root, t), (e) => (trunks[p.root] = String(e)));
+    }
+  });
+
+  const branchesOf = (raw: string) => raw.split(/[\s,]+/).filter((b) => b !== '');
+
+  async function saveTrunks(root: string) {
+    try {
+      showTrunks(root, await api.saveRepositoryTrunks(root, branchesOf(trunkInput[root] ?? '')));
+    } catch (e) {
+      app.notify(String(e));
     }
   }
 
@@ -131,6 +158,39 @@
           <button class="btn primary" disabled={!vaultChanged || busy} onclick={() => void save('vault')}>Enregistrer</button>
         </footer>
       </div>
+      <div class="panel">
+        <h2 class="section-title">Projets · branches de tronc</h2>
+        <p class="muted small">
+          Par ordre de préférence. La première qui existe sur <code>origin</code> sert de base aux
+          worktrees ; une MR qui n'en cible aucune est un wagon, mergé sans squash. Vide : la branche
+          par défaut du remote. Les worktrees d'un dépôt partagent son réglage.
+        </p>
+        {#each app.projects as p (p.root)}
+          {@const t = trunks[p.root]}
+          <div class="trunk">
+            <span class="name" title={p.root}>{p.name}</span>
+            {#if typeof t === 'object'}
+              <input
+                class="field mono"
+                bind:value={trunkInput[p.root]}
+                placeholder={t.remoteDefault ? `défaut du remote : ${t.remoteDefault}` : 'origin/HEAD absent'}
+                spellcheck="false"
+                autocomplete="off"
+                onkeydown={(e) => e.key === 'Enter' && void saveTrunks(p.root)}
+              />
+              <button
+                class="btn"
+                disabled={branchesOf(trunkInput[p.root] ?? '').join(',') === (t.configured ?? []).join(',')}
+                onclick={() => void saveTrunks(p.root)}
+              >Enregistrer</button>
+            {:else}
+              <span class="muted small">{t ?? ''}</span>
+            {/if}
+          </div>
+        {:else}
+          <p class="muted small">Aucun projet connu : lance un agent dans un dépôt.</p>
+        {/each}
+      </div>
     {:else if !error}
       <p class="muted">Lecture des réglages…</p>
     {/if}
@@ -188,4 +248,6 @@
   .grid { display: grid; grid-template-columns: 80px 1fr; gap: 6px 12px; align-items: baseline; }
   .k { color: var(--ink-3); font-size: 12.5px; }
   .host { overflow-wrap: anywhere; }
+  .trunk { display: grid; grid-template-columns: 220px 1fr auto; align-items: center; gap: 12px; }
+  .trunk .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); font-size: 13px; }
 </style>

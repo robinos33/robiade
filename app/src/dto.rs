@@ -11,6 +11,7 @@ use robiade_core::forge::{
     Discussion, ForgeUrls, Issue, IssueRef, IssueState, MergeRequest, MrOutcomes, MrRef, MrState, PipelineStatus,
 };
 use robiade_core::issue_actions::{IssueAction, NewIssue};
+use robiade_core::trunks::TrunkBranches;
 use robiade_core::project::{self, Workspace};
 use robiade_core::merge_actions::{AuditEntry, MrAction};
 use robiade_core::history::{EntryKind, SearchHit, SessionSummary, TokenUsage, TranscriptEntry, HIT_END, HIT_START};
@@ -696,9 +697,11 @@ pub struct ApprovalsDto {
     pub by: Vec<String>,
 }
 
-impl From<MergeRequest> for MergeRequestDto {
-    fn from(m: MergeRequest) -> Self {
-        let wagon = m.is_intermediate_wagon();
+impl MergeRequestDto {
+    /// `trunks` : troncs du projet de la MR ; `None` s'ils sont illisibles, et la MR n'est pas
+    /// marquée comme wagon.
+    pub fn new(m: MergeRequest, trunks: Option<&TrunkBranches>) -> Self {
+        let wagon = trunks.is_some_and(|t| m.is_intermediate_wagon(t));
         Self {
             project: m.mr.project,
             iid: m.mr.iid,
@@ -739,10 +742,11 @@ pub struct MrReadingDto {
 }
 
 impl MrReadingDto {
-    pub fn new(mut mr: MergeRequest, me: &str, discussions: Vec<Discussion>) -> Self {
+    pub fn new(mut mr: MergeRequest, me: &str, trunks: Option<&TrunkBranches>, discussions: Vec<Discussion>) -> Self {
         let description = std::mem::take(&mut mr.description);
         let mine = mr.author == me;
-        Self { mr: mr.into(), mine, description, discussions: discussions.into_iter().map(DiscussionDto::from).collect() }
+        let mr = MergeRequestDto::new(mr, trunks);
+        Self { mr, mine, description, discussions: discussions.into_iter().map(DiscussionDto::from).collect() }
     }
 }
 

@@ -24,6 +24,7 @@ pub mod sqlite_agents;
 pub mod sqlite_search;
 pub mod sqlite_settings;
 pub mod sqlite_tasks;
+pub mod sqlite_trunks;
 pub mod task_backup;
 pub mod workspace;
 pub mod vault;

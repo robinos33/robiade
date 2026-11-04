@@ -4,6 +4,7 @@
 use crate::contributions::Contribution;
 use crate::issue_actions::{IssuePlanned, NewIssue};
 use crate::merge_actions::Planned;
+use crate::trunks::TrunkBranches;
 use crate::Millis;
 
 /// Une MR désignée sans ambiguïté : chemin complet du projet et numéro dans ce projet.
@@ -114,6 +115,9 @@ impl Forge for NoForge {
         Err(ForgeError::NotConfigured)
     }
     fn project_issues(&self, _: &str) -> Result<Vec<Issue>, ForgeError> {
+        Err(ForgeError::NotConfigured)
+    }
+    fn default_branch(&self, _: &str) -> Result<String, ForgeError> {
         Err(ForgeError::NotConfigured)
     }
     fn execute(&self, _: &MrRef, _: &Planned) -> Result<(), ForgeError> {
@@ -239,11 +243,10 @@ pub struct MergeRequest {
 }
 
 impl MergeRequest {
-    /// Wagon intermédiaire d'un train de MR : il ne cible ni `staging` ni `master` (ni `main`, tronc
-    /// des dépôts récents), et ne doit donc pas être squashé : les wagons en aval portent ses commits
-    /// par ancestralité.
-    pub fn is_intermediate_wagon(&self) -> bool {
-        !matches!(self.target_branch.as_str(), "staging" | "master" | "main")
+    /// Wagon intermédiaire d'un train de MR : il ne cible aucune branche de tronc de son projet, et ne
+    /// doit donc pas être squashé : les wagons en aval portent ses commits par ancestralité.
+    pub fn is_intermediate_wagon(&self, trunks: &TrunkBranches) -> bool {
+        !trunks.contains(&self.target_branch)
     }
 }
 
@@ -316,6 +319,8 @@ pub trait Forge: Send + Sync {
     fn issue_discussions(&self, issue: &IssueRef) -> Result<Vec<Discussion>, ForgeError>;
     /// Issues ouvertes d'un projet (chemin complet, validé par `is_project_path`).
     fn project_issues(&self, project: &str) -> Result<Vec<Issue>, ForgeError>;
+    /// Branche par défaut d'un projet : son tronc quand son dépôt n'en règle pas.
+    fn default_branch(&self, project: &str) -> Result<String, ForgeError>;
     /// Envoie une action planifiée sur une MR.
     fn execute(&self, mr: &MrRef, planned: &Planned) -> Result<(), ForgeError>;
     /// Envoie une action planifiée sur une issue.
@@ -401,7 +406,7 @@ mod tests {
     }
 
     #[test]
-    fn a_wagon_targets_neither_staging_nor_master() {
+    fn a_wagon_targets_none_of_the_trunks_of_its_project() {
         let mut mr = MergeRequest {
             mr: MrRef { project: "p".into(), iid: 1 },
             title: String::new(),
@@ -420,9 +425,12 @@ mod tests {
             pipeline_id: None,
             approvals: None,
         };
-        assert!(mr.is_intermediate_wagon());
+        let staging = TrunkBranches::new(["staging", "master"]).unwrap();
+        let main = TrunkBranches::new(["main"]).unwrap();
+        assert!(mr.is_intermediate_wagon(&staging));
         mr.target_branch = "staging".into();
-        assert!(!mr.is_intermediate_wagon());
+        assert!(!mr.is_intermediate_wagon(&staging));
+        assert!(mr.is_intermediate_wagon(&main), "staging n'est pas un tronc de ce projet-là");
     }
 
     #[test]

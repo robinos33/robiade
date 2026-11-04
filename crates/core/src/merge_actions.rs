@@ -3,6 +3,7 @@
 
 use crate::forge::{MergeRequest, MrRef, MrState, PipelineStatus};
 use crate::Millis;
+use crate::trunks::TrunkBranches;
 
 /// Un commentaire plus long n'a pas sa place dans une confirmation relue en un coup d'œil.
 pub const COMMENT_MAX_CHARS: usize = 10_000;
@@ -53,7 +54,7 @@ pub enum Refused {
 }
 
 /// Applique les règles à l'état **courant** de la MR, relu juste avant d'agir.
-pub fn plan(mr: &MergeRequest, action: &MrAction, me: &str) -> Result<Planned, Refused> {
+pub fn plan(mr: &MergeRequest, action: &MrAction, me: &str, trunks: &TrunkBranches) -> Result<Planned, Refused> {
     let mine = mr.author == me;
     let open = matches!(mr.state, MrState::Opened | MrState::Draft);
     if !open {
@@ -88,7 +89,7 @@ pub fn plan(mr: &MergeRequest, action: &MrAction, me: &str) -> Result<Planned, R
                 return Err(Refused::NotMergeable(mr.merge_status.clone()));
             }
             // Un wagon garde ses commits : les wagons en aval en descendent par ancestralité.
-            Ok(Planned::Merge { sha: mr.sha.clone(), squash: !mr.is_intermediate_wagon() })
+            Ok(Planned::Merge { sha: mr.sha.clone(), squash: !mr.is_intermediate_wagon(trunks) })
         }
     }
 }
@@ -177,6 +178,10 @@ mod tests {
         }
     }
 
+    fn trunks() -> TrunkBranches {
+        TrunkBranches::new(["staging", "master"]).unwrap()
+    }
+
     fn merge(sha: &str) -> MrAction {
         MrAction::Merge { expected_sha: sha.into() }
     }
@@ -184,30 +189,33 @@ mod tests {
     #[test]
     fn a_wagon_is_merged_without_squash_and_a_trunk_merge_with_it() {
         let sha = "0123456789abcdef";
-        let merged = |target| plan(&mr("moi", target), &merge(sha), "moi");
+        let merged = |target| plan(&mr("moi", target), &merge(sha), "moi", &trunks());
         assert_eq!(merged("ticket-1"), Ok(Planned::Merge { sha: sha.into(), squash: false }));
         assert_eq!(merged("staging"), Ok(Planned::Merge { sha: sha.into(), squash: true }));
+        let main_only = TrunkBranches::new(["main"]).unwrap();
+        let into_staging = plan(&mr("moi", "staging"), &merge(sha), "moi", &main_only);
+        assert_eq!(into_staging, Ok(Planned::Merge { sha: sha.into(), squash: false }), "staging n'y est qu'une branche");
     }
 
     #[test]
     fn a_merge_only_leaves_on_the_commit_that_was_seen() {
-        assert_eq!(plan(&mr("moi", "staging"), &merge("autre"), "moi"), Err(Refused::Stale));
-        assert_eq!(plan(&mr("moi", "staging"), &merge(""), "moi"), Err(Refused::Stale));
+        assert_eq!(plan(&mr("moi", "staging"), &merge("autre"), "moi", &trunks()), Err(Refused::Stale));
+        assert_eq!(plan(&mr("moi", "staging"), &merge(""), "moi", &trunks()), Err(Refused::Stale));
         let mut blocked = mr("moi", "staging");
         blocked.merge_status = "not_approved".into();
-        let refused = plan(&blocked, &merge("0123456789abcdef"), "moi");
+        let refused = plan(&blocked, &merge("0123456789abcdef"), "moi", &trunks());
         assert_eq!(refused, Err(Refused::NotMergeable("not_approved".into())));
     }
 
     #[test]
     fn only_my_merge_requests_can_be_changed_and_only_the_others_approved() {
         let theirs = mr("collegue", "staging");
-        assert_eq!(plan(&theirs, &MrAction::Rebase, "moi"), Err(Refused::NotMine));
-        assert_eq!(plan(&theirs, &merge("0123456789abcdef"), "moi"), Err(Refused::NotMine));
-        assert_eq!(plan(&theirs, &MrAction::Approve, "moi"), Ok(Planned::Approve));
-        assert_eq!(plan(&mr("moi", "staging"), &MrAction::Approve, "moi"), Err(Refused::OwnMergeRequest));
-        assert_eq!(plan(&theirs, &MrAction::Comment("  ok  ".into()), "moi"), Ok(Planned::Comment("ok".into())));
-        assert_eq!(plan(&theirs, &MrAction::Comment(" ".into()), "moi"), Err(Refused::InvalidComment));
+        assert_eq!(plan(&theirs, &MrAction::Rebase, "moi", &trunks()), Err(Refused::NotMine));
+        assert_eq!(plan(&theirs, &merge("0123456789abcdef"), "moi", &trunks()), Err(Refused::NotMine));
+        assert_eq!(plan(&theirs, &MrAction::Approve, "moi", &trunks()), Ok(Planned::Approve));
+        assert_eq!(plan(&mr("moi", "staging"), &MrAction::Approve, "moi", &trunks()), Err(Refused::OwnMergeRequest));
+        assert_eq!(plan(&theirs, &MrAction::Comment("  ok  ".into()), "moi", &trunks()), Ok(Planned::Comment("ok".into())));
+        assert_eq!(plan(&theirs, &MrAction::Comment(" ".into()), "moi", &trunks()), Err(Refused::InvalidComment));
     }
 
     #[test]
@@ -215,22 +223,22 @@ mod tests {
         let mut draft = mr("moi", "staging");
         draft.state = MrState::Draft;
         draft.title = "[Draft] (draft) Draft: Ajoute le cache".into();
-        assert_eq!(plan(&draft, &MrAction::MarkReady, "moi"), Ok(Planned::Retitle("Ajoute le cache".into())));
-        assert_eq!(plan(&draft, &MrAction::MarkDraft, "moi"), Err(Refused::AlreadyThere));
+        assert_eq!(plan(&draft, &MrAction::MarkReady, "moi", &trunks()), Ok(Planned::Retitle("Ajoute le cache".into())));
+        assert_eq!(plan(&draft, &MrAction::MarkDraft, "moi", &trunks()), Err(Refused::AlreadyThere));
         let mut ready = mr("moi", "staging");
         ready.title = "Ajoute le cache".into();
-        assert_eq!(plan(&ready, &MrAction::MarkDraft, "moi"), Ok(Planned::Retitle("Draft: Ajoute le cache".into())));
+        assert_eq!(plan(&ready, &MrAction::MarkDraft, "moi", &trunks()), Ok(Planned::Retitle("Draft: Ajoute le cache".into())));
     }
 
     #[test]
     fn only_a_failed_pipeline_is_retried_and_closed_requests_are_left_alone() {
         let failing = mr("moi", "staging");
-        assert_eq!(plan(&failing, &MrAction::RetryPipeline, "moi"), Ok(Planned::RetryPipeline { pipeline_id: 42 }));
+        assert_eq!(plan(&failing, &MrAction::RetryPipeline, "moi", &trunks()), Ok(Planned::RetryPipeline { pipeline_id: 42 }));
         let mut green = failing.clone();
         green.pipeline = Some(PipelineStatus::Success);
-        assert_eq!(plan(&green, &MrAction::RetryPipeline, "moi"), Err(Refused::NothingToRetry));
+        assert_eq!(plan(&green, &MrAction::RetryPipeline, "moi", &trunks()), Err(Refused::NothingToRetry));
         let mut merged = failing;
         merged.state = MrState::Merged;
-        assert_eq!(plan(&merged, &MrAction::Comment("x".into()), "moi"), Err(Refused::NotOpen));
+        assert_eq!(plan(&merged, &MrAction::Comment("x".into()), "moi", &trunks()), Err(Refused::NotOpen));
     }
 }
