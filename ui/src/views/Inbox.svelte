@@ -73,7 +73,7 @@
 
     {#if app.mrAttention.length > 0 || app.pendingReviews.length > 0}
       <div class="block">
-        <h2 class="section-title">GitLab</h2>
+        <h2 class="section-title">{app.forgeName}</h2>
         <ul class="cards">
           {#each app.mrAttention as mr (mr.webUrl)}
             <li>

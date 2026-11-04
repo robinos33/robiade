@@ -168,7 +168,7 @@
                         {@const issue = t.issue}
                         <button
                           class="chip mono"
-                          title="{issueTitle(t) ?? 'Lire l’issue'} (⌘+clic : GitLab)"
+                          title="{issueTitle(t) ?? 'Lire l’issue'} (⌘+clic : {app.forgeName})"
                           onclick={(e) => app.read({ kind: 'issue', project: issue.project, iid: issue.iid, webUrl: url }, e)}
                         >{issueLabel(t)}</button>
                       {/if}
@@ -203,11 +203,11 @@
 
     <div class="team">
       <h2 class="section-title">
-        Tâches d'équipe · GitLab · {issuesScope === 'assigned' ? 'assignées à moi' : (issuesScope ?? '—')}
+        Tâches d'équipe · {app.forgeName} · {issuesScope === 'assigned' ? 'assignées à moi' : (issuesScope ?? '—')}
         {#if issues}<span class="num">{issues.length}</span>{/if}
         {#if issuesScope !== null && issuesScope !== 'assigned'}
           {@const project = issuesScope}
-          <button class="btn ghost new" title="Créer une issue sur GitLab, relue avant envoi" onclick={() => (creating = project)}>
+          <button class="btn ghost new" title="Créer une issue sur {app.forgeName}, relue avant envoi" onclick={() => (creating = project)}>
             Nouvelle issue
           </button>
         {/if}
@@ -217,9 +217,9 @@
       {:else if issuesScope === null}
         <p class="muted">Ce projet n'a pas de remote origin sur {new URL(app.env.forge.url).host}.</p>
       {:else if issuesError}
-        <p class="error-text">GitLab illisible : {issuesError}</p>
+        <p class="error-text">{app.forgeName} illisible : {issuesError}</p>
       {:else if issues === null}
-        <p class="muted">Lecture de GitLab…</p>
+        <p class="muted">Lecture de {app.forgeName}…</p>
       {:else}
         <ul class="issues">
           {#each issues as i (i.webUrl)}
@@ -228,7 +228,7 @@
               <div class="body">
                 <button
                   class="t link"
-                  title="Lire dans Robiade (⌘+clic : GitLab)"
+                  title="Lire dans Robiade (⌘+clic : {app.forgeName})"
                   onclick={(e) => app.read({ kind: 'issue', project: i.project, iid: i.iid, webUrl: i.webUrl }, e)}
                 >{i.title}</button>
                 <span class="meta">
@@ -249,11 +249,11 @@
                 Labels…
               </button>
               {#if i.state === 'opened'}
-                <button class="btn ghost act" title="Fermer l'issue sur GitLab, après confirmation" onclick={() => (acting = { issue: i, action: { kind: 'close' } })}>
+                <button class="btn ghost act" title="Fermer l'issue sur {app.forgeName}, après confirmation" onclick={() => (acting = { issue: i, action: { kind: 'close' } })}>
                   Fermer
                 </button>
               {:else}
-                <button class="btn ghost act shown" title="Rouvrir l'issue sur GitLab, après confirmation" onclick={() => (acting = { issue: i, action: { kind: 'reopen' } })}>
+                <button class="btn ghost act shown" title="Rouvrir l'issue sur {app.forgeName}, après confirmation" onclick={() => (acting = { issue: i, action: { kind: 'reopen' } })}>
                   Rouvrir
                 </button>
               {/if}

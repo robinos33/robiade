@@ -83,7 +83,7 @@
       </select>
     </div>
     <p class="muted note">
-      L'issue est seulement référencée : son titre et son état restent sur GitLab. Vider un champ retire le lien.
+      L'issue est seulement référencée : son titre et son état restent sur {app.forgeName}. Vider un champ retire le lien.
     </p>
     {#if error}<p class="error">{error}</p>{/if}
     <footer>

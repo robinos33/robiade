@@ -1,3 +1,4 @@
+import { forgeName as nameOf, mrPrefix as prefixOf } from './forge';
 import { listen } from '@tauri-apps/api/event';
 import { api } from './api';
 import { localDay } from './format';
@@ -66,6 +67,10 @@ class AppState {
   }
 
   /** Projet GitLab du projet sélectionné ; `null` en vue globale ou pour un dépôt hors de l'instance. */
+  /** Nom de la forge en vigueur, pour les textes ; « la forge » sans réglage. */
+  forgeName = $derived(nameOf(this.env?.forge?.provider));
+  /** Préfixe du numéro d'une MR : `!` sur GitLab, `#` sur GitHub. */
+  mrPrefix = $derived(prefixOf(this.env?.forge?.provider));
   selectedGitlabProject = $derived(this.projects.find((p) => p.root === this.project)?.gitlabProject ?? null);
 
   /** Vrai si la MR appartient au projet sélectionné (GitLab ignore la casse des chemins). */

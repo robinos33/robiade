@@ -61,7 +61,7 @@
       <h2 id="new-issue-title">Nouvelle issue dans <span class="mono">{project}</span></h2>
       <!-- svelte-ignore a11y_autofocus -->
       <input class="field" maxlength="255" bind:value={title} autofocus placeholder="Titre" />
-      <textarea class="field" rows="8" maxlength="50000" bind:value={description} placeholder="Description (Markdown GitLab)"></textarea>
+      <textarea class="field" rows="8" maxlength="50000" bind:value={description} placeholder="Description (Markdown {app.forgeName})"></textarea>
       <input class="field" bind:value={labels} placeholder="Labels, séparés par des virgules" />
       <input class="field" bind:value={assignees} placeholder="Assignés, noms d’utilisateur séparés par des virgules" />
       {#if error}<p class="error">{error}</p>{/if}
