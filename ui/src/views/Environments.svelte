@@ -9,6 +9,7 @@
   import WorktreeCreateDialog from '../components/WorktreeCreateDialog.svelte';
   import WorktreeBranch from '../components/WorktreeBranch.svelte';
   import WorktreeRemoveDialog from '../components/WorktreeRemoveDialog.svelte';
+  import WorktreesCloseDialog from '../components/WorktreesCloseDialog.svelte';
 
   /** Largeur des logs choisie à la poignée ; `null` garde celle de la feuille de style. */
   let logsWidth = $state<number | null>(null);
@@ -26,6 +27,11 @@
   $effect(() => void untrack(() => app.refreshWorktrees()));
 
   const liveIn = (path: string) => app.liveAgents.filter((a) => a.worktreePath === path);
+
+  /** Ce que `remove_worktree(path, 0)` accepterait : arbre propre, sans agent actif, non verrouillé. */
+  const clean = $derived(app.worktrees.filter((w) => w.git?.changes === 0 && !w.git.locked && liveIn(w.path).length === 0));
+  /** Figée au clic : la liste relue pendant la fermeture ne doit pas changer celle du dialogue. */
+  let closing = $state.raw<Worktree[] | null>(null);
 
   function changesLabel(w: Worktree): string {
     const n = w.git?.changes;
@@ -123,7 +129,12 @@
     <div class="scroll">
       {#if app.worktrees.length > 0}
         <div class="block">
-          <h2 class="section-title">Worktrees</h2>
+          <div class="block-head">
+            <h2 class="section-title">Worktrees</h2>
+            <button class="btn small" disabled={clean.length === 0} onclick={() => (closing = clean)}>
+              Fermer les propres ({clean.length})
+            </button>
+          </div>
           <!-- Une grille partagée par toutes les lignes (`subgrid`) : la branche est une colonne, alignée d'une ligne à l'autre. -->
           <ul class="list wt-list" class:global={app.project === null}>
             {#each app.worktrees as w (w.path)}
@@ -224,6 +235,7 @@
   <WorktreeCreateDialog repository={app.project} onclose={() => (creating = false)} />
 {/if}
 {#if removing}<WorktreeRemoveDialog worktree={removing} onclose={() => (removing = null)} />{/if}
+{#if closing}<WorktreesCloseDialog worktrees={closing} onclose={() => (closing = null)} />{/if}
 
 <style>
   .page { display: flex; flex-direction: column; min-height: 0; flex: 1; }
@@ -231,6 +243,8 @@
   .body.split { grid-template-columns: minmax(420px, 1fr) var(--logs-w, minmax(420px, 1.2fr)); }
   .scroll { overflow-y: auto; padding: 22px 24px 40px; display: flex; flex-direction: column; gap: 24px; max-width: 1100px; }
   .section-title { display: flex; align-items: baseline; gap: 10px; }
+  .block-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+  .block-head .section-title { margin: 0; }
   .origin { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--ink-3); }
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
   .row { display: flex; align-items: center; gap: 8px; border-radius: var(--radius-sm); border-bottom: 1px solid var(--line); }
