@@ -153,6 +153,11 @@ performance, communs à toutes les vues.
   un diff d'une autre vue n'aurait jamais pu être repris.
 - Recalage du terminal à chaque image (`requestAnimationFrame`) pendant le glisser : encore un
   redimensionnement du PTY par colonne franchie, soit des dizaines par glisser (issue #23).
+- Un mode rail pour la barre repliée (icônes de la navigation, initiale des projets et des
+  worktrees), écarté le 2026-11-04 (issue #30) : une initiale ne distingue pas des worktrees nommés
+  d'après leurs branches (`ticket-…`) ni deux projets de même initiale, et le rail reprend une
+  partie de la largeur rendue. Le compteur du bouton garde les signaux, ⌘K et ⌘1–⌘8 la navigation.
+  À rouvrir dans un ticket à part si le besoin se confirme à l'usage.
 
 ## Tickets
 
