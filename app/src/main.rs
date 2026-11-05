@@ -7,6 +7,7 @@ mod containers;
 mod db_sessions;
 mod dto;
 mod forge;
+mod project_colors;
 mod settings;
 mod task_cli;
 mod trunks;
@@ -23,6 +24,7 @@ use robiade_adapters::engines::Engines;
 use robiade_adapters::sqlite_audit::SqliteAuditLog;
 use robiade_adapters::sqlite_connections::SqliteConnectionRepository;
 use robiade_adapters::sqlite_console_history::SqliteConsoleHistory;
+use robiade_adapters::sqlite_project_colors::SqliteProjectColors;
 use robiade_adapters::sqlite_search::SearchIndex;
 use robiade_adapters::sqlite_settings::{self, SqliteSettings};
 use robiade_adapters::sqlite_trunks::SqliteTrunks;
@@ -62,6 +64,7 @@ pub struct AppState {
     pub updates: Arc<updates::Updates>,
     pub settings: SqliteSettings,
     pub trunks: trunks::Trunks,
+    pub project_colors: SqliteProjectColors,
     /// Réglages lus au démarrage, ceux que la forge et le Vault utilisent.
     pub applied: settings::Applied,
     /// Fermeture confirmée dans l'interface malgré des agents au travail.
@@ -227,6 +230,7 @@ fn main() {
                 workspaces,
                 tasks,
                 trunks,
+                project_colors: SqliteProjectColors::open(&data_dir.join("robiade.db"))?,
                 agents: registry,
                 vcs: git.clone(),
                 worktrees: git,
@@ -338,6 +342,8 @@ fn main() {
             settings::save_vault_settings,
             trunks::repository_trunks,
             trunks::save_repository_trunks,
+            project_colors::project_colors,
+            project_colors::save_project_color,
         ])
         .build(tauri::generate_context!())
         .expect("échec du démarrage de Robiade")
