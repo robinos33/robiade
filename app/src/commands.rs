@@ -316,23 +316,30 @@ pub fn mark_agent_seen(state: State<AppState>, id: String) -> CmdResult<()> {
     Ok(())
 }
 
-/// Taille au-delà de laquelle un asset n'est pas chargé dans l'interface.
-const MAX_ASSET_BYTES: u64 = 20 * 1024 * 1024;
+const MISSING: &str = "fichier introuvable : déplacé ou supprimé ?";
 
 #[tauri::command]
-pub async fn read_asset(state: State<'_, AppState>, id: String, path: String) -> CmdResult<AssetContentDto> {
+pub async fn read_asset(state: State<'_, AppState>, id: String, path: String) -> CmdResult<ProjectFileDto> {
     let asset = state.agents.asset(&agent_id(&id)?, &path)?;
     tauri::async_runtime::spawn_blocking(move || read_asset_file(&asset)).await.map_err(|e| e.to_string())?
 }
 
-fn read_asset_file(asset: &Asset) -> CmdResult<AssetContentDto> {
-    let missing = |_| "fichier introuvable : déplacé ou supprimé ?".to_owned();
-    let size = std::fs::metadata(&asset.path).map_err(missing)?.len();
-    if size > MAX_ASSET_BYTES {
-        return Err(format!("fichier trop lourd pour l'aperçu ({} Mo)", size / (1024 * 1024)));
+/// Un asset se lit avec les règles de l'onglet Code : dans le scratchpad, l'agent peut écrire un
+/// `.env` ou un binaire aussi bien qu'un script.
+fn read_asset_file(asset: &Asset) -> CmdResult<ProjectFileDto> {
+    let file = Path::new(&asset.path).canonicalize().map_err(|_| MISSING.to_owned())?;
+    let resolved = file.to_string_lossy();
+    read_viewable(&file, shown_as(&asset.path, &resolved), false)
+}
+
+/// Nom qui décide du secret et de l'affichage d'un fichier désigné par `cited` et résolu en
+/// `resolved` : un lien vers un fichier de secrets en est un, et l'inverse aussi.
+fn shown_as<'a>(cited: &'a str, resolved: &'a str) -> &'a str {
+    if code::is_secret_file(cited) {
+        cited
+    } else {
+        resolved
     }
-    let bytes = std::fs::read(&asset.path).map_err(|e| e.to_string())?;
-    Ok(AssetContentDto::new(asset, bytes))
 }
 
 /// Fichier d'un lien `file://` du terminal d'un agent (⌘+clic). Le lien vient de la sortie de
@@ -345,7 +352,7 @@ pub async fn read_linked_file(app: tauri::AppHandle, id: String, uri: String) ->
         let state = app.state::<AppState>();
         let id = agent_id(&id)?;
         if let Ok(asset) = state.agents.asset(&id, &path) {
-            return read_asset_file(&asset).map(ProjectFileDto::Content);
+            return read_asset_file(&asset);
         }
         read_linked(&project_dir(&state.agents.project_path(&id)?)?, &path)
     })
@@ -459,9 +466,14 @@ pub async fn read_project_file(app: tauri::AppHandle, root: String, path: String
 
 fn read_inside(root: &Path, path: &str, reveal: bool) -> CmdResult<ProjectFileDto> {
     let (file, resolved) = file_inside(root, path)?;
-    // Un lien vers un fichier de secrets en est un, et l'inverse aussi.
-    let named = if code::is_secret_file(path) { path } else { resolved.as_str() };
-    let meta = std::fs::metadata(&file).map_err(|e| e.to_string())?;
+    read_viewable(&file, shown_as(path, &resolved), reveal)
+}
+
+/// Lit `file`, résolu, avec les règles de l'onglet Code : un fichier de secrets ne s'affiche qu'à
+/// ma demande (`reveal`), un fichier trop lourd ou binaire jamais, et les jetons connus sont
+/// masqués. `named` décide du secret et de l'affichage.
+fn read_viewable(file: &Path, named: &str, reveal: bool) -> CmdResult<ProjectFileDto> {
+    let meta = std::fs::metadata(file).map_err(|_| MISSING.to_owned())?;
     if !meta.is_file() {
         return Err("pas un fichier : dossier ou sous-module".into());
     }
@@ -471,7 +483,7 @@ fn read_inside(root: &Path, path: &str, reveal: bool) -> CmdResult<ProjectFileDt
         Peek::TooLarge { size, limit } => return Ok(ProjectFileDto::TooLarge { size, limit }),
         Peek::Read(kind) => kind,
     };
-    let bytes = std::fs::read(&file).map_err(|e| e.to_string())?;
+    let bytes = std::fs::read(file).map_err(|e| e.to_string())?;
     if kind != AssetKind::Image && code::looks_binary(&bytes) {
         return Ok(ProjectFileDto::Binary { size });
     }
@@ -1772,5 +1784,29 @@ mod tests {
         assert!(matches!(read_inside(&root, "dump.sql", false).unwrap(), ProjectFileDto::TooLarge { .. }));
         assert!(matches!(read_inside(&root, "app.bin", false).unwrap(), ProjectFileDto::Binary { size: 6 }));
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn reads_an_asset_with_the_rules_of_the_code_tab() {
+        let dir = std::env::temp_dir().join(format!("robiade-asset-rules-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let token = concat!("glpat-", "abcdefghijklmnopqrst");
+        std::fs::write(dir.join(".env"), format!("TOKEN={token}")).unwrap();
+        std::fs::write(dir.join("bascule.groovy"), format!("def token = '{token}'")).unwrap();
+        std::fs::write(dir.join("export.dat"), b"\0\x01").unwrap();
+        let asset = |name: &str| Asset {
+            path: dir.join(name).to_string_lossy().into_owned(),
+            kind: AssetKind::of(name).unwrap_or(AssetKind::Text),
+            written_at: 0,
+        };
+
+        assert!(matches!(read_asset_file(&asset(".env")).unwrap(), ProjectFileDto::Secret));
+        assert!(matches!(read_asset_file(&asset("export.dat")).unwrap(), ProjectFileDto::Binary { size: 2 }));
+        match read_asset_file(&asset("bascule.groovy")).unwrap() {
+            ProjectFileDto::Content(c) => assert!(!c.text.unwrap().contains(token), "jeton masqué"),
+            _ => panic!("contenu attendu"),
+        }
+        assert_eq!(read_asset_file(&asset("absent.sql")).err().as_deref(), Some(MISSING));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

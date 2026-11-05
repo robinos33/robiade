@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
-  Agent, AssetContent, IssueReading, MrReading, ProjectFile, ProjectFiles, Container, ContributionBucket, Granularity, DbConnection, DbConnectionInput, DbConsoleHistory, DbConsoleReply, DbFinishedWrite, DbOverview, DbPage, DbPageRequest, DbProbe, DbTarget, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, ProjectColors, RepositoryTrunks, SaveOutcome, SearchHit, Session, Settings, ForgeSettings, VaultSettings, Task, TaskStatus, GitWorktree, Update, WorktreeCreation, WorktreeRemoval,
+  Agent, IssueReading, MrReading, ProjectFile, ProjectFiles, Container, ContributionBucket, Granularity, DbConnection, DbConnectionInput, DbConsoleHistory, DbConsoleReply, DbFinishedWrite, DbOverview, DbPage, DbPageRequest, DbProbe, DbTarget, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, ProjectColors, RepositoryTrunks, SaveOutcome, SearchHit, Session, Settings, ForgeSettings, VaultSettings, Task, TaskStatus, GitWorktree, Update, WorktreeCreation, WorktreeRemoval,
 } from './types';
 
 export const api = {
@@ -101,7 +101,7 @@ export const api = {
   finishDbWrite: (id: string, commit: boolean) => invoke<DbFinishedWrite>('finish_db_write', { id, commit }),
   cancelDbStatement: (id: string) => invoke<void>('cancel_db_statement', { id }),
   dbConsoleHistory: (id: string) => invoke<DbConsoleHistory[]>('db_console_history', { id }),
-  readAsset: (id: string, path: string) => invoke<AssetContent>('read_asset', { id, path }),
+  readAsset: (id: string, path: string) => invoke<ProjectFile>('read_asset', { id, path }),
   /** Fichier d'un lien `file://` du terminal de l'agent, s'il reste dans son dossier de travail. */
   readLinkedFile: (id: string, uri: string) => invoke<ProjectFile>('read_linked_file', { id, uri }),
   /**
