@@ -2,6 +2,7 @@
   import { api } from '../lib/api';
   import { app } from '../lib/state.svelte';
   import { FORGE_NAMES } from '../lib/forge';
+  import ProjectTag from '../components/ProjectTag.svelte';
   import type { ForgeProvider, RepositoryTrunks, SaveOutcome, Settings } from '../lib/types';
 
   let settings = $state<Settings | null>(null);
@@ -96,6 +97,32 @@
     }
   }
 
+  /** Couleur d'un dépôt ; `null` : aucune. S'applique partout dès la réponse, sans relance. */
+  async function saveColor(root: string, color: string | null) {
+    if (app.colorOf(root) === color) return;
+    try {
+      app.showColors(await api.saveProjectColor(root, color));
+    } catch (e) {
+      app.notify(String(e));
+    }
+  }
+
+  const COLOR_NAMES: Record<string, string> = {
+    olive: 'Olive', vert: 'Vert', sarcelle: 'Sarcelle', ciel: 'Ciel', bleu: 'Bleu', violet: 'Violet', rose: 'Rose',
+  };
+
+  /** Flèches dans le groupe : la teinte voisine est choisie, et reçoit le focus. */
+  function onColorKey(e: KeyboardEvent, root: string) {
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    const choices = [null, ...app.palette];
+    const next = choices[(choices.indexOf(app.colorOf(root)) + step + choices.length) % choices.length];
+    void saveColor(root, next ?? null);
+    const group = e.currentTarget as HTMLElement;
+    requestAnimationFrame(() => group.querySelector<HTMLElement>('[aria-checked="true"]')?.focus());
+  }
+
   function onkeydown(e: KeyboardEvent) {
     if (pending && e.key === 'Escape') {
       e.preventDefault();
@@ -174,16 +201,37 @@
         </footer>
       </div>
       <div class="panel">
-        <h2 class="section-title">Projets · branches de tronc</h2>
+        <h2 class="section-title">Projets</h2>
         <p class="muted small">
-          Par ordre de préférence. La première qui existe sur <code>origin</code> sert de base aux
-          worktrees ; une MR qui n'en cible aucune est un wagon, mergé sans squash. Vide : la branche
-          par défaut du remote. Les worktrees d'un dépôt partagent son réglage.
+          <strong>Couleur</strong> : reprise partout où le projet apparaît (onglets d'agents, barre
+          latérale, listes). Une identité, pas un état : un agent qui attend reste signalé à l'accent.
         </p>
+        <p class="muted small">
+          <strong>Branches de tronc</strong>, par ordre de préférence. La première qui existe sur
+          <code>origin</code> sert de base aux worktrees ; une MR qui n'en cible aucune est un wagon,
+          mergé sans squash. Vide : la branche par défaut du remote.
+        </p>
+        <p class="muted small">Les worktrees d'un dépôt partagent ses réglages.</p>
         {#each app.projects as p (p.root)}
           {@const t = trunks[p.root]}
+          {@const current = app.colorOf(p.root)}
           <div class="trunk">
-            <span class="name" title={p.root}>{p.name}</span>
+            <span class="name" title={p.root}><ProjectTag name={p.name} root={p.root} /></span>
+            <div class="colors" role="radiogroup" aria-label="Couleur de {p.name}" tabindex="-1" onkeydown={(e) => onColorKey(e, p.root)}>
+              {#each [null, ...app.palette] as c (c ?? '')}
+                {@const label = c ? COLOR_NAMES[c] ?? c : 'Aucune'}
+                <button
+                  class="swatch"
+                  class:none={c === null}
+                  role="radio"
+                  aria-checked={current === c}
+                  aria-label={label}
+                  title={label}
+                  tabindex={current === c ? 0 : -1}
+                  onclick={() => void saveColor(p.root, c)}
+                ><i style:background={c ? `var(--project-${c})` : null}></i></button>
+              {/each}
+            </div>
             {#if typeof t === 'object'}
               <input
                 class="field mono"
@@ -191,6 +239,7 @@
                 placeholder={t.remoteDefault ? `défaut du remote : ${t.remoteDefault}` : 'origin/HEAD absent'}
                 spellcheck="false"
                 autocomplete="off"
+                aria-label="Branches de tronc de {p.name}"
                 onkeydown={(e) => e.key === 'Enter' && void saveTrunks(p.root)}
               />
               <button
@@ -199,7 +248,7 @@
                 onclick={() => void saveTrunks(p.root)}
               >Enregistrer</button>
             {:else}
-              <span class="muted small">{t ?? ''}</span>
+              <span class="muted small span">{t ?? ''}</span>
             {/if}
           </div>
         {:else}
@@ -263,6 +312,18 @@
   .grid { display: grid; grid-template-columns: 80px 1fr; gap: 6px 12px; align-items: baseline; }
   .k { color: var(--ink-3); font-size: 12.5px; }
   .host { overflow-wrap: anywhere; }
-  .trunk { display: grid; grid-template-columns: 220px 1fr auto; align-items: center; gap: 12px; }
+  .trunk { display: grid; grid-template-columns: 160px auto 1fr auto; align-items: center; gap: 12px; }
+  .trunk .span { grid-column: 3 / 5; }
+  .colors { display: flex; gap: 2px; }
+  /* Un trait, comme la marque de ProjectTag : la palette montre la couleur telle qu'elle s'affiche. */
+  .swatch {
+    display: grid; place-items: center; width: 20px; height: 24px; padding: 0;
+    border: 1px solid transparent; border-radius: 4px; background: none;
+  }
+  .swatch i { display: block; width: 4px; height: 14px; border-radius: 1px; }
+  .swatch.none i { border: 1px dashed var(--ink-3); width: 6px; }
+  .swatch:hover { background: var(--bg-hover); }
+  .swatch[aria-checked='true'] { border-color: var(--line-strong); background: var(--bg-active); }
+  .swatch:focus-visible { outline: 2px solid var(--ink-2); outline-offset: 1px; }
   .trunk .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); font-size: 13px; }
 </style>
