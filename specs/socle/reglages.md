@@ -1,7 +1,7 @@
 # Réglages
 
-**En une phrase** : la page Réglages règle l'instance de forge, le Vault et les branches de tronc
-de chaque projet, sans toucher au code ; rien n'y est secret.
+**En une phrase** : la page Réglages règle l'instance de forge, le Vault, les branches de tronc
+et la couleur de chaque projet, sans toucher au code ; rien n'y est secret.
 
 ## Comportement
 
@@ -13,12 +13,13 @@ de chaque projet, sans toucher au code ; rien n'y est secret.
     comme pour un dépôt hors de l'instance.
   - **Vault** (optionnel) : URL, service du trousseau de secours (défaut `vault-token`). Vide : la
     source « Vault » disparaît du dialogue de connexion DB.
-  - **Projets** : les branches de tronc de chaque dépôt, par ordre de préférence ; vide, la branche
-    par défaut du remote. Elles décident de la base des [worktrees](../environnements/worktrees.md)
-    et des wagons des [merge requests](../forge/merge-requests.md). Rattachées au dépôt principal,
-    elles valent pour tous ses worktrees.
+  - **Projets** : pour chaque dépôt, sa [couleur](couleur-projet.md) et ses branches de tronc,
+    par ordre de préférence ; vide, la branche par défaut du remote. Les troncs décident de la base
+    des [worktrees](../environnements/worktrees.md) et des wagons des
+    [merge requests](../forge/merge-requests.md). Rattachés au dépôt principal, ces réglages valent
+    pour tous ses worktrees.
 - Forge et Vault sont lus au démarrage : un changement enregistré s'applique à la relance, que la
-  page propose. Les troncs s'appliquent tout de suite.
+  page propose. Les troncs et la couleur s'appliquent tout de suite.
 - **Profil antérieur** (une base qui existait avant les réglages) : au premier lancement, les
   réglages sont repris une seule fois là où mes outils les gardent déjà — l'hôte par défaut de
   `glab` pour la forge, `VAULT_ADDR` lu dans un shell interactif pour Vault — et chaque dépôt déjà
@@ -65,3 +66,4 @@ résiduel ci-dessus.
 
 - #26 — Socle — indépendance vis-à-vis de l'entreprise : instance GitLab, Vault et branches de tronc dans une page Réglages
 - #28 — Forge — fournisseur GitHub (pull requests, issues, checks)
+- #37 — Projets — une couleur par projet, réglable, reprise partout où le projet apparaît
