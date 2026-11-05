@@ -23,6 +23,7 @@ pub mod shell_env;
 pub mod sqlite_audit;
 pub mod sqlite_connections;
 pub mod sqlite_console_history;
+pub mod sqlite_project_colors;
 pub mod sqlite_agents;
 pub mod sqlite_search;
 pub mod sqlite_settings;
