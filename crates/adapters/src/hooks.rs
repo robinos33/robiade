@@ -204,7 +204,12 @@ fn observe(r: Relayed) -> Option<Observation> {
     let permission_mode = r.permission_mode.as_deref().and_then(PermissionMode::parse);
     let effort = r.effort.as_deref().and_then(Effort::parse);
     // Un identifiant de session sert à reconnaître un chemin : rien d'autre qu'un UUID n'est gardé.
-    let session = r.session_id.as_deref().and_then(|s| AgentId::parse(s).ok()).map(|s| s.as_str().to_owned());
+    // Celui d'un SessionEnd désigne la session qui se termine, pas celle en cours : après un
+    // `/clear`, il peut arriver après le SessionStart de la suivante.
+    let session = (event != AgentEvent::SessionEnded)
+        .then(|| r.session_id.as_deref().and_then(|s| AgentId::parse(s).ok()))
+        .flatten()
+        .map(|s| s.as_str().to_owned());
     Some(Observation::Event {
         event,
         session,
@@ -335,7 +340,8 @@ mod tests {
             let observed = observe(relayed_from(input, "id".into()).unwrap());
             let permission_mode = mode.and_then(PermissionMode::parse);
             let effort = effort.and_then(Effort::parse);
-            let session = Some("00000000-0000-4000-8000-000000000000".to_owned());
+            // La session qui se termine n'est pas relayée.
+            let session = (event != AgentEvent::SessionEnded).then(|| "00000000-0000-4000-8000-000000000000".to_owned());
             assert_eq!(
                 observed,
                 Some(Observation::Event { event, session, permission_mode, effort, written_file: None, viewed_image: None })
@@ -386,6 +392,8 @@ mod tests {
         assert_eq!(session(input("9D259B93-5DC0-47C3-B1C8-3084E032DD44")).as_deref(), Some("9d259b93-5dc0-47c3-b1c8-3084e032dd44"));
         assert_eq!(session(input("../../etc")), None);
         assert_eq!(session(r#"{"hook_event_name":"SessionStart"}"#.to_owned()), None);
+        let ending = r#"{"hook_event_name":"SessionEnd","reason":"clear","session_id":"9d259b93-5dc0-47c3-b1c8-3084e032dd44"}"#;
+        assert_eq!(session(ending.to_owned()), None);
     }
 
     #[test]
