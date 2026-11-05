@@ -28,6 +28,7 @@
    * au moins un tour du point (900 ms) pour ne pas flasher, et jamais plus de 5 s, quoi qu'il arrive.
    */
   let booting = $state(true);
+  const projectColor = $derived(app.colorVar(app.project));
 
   onMount(() => {
     const ready = app.init().catch((e) => app.notify(`Démarrage incomplet : ${e}`));
@@ -54,7 +55,8 @@
 
 <svelte:window {onkeydown} />
 
-<div class="shell" class:sidebar-collapsed={sidebar.collapsed}>
+<!-- Projet sélectionné et coloré : un filet à sa couleur sous l'en-tête de chaque vue rappelle le filtre. -->
+<div class="shell" class:sidebar-collapsed={sidebar.collapsed} class:project-colored={projectColor !== null} style:--project-current={projectColor}>
   <Sidebar />
   <main>
     {#if app.view === 'inbox'}<Inbox />

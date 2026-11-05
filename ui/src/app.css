@@ -101,6 +101,8 @@ kbd {
 .page-head .spacer { flex: 1; }
 /* Barre latérale repliée : les feux tricolores et le bouton qui la rouvre se posent sur l'en-tête. */
 .shell.sidebar-collapsed .page-head { padding-left: var(--titlebar-inset); }
+/* Filtre sur un projet coloré : 2 px à sa couleur, à la place du trait neutre. */
+.shell.project-colored .page-head { border-bottom: 2px solid var(--project-current); }
 
 .empty {
   display: grid; place-items: center; text-align: center;
