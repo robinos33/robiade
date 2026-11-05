@@ -54,7 +54,8 @@ pub struct AgentDto {
     pub effort: Option<String>,
     pub gauges: GaugesDto,
     pub assets: Vec<AssetDto>,
-    pub resumed_from: Option<String>,
+    /// Session Claude Code en cours : celle que « Reprendre » et « Redémarrer » relancent.
+    pub session_id: String,
     pub name: Option<String>,
 }
 
@@ -241,7 +242,7 @@ impl AgentDto {
             effort: a.effort().map(|e| e.as_str().to_owned()),
             gauges: a.gauges().into(),
             assets: a.assets().iter().map(AssetDto::from).collect(),
-            resumed_from: a.resumed_from().map(str::to_owned),
+            session_id: a.session_id().to_owned(),
             name: a.name().map(str::to_owned),
         }
     }

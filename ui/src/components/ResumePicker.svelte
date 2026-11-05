@@ -16,7 +16,7 @@
 
   /** Onglet vivant qui porte déjà la session : on y va au lieu d'en lancer une deuxième. */
   const liveTab = (s: Session): Agent | undefined =>
-    app.liveAgents.find((a) => (a.resumedFrom ?? a.id) === s.sessionId);
+    app.liveAgents.find((a) => a.sessionId === s.sessionId);
 
   const pool = $derived(app.conversations.filter((s) => allProjects || app.inProject(s.projectRoot)));
 

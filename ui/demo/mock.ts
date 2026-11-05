@@ -77,7 +77,7 @@ function agent(id: string, project: number, worktree: string | null, status: Age
       week: gauge(22),
     },
     assets: [],
-    resumedFrom: null,
+    sessionId: id,
     name: null,
     ...over,
   };

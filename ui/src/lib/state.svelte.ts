@@ -184,9 +184,9 @@ class AppState {
     return this.history.filter((s) => s.mergeRequestUrl === mr.webUrl);
   }
 
-  /** Session de l'historique correspondant à un agent (même identifiant, ou session reprise). */
+  /** Session de l'historique correspondant à la session en cours d'un agent. */
   sessionOf(agent: Agent): Session | undefined {
-    const id = agent.resumedFrom ?? agent.id;
+    const id = agent.sessionId;
     return this.history.find((s) => s.sessionId === id);
   }
 
