@@ -4,6 +4,7 @@
   import { api } from '../lib/api';
   import { attach, dropPaths, refit, resizeFont, terminalAt, terminalShortcut } from '../lib/terminals';
   import { panelDrag } from '../lib/panelDrag.svelte';
+  import { terminalFull } from '../lib/terminalFull.svelte';
   import { linkedPath, readLinkedFile } from '../lib/links';
   import { baseName } from '../lib/fileTree';
   import { ago, dollars, duration, shortPath, tokens } from '../lib/format';
@@ -145,7 +146,8 @@
     if (shortcut === 'find') {
       finding = true;
       search?.focus();
-    } else if (shortcut) resizeFont(shortcut);
+    } else if (shortcut === 'full') terminalFull.toggle();
+    else if (shortcut) resizeFont(shortcut);
     else return;
     e.preventDefault();
   }
@@ -184,6 +186,12 @@
     }
   }
 
+  const fullLabel = $derived(
+    terminalFull.shown
+      ? `Quitter la pleine fenêtre${app.signal ? ` · ${app.signal.text}` : ''}`
+      : 'Terminal en pleine fenêtre',
+  );
+
   async function stop() {
     if (active) await api.killAgent(active.id).catch((e) => app.notify(String(e)));
   }
@@ -191,7 +199,7 @@
 
 <svelte:window {onkeydown} />
 
-<section class="page">
+<section class="page" class:full={terminalFull.shown}>
   <header class="page-head" data-tauri-drag-region>
     <h1>Agents</h1>
     <span class="muted">Sessions lancées dans Robiade</span>
@@ -304,7 +312,8 @@
 
       {#if active}
         <div class="term-wrap">
-          <div class="term-bar">
+          <!-- En pleine fenêtre, la barre passe sous les feux tricolores : elle déplace la fenêtre. -->
+          <div class="term-bar" data-tauri-drag-region={terminalFull.shown || null}>
             {#if renaming && draft}
               <input
                 class="field name-field"
@@ -331,7 +340,7 @@
               </span>
             {/if}
             {#if mr}<MrBadge url={mr.url} state={mr.state} title={mr.title} />{/if}
-            <span class="spacer"></span>
+            <span class="spacer" data-tauri-drag-region={terminalFull.shown || null}></span>
             {#if active.status !== 'ended'}
               <button class="btn ghost" onclick={restart} title="Relance claude sur la même session : prend une mise à jour installée (« Restart to update »)">
                 <Icon name="resume" size={12} /><span class="label">Redémarrer</span>
@@ -342,6 +351,17 @@
                 <Icon name="resume" size={12} /><span class="label">Reprendre</span>
               </button>
             {/if}
+            <!-- Liste cachée, le bouton porte son signal : un agent qui attend ne disparaît pas. -->
+            <button
+              class="btn ghost full-toggle"
+              onclick={terminalFull.toggle}
+              aria-pressed={terminalFull.shown}
+              aria-label={fullLabel}
+              title="{fullLabel} (⌘⇧↩)"
+            >
+              <Icon name={terminalFull.shown ? 'restore' : 'maximize'} size={13} />
+              {#if terminalFull.shown && app.signal}<span class="signal" class:hot={app.signal.hot}>{app.signal.count}</span>{/if}
+            </button>
           </div>
           <GaugeBar gauges={active.gauges} />
           <div class="term-area" class:dropping>
@@ -464,6 +484,10 @@
   }
   .session-id:hover { background: var(--bg-active); color: var(--ink); }
   .page { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+  /* Masqués, pas démontés : largeurs réglées et état des listes reviennent tels quels. */
+  .full .page-head, .full .rail, .full .side { display: none; }
+  .full .split { grid-template-columns: 1fr; }
+  .full .term-bar { padding-left: var(--titlebar-inset); }
   .split {
     display: grid; grid-template-columns: var(--rail-w, 250px) 1fr var(--side-w, 260px); min-height: 0; flex: 1;
   }
@@ -541,6 +565,15 @@
     .term-bar .btn .label,
     .term-bar :global(.compact-hide) { display: none; }
   }
+  .full-toggle { position: relative; }
+  /* Même pastille que le bouton de la barre latérale repliée. */
+  .signal {
+    position: absolute; top: -4px; right: -6px; min-width: 15px; height: 15px; padding: 0 4px;
+    border-radius: 8px; background: var(--info); box-shadow: 0 0 0 2px var(--bg);
+    color: #fff; font-size: 10px; font-weight: 650; line-height: 15px; text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .signal.hot { background: var(--accent); }
   .branch { display: inline-flex; align-items: center; gap: 4px; min-width: 0; color: var(--ink-2); }
   .branch :global(svg) { flex: none; }
   .tail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
