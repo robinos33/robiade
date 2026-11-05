@@ -6,6 +6,7 @@
   import MrBadge from '../components/MrBadge.svelte';
   import Icon from '../components/Icon.svelte';
   import ResizeHandle from '../components/ResizeHandle.svelte';
+  import ProjectTag from '../components/ProjectTag.svelte';
 
   const PAGE = 200;
   /** Largeur de la liste choisie à la poignée ; `null` garde celle de la feuille de style. */
@@ -98,7 +99,7 @@
                 </span>
               {/if}
               <span class="meta">
-                <span class="proj">{s.projectName}</span>
+                <span class="proj"><ProjectTag name={s.projectName} root={s.projectRoot} /></span>
                 {#if s.gitBranch && s.gitBranch !== 'HEAD'}<span class="mono ellipsis">{s.gitBranch}</span>{/if}
                 <span class="spacer"></span>
                 {#if s.mergeRequestUrl}<MrBadge url={s.mergeRequestUrl} />{/if}
@@ -121,7 +122,7 @@
           <div class="readonly"><Icon name="lock" size={12} /> Lecture seule</div>
           <h2 class="selectable">{selected.title}</h2>
           <div class="facts">
-            <span>{selected.projectName}</span>
+            <span><ProjectTag name={selected.projectName} root={selected.projectRoot} /></span>
             {#if selected.gitBranch}<span class="mono">{selected.gitBranch}</span>{/if}
             <span>{dateTime(selected.startedAt)}</span>
             <span class="num">{tokens(selected.tokens.total)} tokens</span>

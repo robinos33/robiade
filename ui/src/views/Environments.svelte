@@ -10,6 +10,7 @@
   import WorktreeBranch from '../components/WorktreeBranch.svelte';
   import WorktreeRemoveDialog from '../components/WorktreeRemoveDialog.svelte';
   import WorktreesCloseDialog from '../components/WorktreesCloseDialog.svelte';
+  import ProjectTag from '../components/ProjectTag.svelte';
 
   /** Largeur des logs choisie à la poignée ; `null` garde celle de la feuille de style. */
   let logsWidth = $state<number | null>(null);
@@ -143,7 +144,7 @@
                 <span class="dot" class:running={live.length > 0} title="{live.length} agent(s) actif(s)"></span>
                 <span class="name ellipsis" title={w.path}>{w.name}</span>
                 <WorktreeBranch git={w.git} />
-                {#if app.project === null}<span class="tag project ellipsis">{w.projectName}</span>{/if}
+                {#if app.project === null}<span class="tag project ellipsis"><ProjectTag name={w.projectName} root={w.root} /></span>{/if}
                 <span class="state">
                   {#if w.git?.locked}<span class="tag">verrouillé</span>{/if}
                   <span class="muted" class:dirty={!!w.git?.changes}>{changesLabel(w)}</span>
@@ -174,7 +175,9 @@
           <div class="block">
             <h2 class="section-title" title={first?.workingDir ?? ''}>
               {project || 'Hors Compose'}
-              {#if project && first && origin(first) !== project}<span class="origin">{origin(first)}</span>{/if}
+              {#if project && first && origin(first) !== project}
+                <span class="origin">{#if first.workspace?.inRepository}<ProjectTag name={origin(first)} root={first.workspace.projectRoot} />{:else}{origin(first)}{/if}</span>
+              {/if}
             </h2>
             <ul class="list">
               {#each list as c (c.id)}

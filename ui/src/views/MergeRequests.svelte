@@ -6,6 +6,7 @@
   import { MERGE_STATUS, PIPELINE, actionsOf } from '../lib/mergeRequests';
   import MrBadge from '../components/MrBadge.svelte';
   import MrActionConfirm from '../components/MrActionConfirm.svelte';
+  import ProjectTag from '../components/ProjectTag.svelte';
 
   /** Action en attente de confirmation. */
   let pending = $state<{ mr: MergeRequest; action: MrAction } | null>(null);
@@ -47,7 +48,7 @@
         onclick={(e) => app.read({ kind: 'mr', project: mr.project, iid: mr.iid, webUrl: mr.webUrl }, e)}
       >{mr.title}</button>
       <div class="meta">
-        <span class="proj" title={mr.project}>{shortProject(mr.project)}</span>
+        <span class="proj" title={mr.project}><ProjectTag name={shortProject(mr.project) ?? mr.project} forge={mr.project} /></span>
         <span class="mono branches ellipsis" title="{mr.sourceBranch} → {mr.targetBranch}">
           {mr.sourceBranch} → {mr.targetBranch}
         </span>

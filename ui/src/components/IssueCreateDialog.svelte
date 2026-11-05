@@ -2,6 +2,7 @@
   import { api } from '../lib/api';
   import { app } from '../lib/state.svelte';
   import type { NewIssue } from '../lib/types';
+  import ProjectTag from './ProjectTag.svelte';
 
   /** `oncreated` reçoit le numéro attribué par GitLab, pour relire la liste. */
   let { project, onclose, oncreated }: { project: string; onclose: () => void; oncreated: (iid: number) => void } =
@@ -72,7 +73,7 @@
     {:else}
       <h2 id="new-issue-title">{preview.charAt(0).toUpperCase()}{preview.slice(1)} ?</h2>
       <dl>
-        <dt>Projet</dt><dd class="mono">{project}</dd>
+        <dt>Projet</dt><dd class="mono"><ProjectTag name={project} forge={project} /></dd>
         <dt>Titre</dt><dd><strong>{title.trim()}</strong></dd>
       </dl>
       {#if description.trim()}<pre class="body">{description.trim()}</pre>{/if}

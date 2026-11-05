@@ -3,6 +3,7 @@
   import { api } from '../lib/api';
   import { app } from '../lib/state.svelte';
   import type { Issue, IssueAction, IssueActionPreview } from '../lib/types';
+  import ProjectTag from './ProjectTag.svelte';
 
   /**
    * Assignés et labels se modifient ici, avant l'aperçu, à partir des valeurs de l'issue.
@@ -111,7 +112,7 @@
       </h2>
       {#if preview}
         <dl>
-          <dt>Projet</dt><dd class="mono">{preview.project}</dd>
+          <dt>Projet</dt><dd class="mono"><ProjectTag name={preview.project} forge={preview.project} /></dd>
           <dt>Issue</dt><dd><strong>#{preview.iid}</strong> {preview.title}</dd>
           <dt>État</dt><dd>{preview.state === 'opened' ? 'ouverte' : 'fermée'}</dd>
           <dt>Assignés</dt><dd>{preview.assignees.join(', ') || '—'}</dd>

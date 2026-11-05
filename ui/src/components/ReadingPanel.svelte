@@ -11,6 +11,7 @@
   import { threadPage } from '../lib/thread';
   import type { IssueReading, MergeRequest, MrAction, MrReading, ReadingTarget } from '../lib/types';
   import MrActionConfirm from './MrActionConfirm.svelte';
+  import ProjectTag from './ProjectTag.svelte';
 
   /**
    * Panneau de lecture d'une issue ou d'une MR, à côté de la liste : en-tête lu comme du texte,
@@ -84,7 +85,7 @@
     <header>
       <div class="top">
         <span class="ref mono">{target.kind === 'mr' ? app.mrPrefix : '#'}{target.iid}</span>
-        <span class="proj ellipsis" title={target.project}>{target.project}</span>
+        <span class="proj ellipsis" title={target.project}><ProjectTag name={target.project} forge={target.project} /></span>
         <span class="spacer"></span>
         <button class="btn ghost small" title="Ouvrir dans le navigateur" onclick={() => app.openUrl(target.webUrl)}>
           Ouvrir dans {app.forgeName}

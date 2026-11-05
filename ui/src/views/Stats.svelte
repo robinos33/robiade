@@ -3,6 +3,7 @@
   import { api } from '../lib/api';
   import { count, dayLabel, dollars, duration, periodLabel, tokens } from '../lib/format';
   import type { ContributionBucket, Granularity, MrOutcomes, Overview } from '../lib/types';
+  import ProjectTag from '../components/ProjectTag.svelte';
 
   const WINDOWS = [7, 30, 90, 365];
   let windowDays = $state(30);
@@ -220,7 +221,7 @@
             <tbody>
               {#each data.projects.slice(0, 10) as p (p.projectPath)}
                 <tr>
-                  <td class="name" title={p.projectPath}>{p.projectName}</td>
+                  <td class="name" title={p.projectPath}><ProjectTag name={p.projectName} root={p.projectPath} /></td>
                   <td class="barcell"><span class="hbar" style="width: {(p.tokens.total / maxProjectTokens) * 100}%"></span></td>
                   <td class="num right">{tokens(p.tokens.total)}</td>
                   <td class="num right muted">{dollars(p.cost.dollars)}</td>
