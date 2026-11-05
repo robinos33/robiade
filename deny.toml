@@ -1,0 +1,55 @@
+# cargo deny check : advisories RustSec, licences, crates bannies, provenance.
+# Lancé en CI sur chaque pull request vers main (.github/workflows/dependances.yml).
+#
+# Toute exception s'écrit ici, avec sa raison et une date de réévaluation :
+#   ignore = [{ id = "RUSTSEC-AAAA-NNNN", reason = "… ; réévaluer le AAAA-MM-JJ" }]
+#   [[licenses.exceptions]] crate = "…", allow = ["…"]  # + commentaire : raison ; réévaluer le AAAA-MM-JJ
+
+[graph]
+# La seule cible de Robiade (specs/socle/architecture.md) : les crates propres à Linux ou
+# Windows (GTK, D-Bus, WebView2…) ne sont pas dans le binaire et n'ont pas à bloquer.
+targets = ["aarch64-apple-darwin"]
+all-features = true
+
+[advisories]
+version = 2
+# Vulnérabilités, crates non maintenues et unsound bloquent ; un crate retiré (yanked) avertit.
+unmaintained = "all"
+yanked = "warn"
+ignore = []
+
+[licenses]
+version = 2
+# Licences permissives, plus MPL-2.0 (copyleft limité aux fichiers du crate).
+allow = [
+  "0BSD",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "BSL-1.0",
+  "CC0-1.0",
+  "CDLA-Permissive-2.0",
+  "ISC",
+  "MIT",
+  "MIT-0",
+  "MPL-2.0",
+  "Unicode-3.0",
+  "Unlicense",
+  "Zlib",
+]
+# Nos propres crates ne sont pas publiés (publish = false) : leur licence n'est pas vérifiée.
+private = { ignore = true }
+
+[bans]
+# Tauri tire plusieurs versions de windows-sys, syn, etc. : les doublons ne bloquent pas.
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+# crates.io seul : ni autre registre, ni dépendance git.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
