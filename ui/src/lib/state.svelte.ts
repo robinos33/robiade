@@ -3,7 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import { api } from './api';
 import { localDay } from './format';
 import { writeOutput } from './terminals';
-import type { Agent, Environment, Forge, GitWorktree, MergeRequest, MrState, Project, QuitRequest, ReadingTarget, Session, Task, Update, Workspace, Worktree } from './types';
+import type { Agent, Environment, Forge, GitWorktree, MergeRequest, MrState, Project, ProjectColors, QuitRequest, ReadingTarget, Session, Task, Update, Workspace, Worktree } from './types';
 
 export type View = 'inbox' | 'agents' | 'history' | 'mr' | 'tasks' | 'stats' | 'env' | 'db' | 'code' | 'settings';
 
@@ -44,6 +44,10 @@ class AppState {
   reading = $state<ReadingTarget | null>(null);
   /** Worktrees lus par git, par dépôt ; un dépôt absent n'a pas encore été relu. */
   gitWorktrees = $state<Record<string, GitWorktree[]>>({});
+  /** Couleur de projet par racine de dépôt principal ; absente = aucune. Une identité, jamais un état. */
+  projectColors = $state<Record<string, string>>({});
+  /** Teintes proposées dans Réglages, dans l'ordre. */
+  palette = $state<string[]>([]);
 
   /** Dépôts principaux seulement : ni worktree, ni sous-dossier, ni dossier disparu. */
   projects: Project[] = $derived.by(() => {
@@ -109,6 +113,24 @@ class AppState {
     }
     return [...byPath.values()].sort((a, b) => b.lastActivityAt - a.lastActivityAt);
   });
+
+  /** Teinte du projet de cette racine ; `null` sans couleur. */
+  colorOf = (root: string | null | undefined): string | null => (root ? this.projectColors[root] ?? null : null);
+  /** Teinte du dépôt local qui porte ce projet de forge (GitLab ignore la casse des chemins). */
+  colorOfForge = (project: string): string | null => {
+    const lower = project.toLowerCase();
+    return this.colorOf(this.projects.find((p) => p.gitlabProject?.toLowerCase() === lower)?.root);
+  };
+  /** Variable CSS de la teinte, pour un liseré ou une icône ; `null` sans couleur. */
+  colorVar = (root: string | null | undefined): string | null => {
+    const color = this.colorOf(root);
+    return color ? `var(--project-${color})` : null;
+  };
+
+  showColors(c: ProjectColors) {
+    this.palette = c.palette;
+    this.projectColors = c.colors;
+  }
 
   inProject = (root: string | null | undefined) => this.project === null || root === this.project;
   inScope = (w: Workspace) => this.inProject(w.projectRoot) && (this.worktree === null || w.worktreePath === this.worktree);
@@ -201,6 +223,7 @@ class AppState {
     );
     // Un événement arrivé pendant la lecture est plus récent qu'elle : il garde la main.
     void api.updateStatus().then((u) => (this.update ??= u));
+    void api.projectColors().then((c) => this.showColors(c), () => {});
     this.env = await api.environment();
     this.agents = await api.listAgents();
     this.tasks = await api.listTasks();

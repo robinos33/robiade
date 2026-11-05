@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
-  Agent, AssetContent, IssueReading, MrReading, ProjectFile, ProjectFiles, Container, ContributionBucket, Granularity, DbConnection, DbConnectionInput, DbConsoleHistory, DbConsoleReply, DbFinishedWrite, DbOverview, DbPage, DbPageRequest, DbProbe, DbTarget, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, RepositoryTrunks, SaveOutcome, SearchHit, Session, Settings, ForgeSettings, VaultSettings, Task, TaskStatus, GitWorktree, Update, WorktreeCreation, WorktreeRemoval,
+  Agent, AssetContent, IssueReading, MrReading, ProjectFile, ProjectFiles, Container, ContributionBucket, Granularity, DbConnection, DbConnectionInput, DbConsoleHistory, DbConsoleReply, DbFinishedWrite, DbOverview, DbPage, DbPageRequest, DbProbe, DbTarget, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, ProjectColors, RepositoryTrunks, SaveOutcome, SearchHit, Session, Settings, ForgeSettings, VaultSettings, Task, TaskStatus, GitWorktree, Update, WorktreeCreation, WorktreeRemoval,
 } from './types';
 
 export const api = {
@@ -130,4 +130,8 @@ export const api = {
   /** Dans l'ordre ; une liste vide retire le réglage. */
   saveRepositoryTrunks: (repository: string, branches: string[]) =>
     invoke<RepositoryTrunks>('save_repository_trunks', { repository, branches }),
+  projectColors: () => invoke<ProjectColors>('project_colors'),
+  /** Une teinte de la palette, ou `null` pour retirer la couleur. */
+  saveProjectColor: (repository: string, color: string | null) =>
+    invoke<ProjectColors>('save_project_color', { repository, color }),
 };
