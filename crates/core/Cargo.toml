@@ -9,3 +9,4 @@ publish.workspace = true
 thiserror.workspace = true
 # Analyse des commandes Mongo, sans I/O : le document analysé est celui que l'adapter envoie.
 serde_json = { workspace = true, features = ["preserve_order"] }
+tar = "=0.4.35"
