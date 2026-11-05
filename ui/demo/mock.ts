@@ -671,7 +671,7 @@ const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
   working_diff: () => '',
   read_asset: (args) => {
     const name = String((args as { path: string }).path).split('/').pop();
-    return { kind: 'markdown', text: `# ${name}\n\nNote de démo écrite par l'agent.`, dataUrl: null };
+    return { state: 'content', kind: 'markdown', text: `# ${name}\n\nNote de démo écrite par l'agent.`, dataUrl: null };
   },
   read_linked_file: (args) => linkedFile(String(args.uri)),
   /** Chemins cités par l'agent de démo : seuls ceux de `PROJECT_FILES` existent. */

@@ -18,6 +18,7 @@ pub mod mariadb;
 pub mod mongo;
 pub mod postgres;
 pub mod pty;
+pub mod scratchpad;
 pub mod self_update;
 pub mod shell_env;
 pub mod sqlite_audit;

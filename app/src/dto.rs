@@ -97,10 +97,6 @@ pub struct AssetContentDto {
 }
 
 impl AssetContentDto {
-    pub fn new(asset: &Asset, bytes: Vec<u8>) -> Self {
-        Self::of(asset.kind, &asset.path, bytes, false)
-    }
-
     /// Contenu de `path` affiché comme `kind` ; `mask` masque les jetons connus du texte.
     pub fn of(kind: AssetKind, path: &str, bytes: Vec<u8>, mask: bool) -> Self {
         use base64::Engine;

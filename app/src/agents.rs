@@ -12,6 +12,7 @@ use robiade_adapters::workspace::WorkspaceResolver;
 use robiade_core::agents::{Agent, AgentEvent, AgentId, AgentJournal, AgentStatus, Effort, PermissionMode};
 use robiade_core::assets::Asset;
 use robiade_core::project::Workspace;
+use robiade_core::scratchpad;
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_notification::NotificationExt;
 
@@ -23,6 +24,16 @@ struct Live {
     agent: Agent,
     workspace: Workspace,
     process: Option<Arc<AgentProcess>>,
+}
+
+/// Ce qu'un hook rapporte en plus de l'événement.
+#[derive(Default)]
+struct Observed {
+    session: Option<String>,
+    permission_mode: Option<PermissionMode>,
+    effort: Option<Effort>,
+    written_file: Option<String>,
+    viewed_image: Option<String>,
 }
 
 /// Clé, dans les données d'une notification, de l'agent qu'un clic doit ouvrir.
@@ -39,6 +50,8 @@ pub struct AgentRegistry {
     socket: PathBuf,
     /// Base des tâches, donnée aux agents pour `robiade task done`.
     tasks_db: PathBuf,
+    /// Racine résolue des scratchpads de Claude Code, `None` si elle ne se résout pas.
+    scratchpad_root: Option<PathBuf>,
     live: Mutex<HashMap<AgentId, Live>>,
 }
 
@@ -65,7 +78,8 @@ impl AgentRegistry {
                 (agent.id().clone(), Live { agent, workspace, process: None })
             })
             .collect();
-        Self { app, workspaces, journal, login, socket, tasks_db, live: Mutex::new(live) }
+        let scratchpad_root = robiade_adapters::scratchpad::root();
+        Self { app, workspaces, journal, login, socket, tasks_db, scratchpad_root, live: Mutex::new(live) }
     }
 
     pub fn socket(&self) -> &Path {
@@ -158,13 +172,13 @@ impl AgentRegistry {
     }
 
     pub fn apply(&self, id: &AgentId, event: AgentEvent) {
-        self.on_event(id, event, None, None, None, None);
+        self.on_event(id, event, Observed::default());
     }
 
     pub fn observe(&self, id: &AgentId, observation: Observation) {
         match observation {
-            Observation::Event { event, permission_mode, effort, written_file, viewed_image } => {
-                self.on_event(id, event, permission_mode, effort, written_file.as_deref(), viewed_image.as_deref())
+            Observation::Event { event, session, permission_mode, effort, written_file, viewed_image } => {
+                self.on_event(id, event, Observed { session, permission_mode, effort, written_file, viewed_image })
             }
             Observation::Gauges(gauges) => {
                 if let Ok(mut live) = self.live.lock() {
@@ -178,31 +192,33 @@ impl AgentRegistry {
         }
     }
 
-    fn on_event(
-        &self,
-        id: &AgentId,
-        event: AgentEvent,
-        mode: Option<PermissionMode>,
-        effort: Option<Effort>,
-        written_file: Option<&str>,
-        viewed_image: Option<&str>,
-    ) {
+    fn on_event(&self, id: &AgentId, event: AgentEvent, observed: Observed) {
+        let Observed { session, permission_mode: mode, effort, written_file, viewed_image } = observed;
+        // Résolu hors du verrou : `/tmp` → `/private/tmp`, liens et `..` suivis.
+        let written_resolved = written_file.as_deref().and_then(|p| Path::new(p).canonicalize().ok());
         let ended = matches!(event, AgentEvent::ProcessExited);
         let asks_reply = matches!(event, AgentEvent::WaitingForInput);
         let notification = {
             let Ok(mut live) = self.live.lock() else { return };
             // Un événement d'un agent inconnu (session hors Robiade, agent déjà retiré) est ignoré.
             let Some(entry) = live.get_mut(id) else { return };
+            if let Some(session) = &session {
+                entry.agent.observe_session(session);
+            }
             if let Some(mode) = mode {
                 entry.agent.observe_permission_mode(mode);
             }
             if let Some(effort) = effort {
                 entry.agent.observe_effort(effort);
             }
-            if let Some(path) = written_file {
-                entry.agent.observe_file_written(path, now());
+            if let Some(path) = &written_file {
+                let in_scratchpad = written_resolved
+                    .as_deref()
+                    .filter(|resolved| self.in_scratchpad(&entry.agent, resolved))
+                    .and_then(Path::to_str);
+                entry.agent.observe_file_written(path, in_scratchpad, now());
             }
-            if let Some(path) = viewed_image {
+            if let Some(path) = &viewed_image {
                 entry.agent.observe_image_viewed(path, now());
             }
             let before = entry.agent.status();
@@ -221,6 +237,11 @@ impl AgentRegistry {
             self.notify(id, &title, body);
         }
         self.publish();
+    }
+
+    /// `resolved` est dans le scratchpad de l'une des sessions de l'agent.
+    fn in_scratchpad(&self, agent: &Agent, resolved: &Path) -> bool {
+        self.scratchpad_root.as_deref().is_some_and(|root| scratchpad::holds(root, agent.sessions(), resolved))
     }
 
     /// Notification macOS quand un agent se met à m'attendre et que je regarde ailleurs.
@@ -312,6 +333,17 @@ impl AgentRegistry {
     pub fn process(&self, id: &AgentId) -> Result<Arc<AgentProcess>, String> {
         let live = self.live.lock().map_err(|e| e.to_string())?;
         live.get(id).and_then(|l| l.process.clone()).ok_or_else(|| "agent inconnu ou terminé".to_owned())
+    }
+
+    /// `path` résolu (`..`, liens, `/tmp` → `/private/tmp`) s'il désigne un fichier existant du
+    /// scratchpad de l'agent, écrit par un outil ou par une commande.
+    pub fn scratchpad_file(&self, id: &AgentId, path: &str) -> Option<PathBuf> {
+        let resolved = Path::new(path).canonicalize().ok()?;
+        let held = {
+            let live = self.live.lock().ok()?;
+            self.in_scratchpad(&live.get(id)?.agent, &resolved)
+        };
+        (held && resolved.is_file()).then_some(resolved)
     }
 
     /// Un asset de l'agent : seuls les fichiers qu'il a écrits sont lisibles depuis l'interface.

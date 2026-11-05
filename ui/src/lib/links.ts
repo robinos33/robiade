@@ -1,6 +1,6 @@
 import { api } from './api';
 import { fileSize } from './format';
-import type { AssetContent } from './types';
+import type { AssetContent, ProjectFile } from './types';
 
 /**
  * URL web ou de fichier local affichée en clair. Bornes reprises de `@xterm/addon-web-links` :
@@ -75,7 +75,11 @@ export function linkedPath(uri: string): string {
 
 /** Fichier d'un lien `file://` ; un fichier non lu rejette avec la raison à afficher à sa place. */
 export async function readLinkedFile(agentId: string, uri: string): Promise<AssetContent> {
-  const file = await api.readLinkedFile(agentId, uri);
+  return viewable(await api.readLinkedFile(agentId, uri));
+}
+
+/** Contenu d'un fichier lu par Rust ; un fichier non lu lève la raison à afficher à sa place. */
+export function viewable(file: ProjectFile): AssetContent {
   switch (file.state) {
     case 'content':
       return file;

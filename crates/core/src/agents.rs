@@ -201,11 +201,14 @@ pub struct Agent {
     gauges: Gauges,
     assets: Assets,
     resumed_from: Option<String>,
+    /// Sessions Claude Code successives de l'agent : la première, puis une par `/clear`.
+    sessions: Vec<String>,
     name: Option<String>,
 }
 
 impl Agent {
     pub fn start(id: AgentId, project_path: String, resumed_from: Option<String>, now: Millis) -> Self {
+        let first_session = resumed_from.clone().unwrap_or_else(|| id.as_str().to_owned());
         Self {
             id,
             project_path,
@@ -226,6 +229,7 @@ impl Agent {
             gauges: Gauges::default(),
             assets: Assets::default(),
             resumed_from,
+            sessions: vec![first_session],
             name: None,
         }
     }
@@ -290,15 +294,27 @@ impl Agent {
         self.effort = Some(effort);
     }
 
+    /// Session rapportée par un hook : nouvelle après un `/clear`, déjà connue sinon.
+    pub fn observe_session(&mut self, session: &str) {
+        if !self.sessions.iter().any(|s| s == session) {
+            self.sessions.push(session.to_owned());
+        }
+    }
+
     /// La statusline est rafraîchie en continu : le dernier relevé remplace le précédent.
     pub fn observe_gauges(&mut self, gauges: Gauges) {
         self.gauges = gauges;
     }
 
     /// L'agent a écrit un fichier : il est compté, et rejoint les assets s'il en est un.
-    pub fn observe_file_written(&mut self, path: &str, now: Millis) {
+    /// `in_scratchpad` est son chemin résolu s'il est dans le scratchpad de l'agent : tout fichier
+    /// y est un asset, gardé sous ce chemin pour que `/tmp/…` et `/private/tmp/…` n'en fassent qu'un.
+    pub fn observe_file_written(&mut self, path: &str, in_scratchpad: Option<&str>, now: Millis) {
         self.files_modified.insert(path.to_owned());
-        self.assets.record(path, now);
+        match in_scratchpad {
+            Some(resolved) => self.assets.record_scratchpad(resolved, now),
+            None => self.assets.record(path, now),
+        }
     }
 
     /// L'agent a lu une image : elle rejoint les assets, sans compter comme fichier modifié.
@@ -392,6 +408,9 @@ impl Agent {
     pub fn assets(&self) -> &Assets {
         &self.assets
     }
+    pub fn sessions(&self) -> &[String] {
+        &self.sessions
+    }
     pub fn resumed_from(&self) -> Option<&str> {
         self.resumed_from.as_deref()
     }
@@ -453,6 +472,19 @@ mod tests {
     }
 
     #[test]
+    fn keeps_every_session_of_the_agent_once() {
+        let mut agent = agent();
+        agent.observe_session("0b6f1c2e-6b1d-4a5e-9c33-2f1e8d7a4b10");
+        agent.observe_session("9d259b93-5dc0-47c3-b1c8-3084e032dd44");
+        agent.observe_session("9d259b93-5dc0-47c3-b1c8-3084e032dd44");
+        assert_eq!(agent.sessions(), ["0b6f1c2e-6b1d-4a5e-9c33-2f1e8d7a4b10", "9d259b93-5dc0-47c3-b1c8-3084e032dd44"]);
+
+        let id = AgentId::parse("00000000-0000-4000-8000-000000000000").unwrap();
+        let resumed = Agent::start(id, "/p".into(), Some("1b6f64dc-5a64-49af-aa54-67bf35b5afcc".into()), 0);
+        assert_eq!(resumed.sessions(), ["1b6f64dc-5a64-49af-aa54-67bf35b5afcc"]);
+    }
+
+    #[test]
     fn levels_follow_the_statusline_thresholds() {
         assert_eq!(Level::of(49), Level::Comfortable);
         assert_eq!(Level::of(50), Level::Watch);
@@ -484,9 +516,9 @@ mod tests {
         for tool in ["Bash", "Agent", "Bash", "Edit"] {
             a.apply(AgentEvent::ToolStarted { tool: tool.into() }, 1);
         }
-        a.observe_file_written("/p/a.rs", 2);
-        a.observe_file_written("/p/a.rs", 3);
-        a.observe_file_written("/p/b.md", 4);
+        a.observe_file_written("/p/a.rs", None, 2);
+        a.observe_file_written("/p/a.rs", None, 3);
+        a.observe_file_written("/p/b.md", None, 4);
         assert_eq!(a.tools(), [("Bash", 2), ("Agent", 1), ("Edit", 1)]);
         assert_eq!(a.subagents(), 1);
         assert_eq!(a.files_modified(), 2);

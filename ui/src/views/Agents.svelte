@@ -5,7 +5,7 @@
   import { attach, dropPaths, refit, resizeFont, terminalAt, terminalShortcut } from '../lib/terminals';
   import { panelDrag } from '../lib/panelDrag.svelte';
   import { terminalFull } from '../lib/terminalFull.svelte';
-  import { linkedPath, readLinkedFile } from '../lib/links';
+  import { linkedPath, readLinkedFile, viewable } from '../lib/links';
   import { baseName } from '../lib/fileTree';
   import { ago, dollars, duration, shortPath, tokens } from '../lib/format';
   import StatusBadge from '../components/StatusBadge.svelte';
@@ -467,7 +467,7 @@
   <AssetViewer
     name={viewed.name}
     path={viewed.path}
-    load={(path) => api.readAsset(id, path)}
+    load={(path) => api.readAsset(id, path).then(viewable)}
     assets={active.assets}
     onnavigate={(path) => (viewing = path)}
     onclose={() => (viewing = null)}

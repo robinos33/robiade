@@ -32,6 +32,7 @@ const twig: Loader = () => legacy(import('@codemirror/legacy-modes/mode/jinja2')
 const diff: Loader = () => legacy(import('@codemirror/legacy-modes/mode/diff').then((m) => m.diff));
 const python: Loader = () => legacy(import('@codemirror/legacy-modes/mode/python').then((m) => m.python));
 const go: Loader = () => legacy(import('@codemirror/legacy-modes/mode/go').then((m) => m.go));
+const groovy: Loader = () => legacy(import('@codemirror/legacy-modes/mode/groovy').then((m) => m.groovy));
 const nginx: Loader = () => legacy(import('@codemirror/legacy-modes/mode/nginx').then((m) => m.nginx));
 
 const BY_EXTENSION: Record<string, Loader> = {
@@ -55,6 +56,7 @@ const BY_EXTENSION: Record<string, Loader> = {
   diff, patch: diff,
   py: python,
   go,
+  groovy, gradle: groovy,
 };
 
 const BY_NAME: Record<string, Loader> = {
@@ -64,6 +66,7 @@ const BY_NAME: Record<string, Loader> = {
   '.bashrc': shell, '.zshrc': shell, '.profile': shell,
   '.editorconfig': properties, '.gitconfig': properties, '.npmrc': properties,
   'nginx.conf': nginx,
+  jenkinsfile: groovy,
 };
 
 /** Chargeur de la coloration de `name` (nom de fichier), `undefined` pour un texte sans coloration. */

@@ -25,6 +25,9 @@ const MAX_MESSAGE_BYTES: u64 = 64 * 1024;
 #[derive(Debug, Serialize, Deserialize)]
 struct Relayed {
     agent_id: String,
+    /// Session Claude Code en cours : elle change à chaque `/clear`, l'agent restant le même.
+    #[serde(default)]
+    session_id: Option<String>,
     event: String,
     tool: Option<String>,
     notification: Option<String>,
@@ -59,6 +62,8 @@ struct RelayedGauges {
 pub enum Observation {
     Event {
         event: AgentEvent,
+        /// Session Claude Code en cours, identifiant bien formé seulement.
+        session: Option<String>,
         permission_mode: Option<PermissionMode>,
         effort: Option<Effort>,
         written_file: Option<String>,
@@ -136,6 +141,7 @@ fn status_from(input: &str, agent_id: String) -> Option<Relayed> {
     };
     Some(Relayed {
         agent_id,
+        session_id: None,
         event: STATUS_LINE.to_owned(),
         tool: None,
         notification: None,
@@ -168,6 +174,7 @@ fn relayed_from(hook_input: &str, agent_id: String) -> Option<Relayed> {
     };
     Some(Relayed {
         agent_id,
+        session_id: field("session_id"),
         event,
         tool,
         notification: field("notification_type"),
@@ -196,7 +203,16 @@ fn observe(r: Relayed) -> Option<Observation> {
     let event = translate(&r)?;
     let permission_mode = r.permission_mode.as_deref().and_then(PermissionMode::parse);
     let effort = r.effort.as_deref().and_then(Effort::parse);
-    Some(Observation::Event { event, permission_mode, effort, written_file: r.written_file, viewed_image: r.viewed_image })
+    // Un identifiant de session sert à reconnaître un chemin : rien d'autre qu'un UUID n'est gardé.
+    let session = r.session_id.as_deref().and_then(|s| AgentId::parse(s).ok()).map(|s| s.as_str().to_owned());
+    Some(Observation::Event {
+        event,
+        session,
+        permission_mode,
+        effort,
+        written_file: r.written_file,
+        viewed_image: r.viewed_image,
+    })
 }
 
 fn translate(r: &Relayed) -> Option<AgentEvent> {
@@ -273,6 +289,7 @@ mod tests {
         let mut stream = UnixStream::connect(&socket).unwrap();
         let msg = Relayed {
             agent_id: "0b6f1c2e-6b1d-4a5e-9c33-2f1e8d7a4b10".into(),
+            session_id: Some("9D259B93-5DC0-47C3-B1C8-3084E032DD44".into()),
             event: "PreToolUse".into(),
             tool: Some("Bash".into()),
             notification: None,
@@ -290,6 +307,7 @@ mod tests {
             observation,
             Observation::Event {
                 event: AgentEvent::ToolStarted { tool: "Bash".into() },
+                session: Some("9d259b93-5dc0-47c3-b1c8-3084e032dd44".into()),
                 permission_mode: PermissionMode::parse("acceptEdits"),
                 effort: Effort::parse("high"),
                 written_file: None,
@@ -317,9 +335,10 @@ mod tests {
             let observed = observe(relayed_from(input, "id".into()).unwrap());
             let permission_mode = mode.and_then(PermissionMode::parse);
             let effort = effort.and_then(Effort::parse);
+            let session = Some("00000000-0000-4000-8000-000000000000".to_owned());
             assert_eq!(
                 observed,
-                Some(Observation::Event { event, permission_mode, effort, written_file: None, viewed_image: None })
+                Some(Observation::Event { event, session, permission_mode, effort, written_file: None, viewed_image: None })
             );
         }
     }
@@ -355,6 +374,18 @@ mod tests {
         assert_eq!(relayed_from(&code, "id".into()).unwrap().viewed_image, None);
         let notes = input.replace("shot.png", "SPEC.md");
         assert_eq!(relayed_from(&notes, "id".into()).unwrap().viewed_image, None);
+    }
+
+    #[test]
+    fn keeps_only_a_well_formed_session_id() {
+        let input = |session: &str| format!(r#"{{"hook_event_name":"SessionStart","session_id":"{session}"}}"#);
+        let session = |input: String| match observe(relayed_from(&input, "id".into()).unwrap()) {
+            Some(Observation::Event { session, .. }) => session,
+            _ => panic!(),
+        };
+        assert_eq!(session(input("9D259B93-5DC0-47C3-B1C8-3084E032DD44")).as_deref(), Some("9d259b93-5dc0-47c3-b1c8-3084e032dd44"));
+        assert_eq!(session(input("../../etc")), None);
+        assert_eq!(session(r#"{"hook_event_name":"SessionStart"}"#.to_owned()), None);
     }
 
     #[test]
