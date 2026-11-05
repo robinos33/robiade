@@ -61,18 +61,18 @@
     {#if writing}
       <h2 id="act-title">Commenter {mr.project.split('/').pop()} !{mr.iid}</h2>
       <!-- svelte-ignore a11y_autofocus -->
-      <textarea class="field" rows="6" maxlength="10000" bind:value={body} autofocus placeholder="Commentaire (Markdown GitLab)"></textarea>
+      <textarea class="field" rows="6" maxlength="10000" bind:value={body} autofocus placeholder="Commentaire (Markdown {app.forgeName})"></textarea>
       {#if error}<p class="error">{error}</p>{/if}
       <footer>
         <button class="btn" onclick={onclose}>Annuler</button>
         <button class="btn primary" disabled={!body.trim() || busy} onclick={() => void loadPreview()}>Relire avant envoi</button>
       </footer>
     {:else}
-      <h2 id="act-title">{preview ? `${preview.action.charAt(0).toUpperCase()}${preview.action.slice(1)} ?` : 'Lecture de la MR sur GitLab…'}</h2>
+      <h2 id="act-title">{preview ? `${preview.action.charAt(0).toUpperCase()}${preview.action.slice(1)} ?` : `Lecture de la MR sur ${app.forgeName}…`}</h2>
       {#if preview}
         <dl>
           <dt>Projet</dt><dd class="mono">{preview.project}</dd>
-          <dt>MR</dt><dd><strong>!{preview.iid}</strong> {preview.title}</dd>
+          <dt>MR</dt><dd><strong>{app.mrPrefix}{preview.iid}</strong> {preview.title}</dd>
           <dt>Branches</dt><dd class="mono">{preview.sourceBranch} → {preview.targetBranch}</dd>
           <dt>Auteur</dt><dd>{preview.author}</dd>
           <dt>Action</dt><dd><strong>{preview.action}</strong></dd>

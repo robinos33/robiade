@@ -13,6 +13,15 @@ panneau, à côté de la liste : description et fils d'échanges (sans les notes
 **Actions** (toutes confirmées dans l'UI, voir la [sécurité](../socle/securite.md)) : commenter, approuver, rebaser, relancer un job,
 passer draft/ready, merger.
 
+**Fournisseurs** : GitLab ou GitHub, réglés dans les [réglages](../socle/reglages.md). Sur GitHub,
+une pull request est une MR, numérotée `#N`, et son projet est `owner/repo`. Le pipeline est la
+synthèse des checks et des statuts du dernier commit ; relancer un job relance les jobs en échec
+d'un workflow, celui d'un check en échec. Les approbations suivent la décision de review de
+GitHub, et le nombre requis est le plus exigeant de la protection de branche et des rulesets
+lisibles. Les messages des bots sont traités comme des notes système. Dans le panneau, un fil de
+review n'a pas d'état résolu (l'API REST ne le donne pas), mais la liste signale les discussions non
+résolues.
+
 Lien Agents ↔ Forge : une session porteuse d'un `pr-link` ou dont la branche correspond à une MR
 est affichée **sur** la MR, et inversement.
 
@@ -24,9 +33,19 @@ Règles de domaine portées par le code, pas par l'utilisateur :
   sans réglage, la branche par défaut du projet lue sur la forge. Si elle est illisible, la MR
   n'est pas marquée comme wagon dans la liste, et le merge est refusé plutôt que deviné ;
 - un merge ne part que sur le commit de tête vu à la confirmation (`sha`), relu juste avant ;
-- draft/ready passe par le titre (`Draft: `), seule bascule que l'API expose sans ambiguïté ;
+- draft/ready : sur GitLab par le titre (`Draft: `), relu au moment d'agir ; sur GitHub par
+  l'état brouillon de la PR. La confirmation dit « marquer prête » ou « repasser en brouillon » ;
+- un merge que le dépôt interdit (squash désactivé sur GitHub pour un tronc, merge commit
+  désactivé pour un wagon) est refusé dès la confirmation, rien ne part. GitLab tranche lui-même à
+  l'appel ;
+- rebaser une PR GitHub la rebase sur sa cible ; elle ne merge jamais la cible dans la branche ;
 - jamais de merge du parent dans un wagon ;
 - ces règles ne s'appliquent qu'à mes MR.
+- Sur GitHub, des approbations exigées mais dont le nombre est illisible avec le jeton sont
+  « inconnues », jamais « approuvée ».
+- **Risque résiduel** (GitHub) : une review en attente disparaît de la liste dès que j'en rends
+  une, approbation ou simple commentaire. Mes PR et les reviews en attente sont lues par la
+  recherche, 100 au plus.
 
 ## Décisions
 
@@ -39,3 +58,4 @@ fois par lancement et par projet.
 
 - #18 — Forge : lire une issue ou une MR dans Robiade, sans ouvrir GitLab
 - #26 — Socle — indépendance vis-à-vis de l'entreprise : instance GitLab, Vault et branches de tronc dans une page Réglages
+- #28 — Forge — fournisseur GitHub (pull requests, issues, checks)

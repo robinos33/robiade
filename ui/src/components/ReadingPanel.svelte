@@ -83,11 +83,11 @@
   <div class="inner">
     <header>
       <div class="top">
-        <span class="ref mono">{target.kind === 'mr' ? '!' : '#'}{target.iid}</span>
+        <span class="ref mono">{target.kind === 'mr' ? app.mrPrefix : '#'}{target.iid}</span>
         <span class="proj ellipsis" title={target.project}>{target.project}</span>
         <span class="spacer"></span>
         <button class="btn ghost small" title="Ouvrir dans le navigateur" onclick={() => app.openUrl(target.webUrl)}>
-          Ouvrir dans GitLab
+          Ouvrir dans {app.forgeName}
         </button>
         <button class="btn ghost small close" title="Fermer (Échap)" aria-label="Fermer" onclick={() => (app.reading = null)}>✕</button>
       </div>
@@ -134,9 +134,9 @@
     </header>
 
     {#if error}
-      <p class="error">GitLab illisible : {error}</p>
+      <p class="error">{app.forgeName} illisible : {error}</p>
     {:else if page === null}
-      <p class="muted pad">Lecture de GitLab…</p>
+      <p class="muted pad">Lecture de {app.forgeName}…</p>
     {:else}
       <!-- Sans `allow-scripts` ni `allow-same-origin` : le contenu GitLab s'affiche, rien ne s'y exécute. -->
       <iframe title="Description et échanges" sandbox="" srcdoc={page}></iframe>

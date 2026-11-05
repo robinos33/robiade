@@ -1,7 +1,7 @@
 # Robiade
 
 **Le poste de pilotage de mes agents Claude Code.** Tous les agents sur un seul écran, leur état
-visible d'un coup d'œil, et les MR GitLab qu'ils produisent juste à côté.
+visible d'un coup d'œil, et les merge requests qu'ils produisent juste à côté, sur GitLab ou GitHub.
 
 ![Vue Agents](docs/screens/agents.png)
 
@@ -13,14 +13,17 @@ visible d'un coup d'œil, et les MR GitLab qu'ils produisent juste à côté.
 - **Retrouver n'importe quelle session en quelques secondes.** ⌘O fonctionne comme `/resume`, avec
   une recherche plein texte dans les conversations. Les exécutions scriptées (`claude -p`, Agent SDK)
   n'y apparaissent pas.
-- **GitLab sans ouvrir GitLab.** MR, pipelines, approbations et issues par projet. On démarre un
-  agent depuis une issue : le worktree, la branche et le prompt sont préparés, il ne reste qu'à
-  relire. Toute action d'écriture est confirmée et tracée dans un journal.
+- **La forge sans quitter Robiade.** Merge requests (ou pull requests), pipelines, approbations et
+  issues par projet. On démarre un agent depuis une issue : le worktree, la branche et le prompt sont
+  préparés, il ne reste qu'à relire. Toute action d'écriture est confirmée et tracée dans un journal.
 - **Ce que coûtent les agents.** Tokens, coût par modèle et outils utilisés, par session et au global.
 - **Tâches perso** par projet, à côté des issues d'équipe.
 - **Lire le code sans ouvrir l'IDE.** L'onglet Code parcourt le projet ou le worktree sélectionné,
   sans ce que `.gitignore` exclut ; ⌘P retrouve un fichier par son nom. Lecture seule, avec
   coloration ; les `.env` et les clés ne s'ouvrent qu'à la demande.
+- **Les bases de données du projet.** Postgres, MariaDB, Mongo et Elasticsearch : explorateur, grille
+  et console. La prod s'affiche en rouge ; Postgres et MariaDB n'y écrivent que par INSERT, UPDATE ou
+  DELETE validés un à un, Mongo et Elasticsearch jamais.
 
 ![Reprendre une session](docs/screens/resume.png)
 ![Merge requests](docs/screens/mr.png)
@@ -30,19 +33,39 @@ visible d'un coup d'œil, et les MR GitLab qu'ils produisent juste à côté.
 ## Sécurisé par conception
 
 - Aucun port réseau ouvert : les hooks remontent par un socket Unix en `0600`, avec contrôle de l'UID.
-- Le token GitLab est dans le Keychain et n'est jamais transmis à l'interface.
-- Robiade est une vue : sessions, Git et GitLab restent les sources de vérité. À part les tâches
+- Les jetons restent dans le trousseau macOS et ne sont jamais transmis à l'interface. Chacun ne part
+  que vers l'hôte réglé, confirmé à la saisie.
+- Robiade est une vue : sessions, Git et la forge restent les sources de vérité. À part les tâches
   perso, supprimer son cache ne fait rien perdre.
 
-## Stack
+## Installer
 
-Tauri 2, cœur Rust en architecture hexagonale (`crates/core` sans aucune I/O, `crates/adapters`
-pour le reste), interface en Svelte 5. macOS arm64.
+macOS arm64. Il faut Rust, Node et le CLI `claude`.
 
 ```sh
 git clone https://github.com/robinos33/robiade.git && cd robiade
 npm install && npm --prefix ui install
 scripts/install.sh # construit et installe /Applications/Robiade.app
+```
+
+L'application installée se met à jour seule depuis `origin/main` du clone, au lancement
+([détails](specs/socle/mise-a-jour.md)).
+
+Au premier lancement, la page **Réglages** règle la forge (GitLab ou GitHub, une seule instance) et,
+au besoin, un Vault pour les identifiants des bases. Sans réglage, agents, tâches, code et bases
+locales fonctionnent ; seul le volet forge reste vide. Le jeton se range dans le trousseau, depuis un
+vrai terminal :
+
+```sh
+security add-generic-password -s github-api-token -a "$USER" -w   # ou gitlab-api-token
+```
+
+## Développer
+
+Tauri 2, cœur Rust en architecture hexagonale (`crates/core` sans aucune I/O, `crates/adapters`
+pour le reste), interface en Svelte 5.
+
+```sh
 npm run dev        # application en mode développement, données à part (dossier dev/)
 cargo test         # tests du cœur et des adaptateurs
 ui/demo/screens.sh # régénère les captures (données de démo, serveur Vite lancé)
@@ -50,8 +73,7 @@ ui/demo/screens.sh # régénère les captures (données de démo, serveur Vite l
 
 L'application installée et un `npm run dev` peuvent tourner en même temps : le second range sa
 base, son socket de hooks et son index dans un sous-dossier `dev/`. Modifier le dépôt ne touche
-donc plus l'application de tous les jours. L'application installée se met à jour seule depuis
-`origin/main` du clone, au lancement ([détails](specs/socle/mise-a-jour.md)).
+donc pas l'application de tous les jours.
 
 La spécification est dans [specs/](specs/README.md), un fichier par feature, avec ses décisions ;
 l'index, le périmètre et les jalons sont dans [specs/README.md](specs/README.md).

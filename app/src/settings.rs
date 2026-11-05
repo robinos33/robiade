@@ -3,6 +3,8 @@
 
 use std::sync::Arc;
 
+use robiade_adapters::github::GitHub;
+use robiade_adapters::github_urls::GitHubUrls;
 use robiade_adapters::gitlab::GitLab;
 use robiade_adapters::gitlab_urls::GitLabUrls;
 use robiade_adapters::sqlite_settings::SqliteSettings;
@@ -11,7 +13,7 @@ use robiade_core::databases::{NoVault, Vault};
 use robiade_core::forge::{Forge, ForgeUrls, NoForge};
 use robiade_core::settings::{
     unconfirmed_host, ForgeProvider, ForgeSettings, InstanceUrl, KeychainService, SettingsError, VaultSettings,
-    DEFAULT_FORGE_TOKEN_SERVICE, DEFAULT_VAULT_TOKEN_SERVICE,
+    DEFAULT_VAULT_TOKEN_SERVICE,
 };
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -27,6 +29,10 @@ pub fn forge_of(settings: Option<&ForgeSettings>) -> (Arc<dyn Forge>, Arc<dyn Fo
             ForgeProvider::GitLab => (
                 Arc::new(GitLab::new(f.url.authority(), f.token_service.as_str())),
                 Arc::new(GitLabUrls::new(f.url.authority())),
+            ),
+            ForgeProvider::GitHub => (
+                Arc::new(GitHub::new(f.url.authority(), f.token_service.as_str())),
+                Arc::new(GitHubUrls::new(f.url.authority())),
             ),
         },
         None => (Arc::new(NoForge), Arc::new(NoForge)),
@@ -64,10 +70,11 @@ impl From<&ForgeSettings> for ForgeSettingsDto {
 
 impl ForgeSettingsDto {
     fn parse(&self) -> Result<ForgeSettings, SettingsError> {
+        let provider = ForgeProvider::parse(&self.provider)?;
         Ok(ForgeSettings {
-            provider: ForgeProvider::parse(&self.provider)?,
+            provider,
             url: InstanceUrl::parse(&self.url)?,
-            token_service: KeychainService::parse(&self.token_service, DEFAULT_FORGE_TOKEN_SERVICE)?,
+            token_service: KeychainService::parse(&self.token_service, provider.default_token_service())?,
         })
     }
 }
@@ -101,9 +108,17 @@ pub struct SettingsDto {
     pub forge: Option<ForgeSettingsDto>,
     pub vault: Option<VaultSettingsDto>,
     pub restart_needed: bool,
-    /// Services du trousseau proposés quand le champ est vide.
-    pub default_forge_token_service: &'static str,
+    pub providers: Vec<ProviderDto>,
+    /// Service du trousseau proposé quand le champ est vide.
     pub default_vault_token_service: &'static str,
+}
+
+/// Un fournisseur proposé dans Réglages.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderDto {
+    pub id: &'static str,
+    pub default_token_service: &'static str,
 }
 
 fn read(store: &SqliteSettings, applied: &Applied) -> Result<SettingsDto, SettingsError> {
@@ -112,7 +127,10 @@ fn read(store: &SqliteSettings, applied: &Applied) -> Result<SettingsDto, Settin
         restart_needed: forge != applied.forge || vault != applied.vault,
         forge: forge.as_ref().map(Into::into),
         vault: vault.as_ref().map(Into::into),
-        default_forge_token_service: DEFAULT_FORGE_TOKEN_SERVICE,
+        providers: ForgeProvider::ALL
+            .iter()
+            .map(|p| ProviderDto { id: p.as_str(), default_token_service: p.default_token_service() })
+            .collect(),
         default_vault_token_service: DEFAULT_VAULT_TOKEN_SERVICE,
     })
 }
@@ -134,7 +152,8 @@ pub fn settings(state: State<AppState>) -> CmdResult<SettingsDto> {
 
 /// Enregistre ou retire (`None`) la forge. Un nouvel hôte n'est enregistré que si `confirmed_host`
 /// le répète : c'est vers lui que partira le jeton. Sinon, rien n'est écrit et l'hôte à confirmer
-/// est renvoyé.
+/// est renvoyé. L'hôte comparé est celui de l'API (`api.github.com` pour github.com) : changer de
+/// fournisseur sur une même instance change aussi la destination du jeton.
 #[tauri::command]
 pub fn save_forge_settings(
     state: State<AppState>,
@@ -143,8 +162,9 @@ pub fn save_forge_settings(
 ) -> CmdResult<SaveOutcomeDto> {
     let save = || -> Result<SaveOutcomeDto, SettingsError> {
         let new = forge.as_ref().map(ForgeSettingsDto::parse).transpose()?;
-        let old = state.settings.forge()?;
-        let pending = unconfirmed_host(old.as_ref().map(|f| &f.url), new.as_ref().map(|f| &f.url), confirmed_host.as_deref());
+        let old = state.settings.forge()?.map(|f| f.token_destination());
+        let destination = new.as_ref().map(ForgeSettings::token_destination);
+        let pending = unconfirmed_host(old.as_ref(), destination.as_ref(), confirmed_host.as_deref());
         if let Some(host) = pending {
             return Ok(SaveOutcomeDto { settings: None, confirm_host: Some(host.to_owned()) });
         }

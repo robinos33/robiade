@@ -1,7 +1,7 @@
 //! Actions sur une MR. Les règles de domaine sont portées ici, pas laissées à l'utilisateur : une
-//! action interdite n'est jamais proposée à GitLab, et ce qui part est décrit avant d'être confirmé.
+//! action interdite n'est jamais proposée à la forge, et ce qui part est décrit avant d'être confirmé.
 
-use crate::forge::{MergeRequest, MrRef, MrState, PipelineStatus};
+use crate::forge::{MergeMethods, MergeRequest, MrRef, MrState, PipelineStatus};
 use crate::Millis;
 use crate::trunks::TrunkBranches;
 
@@ -21,15 +21,17 @@ pub enum MrAction {
     Merge { expected_sha: String },
 }
 
-/// Ce qui part vers GitLab, une fois les règles appliquées.
+/// Ce qui part vers la forge, une fois les règles appliquées.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Planned {
     Comment(String),
     Approve,
     Rebase,
     RetryPipeline { pipeline_id: u64 },
-    Retitle(String),
-    /// Merge refusé par GitLab si la tête a bougé depuis `sha`.
+    /// Sortir du brouillon ; chaque forge a sa manière (titre, drapeau).
+    MarkReady,
+    MarkDraft,
+    /// Merge refusé par la forge si la tête a bougé depuis `sha`.
     Merge { sha: String, squash: bool },
 }
 
@@ -51,6 +53,8 @@ pub enum Refused {
     NotMergeable(String),
     #[error("la MR a changé depuis l'affichage : relis-la avant de merger")]
     Stale,
+    #[error("le dépôt interdit le merge {0}")]
+    MethodForbidden(&'static str),
 }
 
 /// Applique les règles à l'état **courant** de la MR, relu juste avant d'agir.
@@ -78,8 +82,8 @@ pub fn plan(mr: &MergeRequest, action: &MrAction, me: &str, trunks: &TrunkBranch
             }
             _ => Err(Refused::NothingToRetry),
         },
-        MrAction::MarkReady if mr.state == MrState::Draft => Ok(Planned::Retitle(ready_title(&mr.title))),
-        MrAction::MarkDraft if mr.state == MrState::Opened => Ok(Planned::Retitle(format!("Draft: {}", mr.title))),
+        MrAction::MarkReady if mr.state == MrState::Draft => Ok(Planned::MarkReady),
+        MrAction::MarkDraft if mr.state == MrState::Opened => Ok(Planned::MarkDraft),
         MrAction::MarkReady | MrAction::MarkDraft => Err(Refused::AlreadyThere),
         MrAction::Merge { expected_sha } => {
             if expected_sha.is_empty() || *expected_sha != mr.sha {
@@ -89,20 +93,12 @@ pub fn plan(mr: &MergeRequest, action: &MrAction, me: &str, trunks: &TrunkBranch
                 return Err(Refused::NotMergeable(mr.merge_status.clone()));
             }
             // Un wagon garde ses commits : les wagons en aval en descendent par ancestralité.
-            Ok(Planned::Merge { sha: mr.sha.clone(), squash: !mr.is_intermediate_wagon(trunks) })
-        }
-    }
-}
-
-/// Titre sans les marqueurs de brouillon que GitLab reconnaît en tête.
-fn ready_title(title: &str) -> String {
-    let mut t = title.trim_start();
-    loop {
-        let lower = t.to_ascii_lowercase();
-        let marker = ["draft:", "[draft]", "(draft)", "wip:", "[wip]"].iter().find(|m| lower.starts_with(*m));
-        match marker {
-            Some(m) => t = t[m.len()..].trim_start(),
-            None => return t.to_owned(),
+            let squash = !mr.is_intermediate_wagon(trunks);
+            match (squash, mr.merge_methods) {
+                (true, MergeMethods { squash: false, .. }) => Err(Refused::MethodForbidden("avec squash")),
+                (false, MergeMethods { merge_commit: false, .. }) => Err(Refused::MethodForbidden("sans squash")),
+                _ => Ok(Planned::Merge { sha: mr.sha.clone(), squash }),
+            }
         }
     }
 }
@@ -115,7 +111,8 @@ impl Planned {
             Planned::Approve => "approuver".into(),
             Planned::Rebase => "rebaser sur la branche cible".into(),
             Planned::RetryPipeline { pipeline_id } => format!("relancer les jobs en échec du pipeline #{pipeline_id}"),
-            Planned::Retitle(title) => format!("renommer en « {title} »"),
+            Planned::MarkReady => "marquer prête (sortir du brouillon)".into(),
+            Planned::MarkDraft => "repasser en brouillon".into(),
             Planned::Merge { sha, squash: true } => format!("merger {} avec squash", &sha[..sha.len().min(8)]),
             Planned::Merge { sha, squash: false } => format!("merger {} sans squash (wagon)", &sha[..sha.len().min(8)]),
         }
@@ -175,6 +172,7 @@ mod tests {
             pipeline: Some(PipelineStatus::Failed),
             pipeline_id: Some(42),
             approvals: None,
+            merge_methods: MergeMethods::ANY,
         }
     }
 
@@ -195,6 +193,19 @@ mod tests {
         let main_only = TrunkBranches::new(["main"]).unwrap();
         let into_staging = plan(&mr("moi", "staging"), &merge(sha), "moi", &main_only);
         assert_eq!(into_staging, Ok(Planned::Merge { sha: sha.into(), squash: false }), "staging n'y est qu'une branche");
+    }
+
+    #[test]
+    fn a_merge_method_the_repository_forbids_is_refused_before_anything_leaves() {
+        let sha = "0123456789abcdef";
+        let mut no_squash = mr("moi", "staging");
+        no_squash.merge_methods.squash = false;
+        assert_eq!(plan(&no_squash, &merge(sha), "moi", &trunks()), Err(Refused::MethodForbidden("avec squash")));
+        let mut squash_only = mr("moi", "ticket-1");
+        squash_only.merge_methods.merge_commit = false;
+        assert_eq!(plan(&squash_only, &merge(sha), "moi", &trunks()), Err(Refused::MethodForbidden("sans squash")));
+        squash_only.target_branch = "staging".into();
+        assert_eq!(plan(&squash_only, &merge(sha), "moi", &trunks()), Ok(Planned::Merge { sha: sha.into(), squash: true }));
     }
 
     #[test]
@@ -219,15 +230,14 @@ mod tests {
     }
 
     #[test]
-    fn draft_markers_are_toggled_through_the_title() {
+    fn a_draft_is_toggled_only_from_the_other_state() {
         let mut draft = mr("moi", "staging");
         draft.state = MrState::Draft;
-        draft.title = "[Draft] (draft) Draft: Ajoute le cache".into();
-        assert_eq!(plan(&draft, &MrAction::MarkReady, "moi", &trunks()), Ok(Planned::Retitle("Ajoute le cache".into())));
+        assert_eq!(plan(&draft, &MrAction::MarkReady, "moi", &trunks()), Ok(Planned::MarkReady));
         assert_eq!(plan(&draft, &MrAction::MarkDraft, "moi", &trunks()), Err(Refused::AlreadyThere));
-        let mut ready = mr("moi", "staging");
-        ready.title = "Ajoute le cache".into();
-        assert_eq!(plan(&ready, &MrAction::MarkDraft, "moi", &trunks()), Ok(Planned::Retitle("Draft: Ajoute le cache".into())));
+        let ready = mr("moi", "staging");
+        assert_eq!(plan(&ready, &MrAction::MarkDraft, "moi", &trunks()), Ok(Planned::MarkDraft));
+        assert_eq!(plan(&ready, &MrAction::MarkReady, "moi", &trunks()), Err(Refused::AlreadyThere));
     }
 
     #[test]

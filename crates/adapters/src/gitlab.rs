@@ -9,7 +9,7 @@ use rayon::prelude::*;
 use robiade_core::contributions::Contribution;
 use robiade_core::forge::{
     is_project_path, is_username, readable, Approvals, Discussion, Forge, ForgeError, ForgeUrls, Issue, IssueRef, IssueState,
-    MergeRequest, MrRef, MrState, Note, PipelineStatus,
+    MergeMethods, MergeRequest, MrRef, MrState, Note, PipelineStatus,
 };
 use robiade_core::issue_actions::{IssuePlanned, NewIssue};
 use robiade_core::merge_actions::Planned;
@@ -196,7 +196,15 @@ impl Forge for GitLab {
             Planned::RetryPipeline { pipeline_id } => {
                 self.send(false, &format!("{project}/pipelines/{pipeline_id}/retry"), json!({}))
             }
-            Planned::Retitle(title) => self.send(true, &this, json!({ "title": title })),
+            // GitLab porte le brouillon dans le titre : il est relu, pour partir du titre courant.
+            Planned::MarkReady => {
+                let title = ready_title(&self.single(&mr.project, mr.iid)?.title);
+                self.send(true, &this, json!({ "title": title }))
+            }
+            Planned::MarkDraft => {
+                let title = format!("Draft: {}", self.single(&mr.project, mr.iid)?.title);
+                self.send(true, &this, json!({ "title": title }))
+            }
             Planned::Merge { sha, squash } => {
                 self.send(true, &format!("{this}/merge"), json!({ "sha": sha, "squash": squash }))
             }
@@ -441,6 +449,19 @@ fn discussion_to_domain(d: ApiDiscussion) -> Discussion {
     Discussion { notes, resolved }
 }
 
+/// Titre sans les marqueurs de brouillon que GitLab reconnaît en tête.
+fn ready_title(title: &str) -> String {
+    let mut t = title.trim_start();
+    loop {
+        let lower = t.to_ascii_lowercase();
+        let marker = ["draft:", "[draft]", "(draft)", "wip:", "[wip]"].iter().find(|m| lower.starts_with(*m));
+        match marker {
+            Some(m) => t = t[m.len()..].trim_start(),
+            None => return t.to_owned(),
+        }
+    }
+}
+
 /// `message` d'une réponse d'erreur GitLab (texte, liste ou objet), ramené à une ligne courte.
 fn gitlab_message(raw: &str) -> String {
     let message = match serde_json::from_str::<serde_json::Value>(raw) {
@@ -605,6 +626,7 @@ fn to_domain(m: ApiMergeRequest, urls: &GitLabUrls) -> Option<MergeRequest> {
         pipeline_id: m.head_pipeline.map(|p| p.id),
         sha: m.sha.unwrap_or_default(),
         approvals: None,
+        merge_methods: MergeMethods::ANY,
     })
 }
 
@@ -695,6 +717,13 @@ mod tests {
                 "created_at":"2026-10-26T13:43:40Z","system":false,"resolvable":false,"resolved":null}]}"#,
         );
         assert_eq!((comment.resolved, comment.notes[0].created_at), (None, 1_793_022_220_000));
+    }
+
+    #[test]
+    fn every_draft_marker_gitlab_reads_is_removed() {
+        assert_eq!(ready_title("[Draft] (draft) Draft: Ajoute le cache"), "Ajoute le cache");
+        assert_eq!(ready_title("WIP: [wip] x"), "x");
+        assert_eq!(ready_title("Ajoute le cache"), "Ajoute le cache");
     }
 
     #[test]

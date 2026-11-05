@@ -1,11 +1,11 @@
-# Activité GitLab
+# Activité de la forge
 
-**En une phrase** : mes contributions GitLab, MR ouvertes et mergées, commits et reviews, par
-jour, semaine, mois ou année.
+**En une phrase** : mes contributions sur la forge, MR ouvertes et mergées, commits et reviews,
+par jour, semaine, mois ou année.
 
 ## Comportement
 
-**Activité GitLab** (mes contributions, par jour / semaine / mois / année) : MR ouvertes, MR
+**Activité** (mes contributions, par jour / semaine / mois / année) : MR ouvertes, MR
 mergées, commits, reviews faites. Sources : mes événements GitLab (`/events`) et mes MR mergées
 (`/merge_requests?scope=created_by_me&state=merged`), tous projets confondus — un événement ne porte que l'identifiant de son projet, la vue ne suit donc pas le
 filtre de projet. Un événement a pour auteur celui qui agit, d'où ce que compte chaque série
@@ -25,3 +25,12 @@ d'un jour après sa fin ne change plus, celle en cours est relue après 5 minute
 le cache se reconstruit au premier affichage après un lancement. Coût constaté : ~15 pages de
 100 événements par mois chargé, donc quelques secondes pour 26 semaines et de l'ordre de la minute
 pour 3 ans, une fois par lancement.
+
+**Sur GitHub**, mêmes séries : PR ouvertes, reviews `approved` et pushes viennent de mes
+événements, PR mergées de la recherche (mes PR, quel que soit celui qui merge). GitHub ne sert que
+mes 300 derniers événements, sur 90 jours : au-delà, commits, PR ouvertes et reviews sont vides, et
+la vue le dit. Un push sans décompte de commits en compte un, le minimum certain.
+
+## Tickets
+
+- #28 — Forge — fournisseur GitHub (pull requests, issues, checks)

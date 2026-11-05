@@ -23,7 +23,7 @@
 
 <button
   class="mr {state}"
-  title="{title ? `!${number} ${title}\n` : ''}{LABELS[state]} — {ref ? 'lire (⌘+clic : GitLab)' : 'ouvrir dans GitLab'}"
+  title="{title ? `${app.mrPrefix}${number} ${title}\n` : ''}{LABELS[state]} — {ref ? `lire (⌘+clic : ${app.forgeName})` : `ouvrir dans ${app.forgeName}`}"
   onclick={(e) => {
     e.stopPropagation();
     if (ref) app.read({ kind: 'mr', ...ref, webUrl: url }, e);
@@ -40,7 +40,7 @@
       <path d="M4 5.3v5.4M12 10.7V6.5c0-1.4-1-2.5-2.5-2.5H7" />
     {/if}
   </svg>
-  {#if number}<span class="num">!{number}</span>{/if}
+  {#if number}<span class="num">{app.mrPrefix}{number}</span>{/if}
   {#if title}<span class="title">{title}</span>{/if}
 </button>
 

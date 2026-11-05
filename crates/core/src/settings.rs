@@ -4,8 +4,12 @@
 //! L'hôte réglé est le seul vers lequel le jeton part. Le changer demande une confirmation : sans
 //! elle, une faute de frappe enverrait le jeton existant à un autre hôte.
 
-/// Service du trousseau du jeton de forge, quand le réglage ne le précise pas.
+/// Service du trousseau du jeton GitLab, quand le réglage ne le précise pas.
 pub const DEFAULT_FORGE_TOKEN_SERVICE: &str = "gitlab-api-token";
+/// Service du trousseau du jeton GitHub, quand le réglage ne le précise pas.
+pub const DEFAULT_GITHUB_TOKEN_SERVICE: &str = "github-api-token";
+/// L'instance publique de GitHub, dont l'API vit sur un autre hôte.
+const GITHUB_COM: &str = "github.com";
 /// Service du trousseau du jeton Vault de secours, quand le réglage ne le précise pas.
 pub const DEFAULT_VAULT_TOKEN_SERVICE: &str = "vault-token";
 const SERVICE_MAX_CHARS: usize = 100;
@@ -101,12 +105,17 @@ impl KeychainService {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ForgeProvider {
     GitLab,
+    /// github.com ou GitHub Enterprise Server.
+    GitHub,
 }
 
 impl ForgeProvider {
+    pub const ALL: [Self; 2] = [Self::GitLab, Self::GitHub];
+
     pub fn parse(raw: &str) -> Result<Self, SettingsError> {
         match raw {
             "gitlab" => Ok(Self::GitLab),
+            "github" => Ok(Self::GitHub),
             other => Err(SettingsError::UnknownProvider(other.to_owned())),
         }
     }
@@ -114,6 +123,24 @@ impl ForgeProvider {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::GitLab => "gitlab",
+            Self::GitHub => "github",
+        }
+    }
+
+    /// Service du trousseau proposé quand le réglage ne le précise pas.
+    pub fn default_token_service(self) -> &'static str {
+        match self {
+            Self::GitLab => DEFAULT_FORGE_TOKEN_SERVICE,
+            Self::GitHub => DEFAULT_GITHUB_TOKEN_SERVICE,
+        }
+    }
+
+    /// Hôte vers lequel le jeton part pour l'instance `url` : celui de l'API. Le même que l'instance,
+    /// sauf pour github.com, dont l'API est servie par `api.github.com`.
+    pub fn token_destination(self, url: &InstanceUrl) -> InstanceUrl {
+        match self {
+            Self::GitHub if url.authority == GITHUB_COM => InstanceUrl { authority: format!("api.{GITHUB_COM}") },
+            _ => url.clone(),
         }
     }
 }
@@ -124,6 +151,13 @@ pub struct ForgeSettings {
     pub provider: ForgeProvider,
     pub url: InstanceUrl,
     pub token_service: KeychainService,
+}
+
+impl ForgeSettings {
+    /// Hôte vers lequel le jeton part : c'est lui que la confirmation montre.
+    pub fn token_destination(&self) -> InstanceUrl {
+        self.provider.token_destination(&self.url)
+    }
 }
 
 /// Le Vault, optionnel. Le jeton vient d'abord de la CLI (`~/.vault-token`), sinon du trousseau.
@@ -186,6 +220,18 @@ mod tests {
         assert!(KeychainService::parse("-w", "def").is_err());
         assert!(KeychainService::parse("a\nb", "def").is_err());
         assert!(KeychainService::parse(&"x".repeat(101), "def").is_err());
+    }
+
+    #[test]
+    fn the_github_token_leaves_for_the_api_host() {
+        let destination = |provider, raw| ForgeProvider::token_destination(provider, &InstanceUrl::parse(raw).unwrap());
+        assert_eq!(destination(ForgeProvider::GitHub, "https://GitHub.com").authority(), "api.github.com");
+        assert_eq!(destination(ForgeProvider::GitHub, "github.example.com").authority(), "github.example.com");
+        assert_eq!(destination(ForgeProvider::GitLab, "github.com").authority(), "github.com");
+        for p in ForgeProvider::ALL {
+            assert_eq!(ForgeProvider::parse(p.as_str()), Ok(p));
+        }
+        assert!(ForgeProvider::parse("bitbucket").is_err());
     }
 
     #[test]

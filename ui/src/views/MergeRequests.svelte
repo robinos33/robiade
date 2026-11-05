@@ -28,7 +28,7 @@
   const reviews = $derived((app.forge?.reviews ?? []).filter(app.inGitlabScope));
   const mine = $derived((app.forge?.mine ?? []).filter(app.inGitlabScope));
   const scopeLabel = $derived(
-    app.project === null ? 'tous les projets' : (app.selectedGitlabProject ?? 'projet hors de l’instance GitLab'),
+    app.project === null ? 'tous les projets' : (app.selectedGitlabProject ?? `projet hors de l’instance ${app.forgeName}`),
   );
 </script>
 
@@ -43,7 +43,7 @@
     <div class="main">
       <button
         class="title ellipsis"
-        title="Lire dans Robiade (⌘+clic : GitLab)"
+        title="Lire dans Robiade (⌘+clic : {app.forgeName})"
         onclick={(e) => app.read({ kind: 'mr', project: mr.project, iid: mr.iid, webUrl: mr.webUrl }, e)}
       >{mr.title}</button>
       <div class="meta">
@@ -100,7 +100,7 @@
   <div class="scroll">
     {#if app.forgeError}
       <div class="error">
-        <strong>GitLab illisible.</strong>
+        <strong>{app.forgeName} illisible.</strong>
         <span>{app.forgeError}</span>
         {#if app.forgeError.includes('trousseau')}
           <span class="muted">
@@ -113,7 +113,7 @@
     {#if !app.env?.forge}
       <p class="muted">Aucune forge réglée : renseigne son instance dans <button class="btn ghost" onclick={() => (app.view = 'settings')}>Réglages</button>.</p>
     {:else if app.forge === null}
-      {#if !app.forgeError}<p class="muted">Lecture de GitLab…</p>{/if}
+      {#if !app.forgeError}<p class="muted">Lecture de {app.forgeName}…</p>{/if}
     {:else}
       <div class="block">
         <h2 class="section-title">À relire · {reviews.length}</h2>

@@ -107,7 +107,7 @@
       </footer>
     {:else}
       <h2 id="issue-act-title">
-        {preview ? `${preview.action.charAt(0).toUpperCase()}${preview.action.slice(1)} ?` : "Lecture de l'issue sur GitLab…"}
+        {preview ? `${preview.action.charAt(0).toUpperCase()}${preview.action.slice(1)} ?` : `Lecture de l'issue sur ${app.forgeName}…`}
       </h2>
       {#if preview}
         <dl>

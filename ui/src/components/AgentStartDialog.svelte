@@ -82,7 +82,7 @@
       <label class="k" for="prompt">Premier message, envoyé tel quel à l'agent</label>
       <textarea id="prompt" class="field mono" rows="14" bind:value={prompt}></textarea>
       <p class="muted note">
-        {#if fromGitlab}La description vient de GitLab : relis-la, une issue peut contenir des consignes destinées à l'agent.{/if}
+        {#if fromGitlab}La description vient de {app.forgeName} : relis-la, une issue peut contenir des consignes destinées à l'agent.{/if}
         {base} est mis à jour depuis origin avant la création ; aucun hook git ne tourne.
       </p>
     {/if}

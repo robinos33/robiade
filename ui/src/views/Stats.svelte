@@ -139,14 +139,14 @@
           <span class="v num">{data.medianDurationMs === null ? '—' : duration(data.medianDurationMs)}</span>
         </div>
         <div class="tile"><span class="k">Appels d'outils</span><span class="v num">{count(data.toolCalls)}</span></div>
-        <div class="tile" title="MR liées aux sessions (pr-link), état lu sur GitLab">
+        <div class="tile" title="MR liées aux sessions (pr-link), état lu sur {app.forgeName}">
           <span class="k">MR mergées</span>
           {#if data.mergeRequestRefs.length === 0}
             <span class="v num">—</span><span class="s">aucune MR liée à une session</span>
           {:else if outcomes === null}
-            <span class="v num">…</span><span class="s num">{data.mergeRequestRefs.length} MR à lire sur GitLab</span>
+            <span class="v num">…</span><span class="s num">{data.mergeRequestRefs.length} MR à lire sur {app.forgeName}</span>
           {:else if typeof outcomes === 'string'}
-            <span class="v num">?</span><span class="s" title={outcomes}>GitLab illisible</span>
+            <span class="v num">?</span><span class="s" title={outcomes}>{app.forgeName} illisible</span>
           {:else}
             <span class="v num">{Math.round((outcomes.merged / outcomes.total) * 100)} %</span>
             <span class="s num">
@@ -263,10 +263,10 @@
       {#if app.env?.forge}
       <div class="panel">
         <div class="panel-head">
-          <h2 class="section-title">Activité GitLab</h2>
+          <h2 class="section-title">Activité {app.forgeName}</h2>
           <span class="muted small">tous projets{activityLoading ? ' · lecture…' : ''}</span>
           <span class="grow"></span>
-          <div class="seg" role="radiogroup" aria-label="Regroupement de l'activité GitLab">
+          <div class="seg" role="radiogroup" aria-label="Regroupement de l'activité {app.forgeName}">
             {#each GRANULARITIES as [g, label] (g)}
               <button role="radio" aria-checked={granularity === g} class:on={granularity === g} onclick={() => (granularity = g)}>
                 {label}
@@ -275,10 +275,16 @@
           </div>
         </div>
         {#if activityError}
-          <p class="muted small" title={activityError}>GitLab illisible : {activityError}</p>
+          <p class="muted small" title={activityError}>{app.forgeName} illisible : {activityError}</p>
+        {/if}
+        {#if app.env.forge.provider === 'github'}
+          <p class="muted small">
+            GitHub ne sert que les 300 derniers événements, sur 90 jours : au-delà, commits, MR ouvertes et
+            reviews sont vides. Les MR mergées viennent de la recherche, sans cette limite.
+          </p>
         {/if}
         {#if !activity}
-          {#if !activityError}<p class="muted small">Lecture des événements GitLab…</p>{/if}
+          {#if !activityError}<p class="muted small">Lecture des événements {app.forgeName}…</p>{/if}
         {:else if multiples}
           <div class="multiples">
             {#each multiples as m (m.key)}

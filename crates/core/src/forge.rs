@@ -215,6 +215,18 @@ pub struct Approvals {
     pub by: Vec<String>,
 }
 
+/// Méthodes de merge que le dépôt autorise. GitLab n'en déclare aucune interdite ici : il tranche
+/// lui-même à l'appel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MergeMethods {
+    pub squash: bool,
+    pub merge_commit: bool,
+}
+
+impl MergeMethods {
+    pub const ANY: Self = Self { squash: true, merge_commit: true };
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MergeRequest {
     pub mr: MrRef,
@@ -240,6 +252,7 @@ pub struct MergeRequest {
     pub pipeline_id: Option<u64>,
     /// `None` quand elles n'ont pas été lues (MR des autres).
     pub approvals: Option<Approvals>,
+    pub merge_methods: MergeMethods,
 }
 
 impl MergeRequest {
@@ -284,15 +297,15 @@ pub fn readable(discussions: impl IntoIterator<Item = Discussion>) -> Vec<Discus
 pub enum ForgeError {
     #[error("aucune forge réglée : renseigne-la dans Réglages")]
     NotConfigured,
-    #[error("aucun token GitLab dans le trousseau (service {0})")]
+    #[error("aucun jeton de forge dans le trousseau (service {0})")]
     NoToken(String),
-    #[error("token GitLab refusé")]
+    #[error("jeton refusé par la forge")]
     Unauthorized,
-    #[error("MR introuvable")]
+    #[error("introuvable sur la forge")]
     NotFound,
-    #[error("GitLab injoignable : {0}")]
+    #[error("forge injoignable : {0}")]
     Network(String),
-    #[error("réponse GitLab inattendue : {0}")]
+    #[error("réponse inattendue de la forge : {0}")]
     Api(String),
 }
 
@@ -424,6 +437,7 @@ mod tests {
             pipeline: None,
             pipeline_id: None,
             approvals: None,
+            merge_methods: MergeMethods::ANY,
         };
         let staging = TrunkBranches::new(["staging", "master"]).unwrap();
         let main = TrunkBranches::new(["main"]).unwrap();

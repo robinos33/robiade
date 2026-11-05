@@ -286,14 +286,16 @@ export interface Environment {
   vault: VaultSettings | null;
 }
 
-export interface ForgeSettings { provider: 'gitlab'; url: string; tokenService: string }
+export type ForgeProvider = 'gitlab' | 'github';
+export interface ForgeSettings { provider: ForgeProvider; url: string; tokenService: string }
+export interface ForgeProviderInfo { id: ForgeProvider; defaultTokenService: string }
 export interface VaultSettings { url: string; tokenService: string }
 /** Réglages enregistrés ; `restartNeeded` : ils diffèrent de ceux en vigueur. */
 export interface Settings {
   forge: ForgeSettings | null;
   vault: VaultSettings | null;
   restartNeeded: boolean;
-  defaultForgeTokenService: string;
+  providers: ForgeProviderInfo[];
   defaultVaultTokenService: string;
 }
 /** Branches de tronc d'un dépôt : réglées (`configured`), sinon la branche par défaut du remote. */
