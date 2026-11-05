@@ -6,6 +6,7 @@
   import { ago, duration } from '../lib/format';
   import StatusBadge from '../components/StatusBadge.svelte';
   import MrBadge from '../components/MrBadge.svelte';
+  import ProjectTag from '../components/ProjectTag.svelte';
 
   const REASONS: Record<string, string> = {
     awaitingPermission: 'attend ta permission pour continuer',
@@ -62,7 +63,7 @@
             <li>
               <button class="card {a.status}" onclick={() => app.openAgent(a.id)}>
                 <StatusBadge status={a.status} />
-                <span class="what"><strong>{a.projectName}</strong> {REASONS[a.status]}</span>
+                <span class="what"><strong><ProjectTag name={a.projectName} root={a.projectRoot} /></strong> {REASONS[a.status]}</span>
                 <span class="muted num">depuis {ago(a.lastActivityAt, app.now).replace('il y a ', '')}</span>
               </button>
             </li>
@@ -112,7 +113,7 @@
               <button class="card failed" onclick={() => (app.view = 'env')}>
                 <span class="what">
                   <strong>{c.name}</strong>
-                  <span class="muted">{c.workspace?.projectName ?? c.composeProject ?? ''}</span>
+                  <span class="muted">{#if c.workspace}<ProjectTag name={c.workspace.projectName} root={c.workspace.projectRoot} />{:else}{c.composeProject ?? ''}{/if}</span>
                 </span>
                 <span class="muted num">{c.status}</span>
               </button>
@@ -133,7 +134,7 @@
               <li>
                 <button class="row" onclick={() => app.openAgent(a.id)}>
                   <StatusBadge status={a.status} compact />
-                  <span class="grow">{a.projectName}</span>
+                  <span class="grow"><ProjectTag name={a.projectName} root={a.projectRoot} /></span>
                   <span class="mono muted">{a.lastTool ?? '—'}</span>
                   <span class="muted num">{duration(app.now - a.startedAt)}</span>
                 </button>
@@ -163,7 +164,7 @@
         {#each recent as s (s.sessionId)}
           <li>
             <button class="row" onclick={() => app.openSession(s.sessionId)}>
-              <span class="proj">{s.projectName}</span>
+              <span class="proj"><ProjectTag name={s.projectName} root={s.projectRoot} /></span>
               <span class="grow ellipsis">{s.title}</span>
               {#if s.mergeRequestUrl}<MrBadge url={s.mergeRequestUrl} />{/if}
               <span class="muted num">{ago(s.lastActivityAt, app.now)}</span>

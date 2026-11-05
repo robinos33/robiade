@@ -2,6 +2,7 @@
   import { api } from '../lib/api';
   import { app } from '../lib/state.svelte';
   import type { ActionPreview, MergeRequest, MrAction } from '../lib/types';
+  import ProjectTag from './ProjectTag.svelte';
 
   /** `action` sans corps pour un commentaire : il se rédige ici, avant l'aperçu. */
   let { mr, action, onclose }: { mr: MergeRequest; action: MrAction; onclose: () => void } = $props();
@@ -71,7 +72,7 @@
       <h2 id="act-title">{preview ? `${preview.action.charAt(0).toUpperCase()}${preview.action.slice(1)} ?` : `Lecture de la MR sur ${app.forgeName}…`}</h2>
       {#if preview}
         <dl>
-          <dt>Projet</dt><dd class="mono">{preview.project}</dd>
+          <dt>Projet</dt><dd class="mono"><ProjectTag name={preview.project} forge={preview.project} /></dd>
           <dt>MR</dt><dd><strong>{app.mrPrefix}{preview.iid}</strong> {preview.title}</dd>
           <dt>Branches</dt><dd class="mono">{preview.sourceBranch} → {preview.targetBranch}</dd>
           <dt>Auteur</dt><dd>{preview.author}</dd>

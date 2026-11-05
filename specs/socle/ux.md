@@ -77,7 +77,9 @@ performance, communs à toutes les vues.
 - **Densité maîtrisée.** Une ligne = un objet, avec l'état lisible sans survol. Pas de cartes
   aérées façon dashboard marketing.
 - **L'état d'abord, la décoration ensuite.** Le seul code couleur fort est réservé à ce qui
-  demande une action ([Inbox](../inbox.md)). Le reste est neutre.
+  demande une action ([Inbox](../inbox.md)). Le reste est neutre, à une exception près : la
+  [couleur d'un projet](couleur-projet.md), qui est une identité et non un état, et dont la forme
+  ne peut pas se lire « il faut agir ».
 - **Rien ne saute.** Les mises à jour en direct ne déplacent pas la ligne sous le curseur ; le
   tri ne change pas pendant qu'on lit.
 - Thème Système (par défaut, suit macOS à chaud), Clair ou Sombre, choisi par un bouton en bas

@@ -23,6 +23,18 @@
   --mr-merged: light-dark(#7046d6, #a780ff);
   --mr-closed: light-dark(#d23b3b, #ff6b6b);
   --mr-draft: light-dark(#84858c, #8a8b93);
+  /*
+   * Couleur de projet : une identité, pas un état. Ni orange ni rouge (action, danger), ni ambre
+   * (attente), ni gris (« aucune »). Contraste ≥ 3,9:1 sur --bg dans les deux thèmes ; les noms
+   * sont ceux de `robiade_core::project_colors::PALETTE`.
+   */
+  --project-olive: light-dark(#5f7d0e, #a3d93a);
+  --project-vert: light-dark(#18884a, #4ade80);
+  --project-sarcelle: light-dark(#0d8a80, #2dd4bf);
+  --project-ciel: light-dark(#0b7fbf, #38bdf8);
+  --project-bleu: light-dark(#2f5fe0, #6f95ff);
+  --project-violet: light-dark(#8a3ee8, #c08cff);
+  --project-rose: light-dark(#c02f98, #f47fd8);
   --chart: light-dark(#e85d24, #ff7a45);
   --chart-muted: light-dark(#f1d9cd, #3a2a24);
   --radius: 8px;
@@ -89,6 +101,8 @@ kbd {
 .page-head .spacer { flex: 1; }
 /* Barre latérale repliée : les feux tricolores et le bouton qui la rouvre se posent sur l'en-tête. */
 .shell.sidebar-collapsed .page-head { padding-left: var(--titlebar-inset); }
+/* Filtre sur un projet coloré : 2 px à sa couleur, à la place du trait neutre. */
+.shell.project-colored .page-head { border-bottom: 2px solid var(--project-current); }
 
 .empty {
   display: grid; place-items: center; text-align: center;

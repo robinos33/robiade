@@ -224,8 +224,9 @@
       style:--rail-w={railWidth ? `${railWidth}px` : null}
       style:--side-w={sideWidth ? `${sideWidth}px` : null}
     >
+      <!-- Liseré à la couleur du projet (--tab-project) : il se lit sans lire le texte. -->
       {#snippet tab(a: Agent)}
-        <li class="tab">
+        <li class="tab" style:--tab-project={app.colorVar(a.projectRoot)}>
           <button
             class="agent live"
             class:active={active?.id === a.id}
@@ -275,7 +276,7 @@
             <ul class="list">
               {#each recent as r (r.kind === 'tab' ? r.agent.id : r.session.sessionId)}
                 {#if r.kind === 'tab'}
-                  <li class="tab">
+                  <li class="tab" style:--tab-project={app.colorVar(r.agent.projectRoot)}>
                     <button
                       class="recent"
                       class:active={active?.id === r.agent.id}
@@ -291,7 +292,7 @@
                     </button>
                   </li>
                 {:else}
-                  <li>
+                  <li style:--tab-project={app.colorVar(r.session.projectRoot)}>
                     <button
                       class="recent"
                       onclick={() => app.spawn(r.session.projectPath, r.session.sessionId)}
@@ -311,7 +312,7 @@
       </div>
 
       {#if active}
-        <div class="term-wrap">
+        <div class="term-wrap" style:--tab-project={app.colorVar(active.projectRoot)}>
           <!-- En pleine fenêtre, la barre passe sous les feux tricolores : elle déplace la fenêtre. -->
           <div class="term-bar" data-tauri-drag-region={terminalFull.shown || null}>
             {#if renaming && draft}
@@ -522,12 +523,15 @@
   .more:hover { color: var(--ink); background: var(--bg-hover); }
   .group { padding: 4px 10px; }
   .group .num { margin-left: 4px; color: var(--ink-2); }
-  .agent.live { border-left: 2px solid var(--accent); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+  /* Couleur du projet, transparente sans couleur : l'accent reste à ce qui attend. */
+  .agent.live { border-left: 3px solid var(--tab-project, transparent); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
   .recent {
     display: flex; align-items: center; gap: 6px; width: 100%; padding: 3px 10px;
     border: 0; border-radius: var(--radius-sm); background: none; text-align: left;
     color: var(--ink-3); font-size: 12px;
+    box-shadow: inset 3px 0 0 var(--tab-project, transparent);
   }
+  li[style] > .recent { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
   .recent:hover { color: var(--ink); background: var(--bg-hover); }
   .recent.active { color: var(--ink); background: var(--bg-active); }
   .tab:has(.recent) .close { top: 2px; }
@@ -551,6 +555,7 @@
   .term-bar {
     display: flex; align-items: center; gap: 12px; height: 40px; padding: 0 12px; flex: none;
     border-bottom: 1px solid var(--line); background: var(--bg); container-type: inline-size;
+    box-shadow: inset 3px 0 0 var(--tab-project, transparent);
   }
   .spacer { flex: 1; }
   /* Quand la place manque, le chemin cède d'abord, puis branche et titre de MR, le nom en dernier ; les actions jamais. */

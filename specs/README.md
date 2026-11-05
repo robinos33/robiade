@@ -22,7 +22,8 @@ suit le même plan : « En une phrase », « Comportement », « Règles », « 
 | [socle/securite.md](socle/securite.md) | Principes de sécurité transverses |
 | [socle/ux.md](socle/ux.md) | Principes d'interface, structure de l'écran, budgets de performance |
 | [socle/mise-a-jour.md](socle/mise-a-jour.md) | Mise à jour de l'app depuis `origin/main` au lancement |
-| [socle/reglages.md](socle/reglages.md) | Page Réglages : instance de forge, Vault, branches de tronc par projet |
+| [socle/reglages.md](socle/reglages.md) | Page Réglages : instance de forge, Vault, branches de tronc et couleur par projet |
+| [socle/couleur-projet.md](socle/couleur-projet.md) | Couleur de chaque projet, reprise partout où il apparaît |
 | [agents/lancement.md](agents/lancement.md) | Lancer `claude` dans un PTY, sessions de l'ADE seules, cycle de vie |
 | [agents/status.md](agents/status.md) | Machine à états d'une session, indicateurs de sa ligne |
 | [agents/statusline.md](agents/statusline.md) | Contexte consommé et quotas lus par la statusline |

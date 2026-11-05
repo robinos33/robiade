@@ -4,6 +4,7 @@
   import { ago } from '../lib/format';
   import type { Agent, Session } from '../lib/types';
   import MrBadge from './MrBadge.svelte';
+  import ProjectTag from './ProjectTag.svelte';
 
   /** Reprendre une session, comme `/resume` : filtrer, choisir, Entrée. */
   let query = $state('');
@@ -107,7 +108,7 @@
               <span class="when num">{ago(s.lastActivityAt, app.now)}</span>
             </div>
             <div class="line sub">
-              <span>{s.projectName}</span>
+              <span><ProjectTag name={s.projectName} root={s.projectRoot} /></span>
               {#if s.worktreeName}<span class="mono">{s.worktreeName}</span>{/if}
               {#if s.gitBranch}<span class="mono">⎇ {s.gitBranch}</span>{/if}
               <span class="num">{s.userMessages} message{s.userMessages > 1 ? 's' : ''}</span>

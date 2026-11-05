@@ -2,8 +2,10 @@
   import { toggleSidebar } from '../lib/sidebar.svelte';
   import { terminalFull } from '../lib/terminalFull.svelte';
   import { app, type View } from '../lib/state.svelte';
+  import ProjectTag from './ProjectTag.svelte';
 
-  interface Command { label: string; hint: string; run: () => void }
+  /** `labelRoot` / `hintRoot` : ce texte est le nom d'un projet, rendu par ProjectTag. */
+  interface Command { label: string; hint: string; run: () => void; prefix?: string; labelRoot?: string; hintRoot?: string }
 
   let query = $state('');
   let index = $state(0);
@@ -31,12 +33,12 @@
       },
       ...VIEWS.map(([v, label]) => ({ label: `Aller à ${label}`, hint: 'vue', run: () => (app.view = v) })),
       { label: 'Vue globale', hint: 'projet', run: () => (app.project = null) },
-      ...app.projects.map((p) => ({ label: p.name, hint: 'projet', run: () => (app.project = p.root) })),
-      ...app.agents.map((a) => ({ label: `Agent · ${a.projectName}`, hint: a.status, run: () => app.openAgent(a.id) })),
-      ...app.conversations.slice(0, 300).map((s) => ({ label: s.title, hint: s.projectName, run: () => app.openSession(s.sessionId) })),
+      ...app.projects.map((p) => ({ label: p.name, labelRoot: p.root, hint: 'projet', run: () => (app.project = p.root) })),
+      ...app.agents.map((a) => ({ prefix: 'Agent · ', label: a.projectName, labelRoot: a.projectRoot, hint: a.status, run: () => app.openAgent(a.id) })),
+      ...app.conversations.slice(0, 300).map((s) => ({ label: s.title, hint: s.projectName, hintRoot: s.projectRoot, run: () => app.openSession(s.sessionId) })),
     ];
     const q = query.trim().toLowerCase();
-    return (q ? all.filter((c) => `${c.label} ${c.hint}`.toLowerCase().includes(q)) : all).slice(0, 40);
+    return (q ? all.filter((c) => `${c.prefix ?? ''}${c.label} ${c.hint}`.toLowerCase().includes(q)) : all).slice(0, 40);
   });
 
   $effect(() => input?.focus());
@@ -64,7 +66,8 @@
       {#each commands as c, i (i)}
         <li>
           <button class:active={i === index} onmouseenter={() => (index = i)} onclick={() => run(c)}>
-            <span class="label">{c.label}</span><span class="hint">{c.hint}</span>
+            <span class="label">{c.prefix ?? ''}{#if c.labelRoot}<ProjectTag name={c.label} root={c.labelRoot} />{:else}{c.label}{/if}</span>
+            <span class="hint">{#if c.hintRoot}<ProjectTag name={c.hint} root={c.hintRoot} />{:else}{c.hint}{/if}</span>
           </button>
         </li>
       {:else}

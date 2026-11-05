@@ -300,6 +300,8 @@ export interface Settings {
 }
 /** Branches de tronc d'un dépôt : réglées (`configured`), sinon la branche par défaut du remote. */
 export interface RepositoryTrunks { repository: string; configured: string[] | null; remoteDefault: string | null }
+/** Couleur de chaque projet, par racine de dépôt principal ; un dépôt absent n'en a pas. */
+export interface ProjectColors { palette: string[]; colors: Record<string, string> }
 /** Enregistrement fait (`settings`), ou suspendu à la confirmation de `confirmHost`. */
 export interface SaveOutcome { settings: Settings | null; confirmHost: string | null }
 

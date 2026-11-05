@@ -3,6 +3,7 @@
   import { api } from '../lib/api';
   import { shortPath } from '../lib/format';
   import StatusBadge from './StatusBadge.svelte';
+  import ProjectTag from './ProjectTag.svelte';
 
   const agents = $derived(app.quitRequest?.agents ?? []);
   const relaunch = $derived(app.quitRequest?.relaunch ?? false);
@@ -31,7 +32,7 @@
       {#each agents as a (a.id)}
         <li>
           <StatusBadge status={a.status} />
-          <strong>{a.projectName}</strong>
+          <strong><ProjectTag name={a.projectName} root={a.projectRoot} /></strong>
           <span class="mono muted path">{shortPath(a.projectPath, app.env?.home ?? '')}</span>
         </li>
       {/each}

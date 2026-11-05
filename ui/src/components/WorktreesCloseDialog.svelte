@@ -3,6 +3,7 @@
   import { app } from '../lib/state.svelte';
   import type { Worktree } from '../lib/types';
   import WorktreeBranch from './WorktreeBranch.svelte';
+  import ProjectTag from './ProjectTag.svelte';
 
   /** Les worktrees propres au moment du clic ; le serveur revérifie chacun avant de le supprimer. */
   let { worktrees, onclose }: { worktrees: Worktree[]; onclose: () => void } = $props();
@@ -75,7 +76,7 @@
           <li class="item">
             <span class="name ellipsis" title={w.path}>{w.name}</span>
             <WorktreeBranch git={w.git} />
-            {#if app.project === null}<span class="muted ellipsis">{w.projectName}</span>{/if}
+            {#if app.project === null}<span class="muted ellipsis"><ProjectTag name={w.projectName} root={w.root} /></span>{/if}
           </li>
         {/each}
       </ul>

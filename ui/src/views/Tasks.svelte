@@ -9,6 +9,7 @@
   import IssueCreateDialog from '../components/IssueCreateDialog.svelte';
   import AgentStartDialog from '../components/AgentStartDialog.svelte';
   import TaskLinkDialog from '../components/TaskLinkDialog.svelte';
+  import ProjectTag from '../components/ProjectTag.svelte';
 
   /** Issue sur laquelle démarrer un agent, avec le dépôt local de son projet. */
   let starting = $state<{ issue: Issue; root: string } | null>(null);
@@ -126,7 +127,7 @@
 <section class="page">
   <header class="page-head" data-tauri-drag-region>
     <h1>Tâches</h1>
-    <span class="muted">{app.project ? projectName(app.project) : 'Toutes, y compris globales'}</span>
+    <span class="muted">{#if app.project}<ProjectTag name={projectName(app.project) ?? app.project} root={app.project} />{:else}Toutes, y compris globales{/if}</span>
   </header>
 
   <div class="scroll">
@@ -148,7 +149,7 @@
                 <div class="body">
                   <span class="t selectable">{t.title}</span>
                   <span class="meta">
-                    <span class="scope">{projectName(t.projectPath) ?? 'Globale'}</span>
+                    <span class="scope"><ProjectTag name={projectName(t.projectPath) ?? 'Globale'} root={t.projectPath} /></span>
                     <span>{ago(t.doneAt ?? t.createdAt, app.now)}</span>
                     <input
                       class="due-on"
@@ -232,7 +233,7 @@
                   onclick={(e) => app.read({ kind: 'issue', project: i.project, iid: i.iid, webUrl: i.webUrl }, e)}
                 >{i.title}</button>
                 <span class="meta">
-                  {#if issuesScope === 'assigned'}<span class="scope" title={i.project}>{i.project.split('/').pop()}</span>{/if}
+                  {#if issuesScope === 'assigned'}<span class="scope" title={i.project}><ProjectTag name={i.project.split('/').pop() ?? i.project} forge={i.project} /></span>{/if}
                   {#each i.labels as l (l)}<span class="label">{l}</span>{/each}
                   {#if i.assignees.length}<span>{i.assignees.join(', ')}</span>{/if}
                   {#if i.mergeRequests}<span>{i.mergeRequests} MR</span>{/if}

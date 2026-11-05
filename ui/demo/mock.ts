@@ -32,6 +32,14 @@ const workspace = (project: number, worktree: string | null = null) => {
   };
 };
 
+/** Deux projets colorés sur quatre, comme le critère de sortie du ticket #37 ; `?colors=` les remplace. */
+const PALETTE = ['olive', 'vert', 'sarcelle', 'ciel', 'bleu', 'violet', 'rose'];
+const projectColors: Record<string, string> = Object.fromEntries(
+  (new URLSearchParams(location.search).get('colors') ?? 'sarcelle,,violet')
+    .split(',')
+    .flatMap((c, i) => (c && PROJECTS[i] ? [[`${HOME}/code/${PROJECTS[i].name}`, c]] : [])),
+);
+
 const tokens = (k: number): Tokens => {
   const input = k * 40, output = k * 120, cacheRead = k * 9000, cacheCreation = k * 700;
   return { input, output, cacheRead, cacheCreation, total: input + output + cacheRead + cacheCreation };
@@ -585,12 +593,33 @@ const BOOT = new URLSearchParams(location.search).get('boot');
 
 const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
   /** `?update=installing|ready|failed` : état de la mise à jour au lancement. */
+  settings: () => ({
+    forge: { provider: 'gitlab', url: GITLAB, tokenService: 'gitlab-api-token' },
+    vault: null,
+    restartNeeded: false,
+    providers: [
+      { id: 'gitlab', defaultTokenService: 'gitlab-api-token' },
+      { id: 'github', defaultTokenService: 'github-api-token' },
+    ],
+    defaultVaultTokenService: 'vault-token',
+  }),
+  repository_trunks: (args) => ({ repository: args.repository, configured: null, remoteDefault: 'main' }),
+  project_colors: () => ({ palette: PALETTE, colors: projectColors }),
+  save_project_color: (args) => {
+    const repository = String(args.repository);
+    if (args.color) projectColors[repository] = String(args.color);
+    else delete projectColors[repository];
+    return { palette: PALETTE, colors: projectColors };
+  },
   update_status: () => DEMO_UPDATES[new URLSearchParams(location.search).get('update') ?? ''] ?? null,
   relaunch: () => null,
   environment: () => {
     if (BOOT === 'fail') throw 'environnement illisible (démo)';
     if (BOOT === 'hang') return new Promise(() => {});
-    return { claudePath: '/usr/local/bin/claude', home: HOME, commit: 'b71236c9e4f2a8d1c3b5e7f9a0d2c4e6f8a1b3c5', dirty: false };
+    return {
+      claudePath: '/usr/local/bin/claude', home: HOME, commit: 'b71236c9e4f2a8d1c3b5e7f9a0d2c4e6f8a1b3c5', dirty: false,
+      forge: { provider: 'gitlab', url: GITLAB, tokenService: 'gitlab-api-token' }, vault: null,
+    };
   },
   list_history: () => (BOOT === 'slow' ? new Promise((r) => setTimeout(() => r(sessions), 2000)) : sessions),
   list_agents: () => agents,
