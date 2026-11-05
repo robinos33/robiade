@@ -37,6 +37,9 @@ impl SqliteAgentJournal {
             "permission_ms INTEGER NOT NULL DEFAULT 0",
             "failed_turns INTEGER NOT NULL DEFAULT 0",
             "closed INTEGER NOT NULL DEFAULT 0",
+            // Session en cours, qui suit `/clear` et `/resume` ; à défaut, `resumed_from` (onglets
+            // enregistrés avant elle), puis l'identifiant de l'onglet.
+            "session_id TEXT",
         ] {
             let name = column.split(' ').next().unwrap_or_default();
             let exists: bool = conn
@@ -53,7 +56,8 @@ impl SqliteAgentJournal {
         let conn = self.conn.lock().map_err(storage)?;
         let mut stmt = conn
             .prepare(&format!(
-                "SELECT {COLUMNS} FROM agent WHERE last_activity_at >= ?1 {filter} ORDER BY last_activity_at DESC"
+                "SELECT {} FROM agent WHERE last_activity_at >= ?1 {filter} ORDER BY last_activity_at DESC",
+                COLUMNS.replacen("session_id", "coalesce(session_id, resumed_from)", 1)
             ))
             .map_err(storage)?;
         let rows = stmt.query_map([since], Self::from_row).map_err(storage)?;
@@ -76,7 +80,7 @@ impl SqliteAgentJournal {
 }
 
 const COLUMNS: &str =
-    "id, project_path, resumed_from, name, started_at, last_activity_at, waited_ms, permission_ms, failed_turns";
+    "id, project_path, session_id, name, started_at, last_activity_at, waited_ms, permission_ms, failed_turns";
 
 impl AgentJournal for SqliteAgentJournal {
     fn recent(&self, since: Millis) -> Result<Vec<Agent>, JournalError> {
@@ -93,7 +97,7 @@ impl AgentJournal for SqliteAgentJournal {
         conn.execute(
             &format!(
                 "INSERT INTO agent ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
-                 ON CONFLICT(id) DO UPDATE SET name = ?4, last_activity_at = ?6,
+                 ON CONFLICT(id) DO UPDATE SET session_id = ?3, name = ?4, last_activity_at = ?6,
                      waited_ms = ?7, permission_ms = ?8, failed_turns = ?9"
             ),
             params![
@@ -145,5 +149,33 @@ mod tests {
         journal.close(&id).unwrap();
         assert!(journal.recent(0).unwrap().is_empty());
         assert_eq!(journal.since(0).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn reopens_a_tab_on_its_session_in_progress() {
+        let journal = SqliteAgentJournal::open(Path::new(":memory:")).unwrap();
+        let id = AgentId::parse("0b6f1c2e-6b1d-4a5e-9c33-2f1e8d7a4b10").unwrap();
+        let mut agent = Agent::start(id, "/p".into(), None, 10);
+        journal.save(&agent, 10).unwrap();
+        agent.observe_session("9d259b93-5dc0-47c3-b1c8-3084e032dd44");
+        journal.save(&agent, 20).unwrap();
+        assert_eq!(journal.recent(0).unwrap()[0].session_id(), "9d259b93-5dc0-47c3-b1c8-3084e032dd44");
+    }
+
+    #[test]
+    fn a_tab_saved_before_the_session_column_reopens_on_the_session_it_resumed() {
+        let journal = SqliteAgentJournal::open(Path::new(":memory:")).unwrap();
+        journal
+            .conn
+            .lock()
+            .unwrap()
+            .execute_batch(
+                "INSERT INTO agent (id, project_path, resumed_from, started_at, last_activity_at) VALUES
+                     ('0b6f1c2e-6b1d-4a5e-9c33-2f1e8d7a4b10', '/p', '1b6f64dc-5a64-49af-aa54-67bf35b5afcc', 1, 2),
+                     ('9d259b93-5dc0-47c3-b1c8-3084e032dd44', '/p', NULL, 1, 3);",
+            )
+            .unwrap();
+        let sessions: Vec<String> = journal.recent(0).unwrap().iter().map(|a| a.session_id().to_owned()).collect();
+        assert_eq!(sessions, ["9d259b93-5dc0-47c3-b1c8-3084e032dd44", "1b6f64dc-5a64-49af-aa54-67bf35b5afcc"]);
     }
 }
