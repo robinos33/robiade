@@ -307,9 +307,14 @@ impl Agent {
     }
 
     /// L'agent a écrit un fichier : il est compté, et rejoint les assets s'il en est un.
-    pub fn observe_file_written(&mut self, path: &str, now: Millis) {
+    /// `in_scratchpad` est son chemin résolu s'il est dans le scratchpad de l'agent : tout fichier
+    /// y est un asset, gardé sous ce chemin pour que `/tmp/…` et `/private/tmp/…` n'en fassent qu'un.
+    pub fn observe_file_written(&mut self, path: &str, in_scratchpad: Option<&str>, now: Millis) {
         self.files_modified.insert(path.to_owned());
-        self.assets.record(path, now);
+        match in_scratchpad {
+            Some(resolved) => self.assets.record_scratchpad(resolved, now),
+            None => self.assets.record(path, now),
+        }
     }
 
     /// L'agent a lu une image : elle rejoint les assets, sans compter comme fichier modifié.
@@ -511,9 +516,9 @@ mod tests {
         for tool in ["Bash", "Agent", "Bash", "Edit"] {
             a.apply(AgentEvent::ToolStarted { tool: tool.into() }, 1);
         }
-        a.observe_file_written("/p/a.rs", 2);
-        a.observe_file_written("/p/a.rs", 3);
-        a.observe_file_written("/p/b.md", 4);
+        a.observe_file_written("/p/a.rs", None, 2);
+        a.observe_file_written("/p/a.rs", None, 3);
+        a.observe_file_written("/p/b.md", None, 4);
         assert_eq!(a.tools(), [("Bash", 2), ("Agent", 1), ("Edit", 1)]);
         assert_eq!(a.subagents(), 1);
         assert_eq!(a.files_modified(), 2);

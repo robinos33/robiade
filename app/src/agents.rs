@@ -12,6 +12,7 @@ use robiade_adapters::workspace::WorkspaceResolver;
 use robiade_core::agents::{Agent, AgentEvent, AgentId, AgentJournal, AgentStatus, Effort, PermissionMode};
 use robiade_core::assets::Asset;
 use robiade_core::project::Workspace;
+use robiade_core::scratchpad;
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_notification::NotificationExt;
 
@@ -49,6 +50,8 @@ pub struct AgentRegistry {
     socket: PathBuf,
     /// Base des tâches, donnée aux agents pour `robiade task done`.
     tasks_db: PathBuf,
+    /// Racine résolue des scratchpads de Claude Code, `None` si elle ne se résout pas.
+    scratchpad_root: Option<PathBuf>,
     live: Mutex<HashMap<AgentId, Live>>,
 }
 
@@ -75,7 +78,8 @@ impl AgentRegistry {
                 (agent.id().clone(), Live { agent, workspace, process: None })
             })
             .collect();
-        Self { app, workspaces, journal, login, socket, tasks_db, live: Mutex::new(live) }
+        let scratchpad_root = robiade_adapters::scratchpad::root();
+        Self { app, workspaces, journal, login, socket, tasks_db, scratchpad_root, live: Mutex::new(live) }
     }
 
     pub fn socket(&self) -> &Path {
@@ -190,6 +194,8 @@ impl AgentRegistry {
 
     fn on_event(&self, id: &AgentId, event: AgentEvent, observed: Observed) {
         let Observed { session, permission_mode: mode, effort, written_file, viewed_image } = observed;
+        // Résolu hors du verrou : `/tmp` → `/private/tmp`, liens et `..` suivis.
+        let written_resolved = written_file.as_deref().and_then(|p| Path::new(p).canonicalize().ok());
         let ended = matches!(event, AgentEvent::ProcessExited);
         let asks_reply = matches!(event, AgentEvent::WaitingForInput);
         let notification = {
@@ -206,7 +212,11 @@ impl AgentRegistry {
                 entry.agent.observe_effort(effort);
             }
             if let Some(path) = &written_file {
-                entry.agent.observe_file_written(path, now());
+                let in_scratchpad = written_resolved
+                    .as_deref()
+                    .filter(|resolved| self.in_scratchpad(&entry.agent, resolved))
+                    .and_then(Path::to_str);
+                entry.agent.observe_file_written(path, in_scratchpad, now());
             }
             if let Some(path) = &viewed_image {
                 entry.agent.observe_image_viewed(path, now());
@@ -227,6 +237,11 @@ impl AgentRegistry {
             self.notify(id, &title, body);
         }
         self.publish();
+    }
+
+    /// `resolved` est dans le scratchpad de l'une des sessions de l'agent.
+    fn in_scratchpad(&self, agent: &Agent, resolved: &Path) -> bool {
+        self.scratchpad_root.as_deref().is_some_and(|root| scratchpad::holds(root, agent.sessions(), resolved))
     }
 
     /// Notification macOS quand un agent se met à m'attendre et que je regarde ailleurs.

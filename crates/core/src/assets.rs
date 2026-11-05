@@ -1,5 +1,6 @@
 //! Assets : fichiers qu'un agent écrit ou modifie et que je veux regarder sans quitter Robiade
-//! (captures, schémas, pages HTML, notes Markdown). Le code source n'en fait pas partie.
+//! (captures, schémas, pages HTML, notes Markdown). Le code source n'en fait pas partie, sauf
+//! dans le scratchpad de l'agent, où il range justement ce qu'il veut me montrer.
 
 use crate::Millis;
 
@@ -57,10 +58,21 @@ pub struct Assets(Vec<Asset>);
 impl Assets {
     /// Garde le fichier s'il est un asset désigné par un chemin absolu ; ignore le reste.
     pub fn record(&mut self, path: &str, now: Millis) {
+        if let Some(kind) = AssetKind::of(path) {
+            self.insert(path, kind, now);
+        }
+    }
+
+    /// Garde le fichier, écrit dans le scratchpad de l'agent, quelle que soit son extension : ce
+    /// qui n'est ni image, ni HTML, ni Markdown s'affiche en texte.
+    pub fn record_scratchpad(&mut self, path: &str, now: Millis) {
+        self.insert(path, AssetKind::of(path).unwrap_or(AssetKind::Text), now);
+    }
+
+    fn insert(&mut self, path: &str, kind: AssetKind, now: Millis) {
         if !path.starts_with('/') {
             return;
         }
-        let Some(kind) = AssetKind::of(path) else { return };
         self.0.retain(|a| a.path != path);
         self.0.insert(0, Asset { path: path.to_owned(), kind, written_at: now });
     }
@@ -98,5 +110,19 @@ mod tests {
         assets.record("relatif.png", 5);
         let paths: Vec<_> = assets.iter().map(|a| (a.path.as_str(), a.written_at)).collect();
         assert_eq!(paths, [("/p/a.png", 3), ("/p/b.md", 2)]);
+    }
+
+    #[test]
+    fn any_file_of_the_scratchpad_is_an_asset() {
+        let mut assets = Assets::default();
+        assets.record_scratchpad("/s/bascule.groovy", 1);
+        assets.record_scratchpad("/s/.env", 2);
+        assets.record_scratchpad("/s/schema.png", 3);
+        assets.record_scratchpad("relatif.sql", 4);
+        let kinds: Vec<_> = assets.iter().map(|a| (a.path.as_str(), a.kind)).collect();
+        assert_eq!(
+            kinds,
+            [("/s/schema.png", AssetKind::Image), ("/s/.env", AssetKind::Text), ("/s/bascule.groovy", AssetKind::Text)]
+        );
     }
 }

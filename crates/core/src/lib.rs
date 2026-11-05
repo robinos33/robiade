@@ -22,6 +22,7 @@ pub mod merge_actions;
 pub mod pricing;
 pub mod project;
 pub mod project_colors;
+pub mod scratchpad;
 pub mod secrets;
 pub mod settings;
 pub mod stats;
