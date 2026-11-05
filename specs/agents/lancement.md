@@ -25,7 +25,7 @@ Code 2.1.318). La session en cours d'un agent est celle du dernier hook reçu. C
 « Reprendre », « Redémarrer » et la réouverture au démarrage relancent, et c'est à elle que
 l'historique rattache l'onglet et son nom. Elle est gardée avec l'onglet d'une exécution de
 Robiade à l'autre. La session d'avant un `/clear` reste dans l'historique et dans « Récents », sans
-nom, et se reprend comme une autre. **[À trancher]** : y garder aussi le nom de l'onglet.
+nom, et se reprend comme une autre.
 
 ## Règles
 
@@ -37,6 +37,10 @@ nom, et se reprend comme une autre. **[À trancher]** : y garder aussi le nom de
 **Piloter un agent** — décidé le 2026-10-27 : **CLI intégré**. L'ADE lance le vrai `claude` dans un
 pseudo-terminal affiché par xterm.js. Fidélité totale (même CLI, mêmes skills, mêmes `/commands`) ;
 l'état structuré vient des hooks, jamais du parsing de la sortie terminal.
+
+Décidé le 2026-11-05 : **après un `/clear`, la session d'avant redevient anonyme** dans l'historique
+(issue #44). Le nom de l'onglet suit la session en cours ; le garder aussi sur les sessions
+précédentes obligerait à enregistrer toutes les sessions de l'onglet.
 
 ## Écarté
 
