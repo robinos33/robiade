@@ -99,7 +99,7 @@ impl AgentJournal for SqliteAgentJournal {
             params![
                 agent.id().as_str(),
                 agent.project_path(),
-                agent.resumed_from(),
+                agent.session_id(),
                 saved.name,
                 saved.started_at,
                 saved.last_activity_at,

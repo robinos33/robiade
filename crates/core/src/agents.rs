@@ -200,15 +200,17 @@ pub struct Agent {
     effort: Option<Effort>,
     gauges: Gauges,
     assets: Assets,
-    resumed_from: Option<String>,
-    /// Sessions Claude Code successives de l'agent : la première, puis une par `/clear`.
+    /// Session Claude Code en cours : celle du dernier hook reçu.
+    session: String,
+    /// Sessions Claude Code successives de l'agent : la première, puis une par `/clear` ou `/resume`.
     sessions: Vec<String>,
     name: Option<String>,
 }
 
 impl Agent {
-    pub fn start(id: AgentId, project_path: String, resumed_from: Option<String>, now: Millis) -> Self {
-        let first_session = resumed_from.clone().unwrap_or_else(|| id.as_str().to_owned());
+    /// `resume` : la session reprise par `claude --resume`, `None` pour une session neuve.
+    pub fn start(id: AgentId, project_path: String, resume: Option<String>, now: Millis) -> Self {
+        let session = resume.unwrap_or_else(|| id.as_str().to_owned());
         Self {
             id,
             project_path,
@@ -228,15 +230,15 @@ impl Agent {
             effort: None,
             gauges: Gauges::default(),
             assets: Assets::default(),
-            resumed_from,
-            sessions: vec![first_session],
+            sessions: vec![session.clone()],
+            session,
             name: None,
         }
     }
 
     /// Onglet d'une exécution précédente de Robiade : son process n'existe plus, il se reprend.
-    pub fn restore(id: AgentId, project_path: String, resumed_from: Option<String>, saved: Saved) -> Self {
-        let mut agent = Self::start(id, project_path, resumed_from, saved.started_at);
+    pub fn restore(id: AgentId, project_path: String, session: Option<String>, saved: Saved) -> Self {
+        let mut agent = Self::start(id, project_path, session, saved.started_at);
         agent.status = AgentStatus::Ended;
         agent.last_activity_at = saved.last_activity_at;
         agent.name = saved.name;
@@ -264,9 +266,10 @@ impl Agent {
         self.name = (!name.is_empty()).then_some(name);
     }
 
-    /// Session Claude Code de l'agent : celle qu'il reprend, sinon la sienne.
+    /// Session Claude Code en cours : celle qu'une reprise ou un redémarrage relance. Au départ,
+    /// celle qu'il reprend, sinon la sienne ; puis celle du dernier hook (`/clear`, `/resume`).
     pub fn session_id(&self) -> &str {
-        self.resumed_from.as_deref().unwrap_or(self.id.as_str())
+        &self.session
     }
 
     pub fn apply(&mut self, event: AgentEvent, now: Millis) {
@@ -294,10 +297,14 @@ impl Agent {
         self.effort = Some(effort);
     }
 
-    /// Session rapportée par un hook : nouvelle après un `/clear`, déjà connue sinon.
+    /// Session rapportée par un hook : elle devient la session en cours. Nouvelle après un `/clear`,
+    /// parfois déjà connue après un `/resume` dans le même process.
     pub fn observe_session(&mut self, session: &str) {
         if !self.sessions.iter().any(|s| s == session) {
             self.sessions.push(session.to_owned());
+        }
+        if self.session != session {
+            session.clone_into(&mut self.session);
         }
     }
 
@@ -411,9 +418,6 @@ impl Agent {
     pub fn sessions(&self) -> &[String] {
         &self.sessions
     }
-    pub fn resumed_from(&self) -> Option<&str> {
-        self.resumed_from.as_deref()
-    }
     pub fn name(&self) -> Option<&str> {
         self.name.as_deref()
     }
@@ -482,6 +486,22 @@ mod tests {
         let id = AgentId::parse("00000000-0000-4000-8000-000000000000").unwrap();
         let resumed = Agent::start(id, "/p".into(), Some("1b6f64dc-5a64-49af-aa54-67bf35b5afcc".into()), 0);
         assert_eq!(resumed.sessions(), ["1b6f64dc-5a64-49af-aa54-67bf35b5afcc"]);
+    }
+
+    #[test]
+    fn the_session_in_progress_is_the_last_one_reported() {
+        let first = "1b6f64dc-5a64-49af-aa54-67bf35b5afcc";
+        let after_clear = "9d259b93-5dc0-47c3-b1c8-3084e032dd44";
+        let id = AgentId::parse("00000000-0000-4000-8000-000000000000").unwrap();
+        let mut agent = Agent::start(id, "/p".into(), Some(first.into()), 0);
+        assert_eq!(agent.session_id(), first);
+
+        agent.observe_session(after_clear);
+        assert_eq!(agent.session_id(), after_clear);
+        // `/resume` dans le même process : retour à une session déjà connue.
+        agent.observe_session(first);
+        assert_eq!(agent.session_id(), first);
+        assert_eq!(agent.sessions(), [first, after_clear]);
     }
 
     #[test]

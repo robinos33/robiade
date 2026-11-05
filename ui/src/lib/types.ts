@@ -36,7 +36,8 @@ export interface Agent extends Workspace {
   gauges: Gauges;
   /** Fichiers affichables écrits par l'agent, le plus récent en tête. */
   assets: Asset[];
-  resumedFrom: string | null;
+  /** Session Claude Code en cours : suit `/clear` et `/resume`. */
+  sessionId: string;
   /** Nom donné à l'onglet ; l'historique l'affiche aussi à la place du titre. */
   name: string | null;
 }

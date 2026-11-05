@@ -82,7 +82,7 @@
   const linkedSession = (t: Task) => app.history.find((s) => s.sessionId === t.sessionId);
   /** Agent vivant sur la session liée : on l'ouvre plutôt que son historique. */
   const linkedAgent = (t: Task) =>
-    app.agents.find((a) => a.status !== 'ended' && (a.resumedFrom ?? a.id) === t.sessionId);
+    app.agents.find((a) => a.status !== 'ended' && a.sessionId === t.sessionId);
   function openLinkedSession(t: Task) {
     const agent = linkedAgent(t);
     if (agent) app.openAgent(agent.id);

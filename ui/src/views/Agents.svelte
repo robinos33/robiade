@@ -52,7 +52,7 @@
   const active = $derived(app.agents.find((a) => a.id === app.activeAgentId) ?? app.visibleAgents[0]);
   const session = $derived(active ? app.sessionOf(active) : undefined);
   const mr = $derived(active ? app.mergeRequestOf(active) : null);
-  const sessionId = $derived(active ? (active.resumedFrom ?? active.id) : '');
+  const sessionId = $derived(active ? active.sessionId : '');
   const viewed = $derived(active?.assets.find((a) => a.path === viewing));
 
   const running = $derived(app.visibleAgents.filter((a) => a.status !== 'ended'));
@@ -60,7 +60,7 @@
   type Recent = { kind: 'tab'; agent: Agent; at: number } | { kind: 'session'; session: Session; at: number };
   const recent = $derived.by((): Recent[] => {
     const tabs = app.visibleAgents.filter((a) => a.status === 'ended');
-    const covered = new Set(app.agents.map((a) => a.resumedFrom ?? a.id));
+    const covered = new Set(app.agents.map((a) => a.sessionId));
     const sessions = app.visibleHistory
       .filter((s) => !covered.has(s.sessionId))
       .sort((a, b) => b.lastActivityAt - a.lastActivityAt)
@@ -348,7 +348,7 @@
               </button>
               <button class="btn ghost" onclick={stop} title="Arrêter le process"><Icon name="stop" size={13} /><span class="label">Arrêter</span></button>
             {:else}
-              <button class="btn" onclick={() => app.spawn(active.projectPath, active.resumedFrom ?? active.id)} title="Reprendre la session">
+              <button class="btn" onclick={() => app.spawn(active.projectPath, active.sessionId)} title="Reprendre la session">
                 <Icon name="resume" size={12} /><span class="label">Reprendre</span>
               </button>
             {/if}
