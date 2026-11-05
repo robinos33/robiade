@@ -111,24 +111,56 @@ function pastePrimary(term: Terminal) {
   term.focus();
 }
 
-/** Lignes repliées recollées au plus, de part et d'autre de la ligne survolée. */
+/** Lignes recollées au plus, de part et d'autre de la ligne survolée. */
 const MAX_WRAPPED_ROWS = 32;
 
+/** Caractère admis dans une URL, d'après `LINK_PATTERN` ; les chemins cités n'en ont pas d'autres. */
+const URL_CHAR = /[^\s"'!*(){}|\\^<>`]/;
+
 /**
- * Ligne logique autour de la ligne `y` du buffer (à partir de 0) : les lignes que le terminal a
- * repliées y sont recollées, pour qu'une URL plus longue que la largeur reste un seul lien.
- * `cells[i]` est la cellule `[x, y]` d'où vient `text[i]` : un caractère large en occupe deux.
+ * Puce de liste ou de résultat d'outil (`⎿`) suivie d'une espace : une ligne qui commence ainsi
+ * ouvre un nouvel élément, même après une URL arrêtée pile au bord.
  */
-function logicalLine(buffer: IBuffer, y: number): { text: string; cells: [number, number][] } {
+const BULLET = /^[-*+•⎿](?: |$)/;
+
+/**
+ * Si la ligne `row` du buffer continue la précédente, nombre de cellules à sauter à son début ;
+ * -1 sinon. Le terminal marque repliée (`isWrapped`) une ligne qu'il a coupée lui-même. Claude
+ * Code (Ink), lui, coupe à la largeur avec un vrai saut de ligne, puis indente la suite (2
+ * colonnes, 4 dans une liste) : une URL coupée remplit alors la ligne jusqu'à la dernière colonne,
+ * et sa suite reprend juste après l'indentation, qui ne fait pas partie du lien. Une ligne arrêtée
+ * au bord par hasard se colle aussi à la suivante : sans effet tant qu'une URL ou un chemin ne
+ * finit pas au bord.
+ */
+function continuation(buffer: IBuffer, cols: number, row: number): number {
+  const line = buffer.getLine(row);
+  if (!line || row === 0) return -1;
+  if (line.isWrapped) return 0;
+  const edge = buffer.getLine(row - 1)?.getCell(cols - 1)?.getChars() ?? '';
+  if (!URL_CHAR.test(edge)) return -1;
+  const text = line.translateToString(false, 0, cols);
+  const rest = text.replace(/^ +/, '');
+  return URL_CHAR.test(rest.charAt(0)) && !BULLET.test(rest) ? text.length - rest.length : -1;
+}
+
+/**
+ * Ligne logique autour de la ligne `y` du buffer (à partir de 0) : les lignes qui continuent la
+ * précédente y sont recollées, pour qu'une URL plus longue que la largeur reste un seul lien.
+ * `cells[i]` est la cellule `[x, y]` d'où vient `text[i]` : un caractère large en occupe deux.
+ * Seules les `cols` premières cellules comptent : après un rétrécissement, xterm garde des lignes
+ * plus longues, dont la fin invisible couperait l'URL par des blancs.
+ */
+function logicalLine(buffer: IBuffer, cols: number, y: number): { text: string; cells: [number, number][] } {
   let top = y;
-  while (top > 0 && y - top < MAX_WRAPPED_ROWS && buffer.getLine(top)?.isWrapped) top--;
+  while (top > 0 && y - top < MAX_WRAPPED_ROWS && continuation(buffer, cols, top) >= 0) top--;
   let text = '';
   const cells: [number, number][] = [];
   const cell = buffer.getNullCell();
   for (let row = top; row <= y + MAX_WRAPPED_ROWS; row++) {
     const line = buffer.getLine(row);
-    if (!line || (row > top && !line.isWrapped)) break;
-    for (let x = 0; x < line.length; x++) {
+    const skip = row === top ? 0 : continuation(buffer, cols, row);
+    if (!line || skip < 0) break;
+    for (let x = skip; x < Math.min(line.length, cols); x++) {
       if (!line.getCell(x, cell)?.getWidth()) continue; // seconde moitié d'un caractère large
       const chars = cell.getChars() || ' ';
       text += chars;
@@ -147,7 +179,7 @@ function logicalLine(buffer: IBuffer, y: number): { text: string; cells: [number
 function lineLinks(term: Terminal, id: string, activate: (event: MouseEvent, uri: string) => void): ILinkProvider {
   return {
     provideLinks(y, callback) {
-      const { text, cells } = logicalLine(term.buffer.active, y - 1);
+      const { text, cells } = logicalLine(term.buffer.active, term.cols, y - 1);
       const link = (index: number, length: number, open: (event: MouseEvent, text: string) => void): ILink[] => {
         const start = cells[index];
         const end = cells[index + length - 1];

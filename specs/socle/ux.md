@@ -42,6 +42,14 @@ performance, communs à toutes les vues.
 - Dans le terminal, ⌘+clic ouvre un lien, comme dans iTerm ; ⌘ enfoncé, le lien survolé est
   souligné. Sans ⌘, un clic reste un clic dans le terminal. Claude Code y affiche ses URL en
   clair (`FORCE_HYPERLINK=0`) : xterm 6 ne laisse pas ⌘ décider du soulignement d'un lien OSC 8.
+- Un lien plus long que la largeur reste un seul lien, souligné et cliquable sur chacune de ses
+  lignes, qu'il soit replié par le terminal ou coupé par Claude Code. Claude Code coupe lui-même
+  à la largeur, avec un vrai saut de ligne et une suite indentée : une ligne continue la
+  précédente quand celle-ci remplit la dernière colonne d'un caractère d'URL et que la suite,
+  indentation passée, en commence un. L'indentation ne fait pas partie du lien, mais son
+  soulignement la traverse. Les chemins cités en profitent de la même façon. Après un
+  redimensionnement, Claude Code redessine et la coupure suit. Le prompt que je tape, affiché
+  avec une colonne de marge à droite, n'est pas recollé.
 - Dans le terminal d'un agent, le clic molette colle la dernière sélection dans le prompt, sans
   l'envoyer, comme la sélection primaire de X11. Cette sélection vient d'un terminal, celui-ci ou
   un autre, ou d'une zone sélectionnable de l'interface : titre d'issue ou de MR, diff,
@@ -157,6 +165,11 @@ performance, communs à toutes les vues.
   les feux.
 - Décidé le 2026-11-05 : le terminal en pleine fenêtre reste en pleine fenêtre quand on change
   d'agent, et le mode n'est pas mémorisé au redémarrage : c'est un mode passager (issue #33).
+- Décidé le 2026-11-05 : une ligne qui commence par une puce (`-`, `*`, `+`, `•`, `⎿`) suivie
+  d'une espace ne continue jamais la précédente (issue #31). L'issue prévoyait une garde si des
+  collages abusifs apparaissaient : dès la première capture, une URL de liste arrêtée pile au bord
+  avalait le `-` de la puce suivante. Risque résiduel : une ligne de texte qui suit une URL
+  arrêtée par hasard au bord s'y colle encore, de même qu'un élément de liste numérotée.
 
 ## Écarté
 
@@ -180,4 +193,5 @@ performance, communs à toutes les vues.
 - #23 — Interface — panneaux latéraux redimensionnables
 - #27 — Barre latérale — replier les sections Projets et Worktrees
 - #30 — Barre latérale — bouton pour replier la barre entière, et ⌘B
+- #31 — Terminal — un lien coupé sur deux lignes reste un seul lien, cliquable en entier
 - #33 — Agents — terminal en pleine fenêtre
