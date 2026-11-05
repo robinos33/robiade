@@ -11,3 +11,19 @@ pub fn root() -> Option<PathBuf> {
     let uid = unsafe { libc::getuid() };
     Some(Path::new(&tmp).canonicalize().ok()?.join(format!("claude-{uid}")))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn root_is_under_the_resolved_tmp_and_named_after_my_uid() {
+        if std::env::var_os("CLAUDE_CODE_TMPDIR").is_some() {
+            return;
+        }
+        let root = root().unwrap();
+        // SAFETY: getuid n'a pas de précondition.
+        assert!(root.ends_with(format!("claude-{}", unsafe { libc::getuid() })));
+        assert_eq!(root.parent(), Path::new("/tmp").canonicalize().ok().as_deref());
+    }
+}
