@@ -1,5 +1,6 @@
 <script lang="ts">
   import { toggleSidebar } from '../lib/sidebar.svelte';
+  import { terminalFull } from '../lib/terminalFull.svelte';
   import { app, type View } from '../lib/state.svelte';
 
   interface Command { label: string; hint: string; run: () => void }
@@ -20,6 +21,14 @@
       { label: 'Reprendre une session…', hint: '⌘O', run: () => (app.resumeOpen = true) },
       { label: 'Aller au fichier…', hint: '⌘P', run: () => app.findFile() },
       { label: 'Afficher / masquer la barre latérale', hint: '⌘B', run: toggleSidebar },
+      {
+        label: 'Terminal en pleine fenêtre / disposition normale',
+        hint: '⌘⇧↩',
+        run: () => {
+          app.view = 'agents';
+          terminalFull.toggle();
+        },
+      },
       ...VIEWS.map(([v, label]) => ({ label: `Aller à ${label}`, hint: 'vue', run: () => (app.view = v) })),
       { label: 'Vue globale', hint: 'projet', run: () => (app.project = null) },
       ...app.projects.map((p) => ({ label: p.name, hint: 'projet', run: () => (app.project = p.root) })),

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { sidebar, toggleSidebar } from '../lib/sidebar.svelte';
+  import { terminalFull } from '../lib/terminalFull.svelte';
   import { app, type View } from '../lib/state.svelte';
   import { cycleTheme, theme, type ThemeChoice } from '../lib/theme.svelte';
   import type { Agent, Worktree } from '../lib/types';
@@ -37,21 +38,8 @@
   /** Échéances tombées hors du projet affiché : signalées partout, comptées seulement chez elles. */
   const dueElsewhere = $derived(app.allDueTasks.length - app.dueTasks.length);
 
-  /**
-   * Signal le plus fort de la barre, que son bouton porte une fois repliée : l'accent compte les
-   * agents qui attendent et les échéances tombées, de tous les projets ; sinon, le bleu compte les
-   * agents qui tournent. Un agent qui attend ne disparaît pas avec la barre.
-   */
-  const signal = $derived.by(() => {
-    const waiting = app.agents.filter((a) => a.needsAttention).length;
-    const due = app.allDueTasks.length;
-    if (waiting + due > 0) {
-      const parts = [waiting && `${waiting} agent(s) en attente`, due && `${due} échéance(s) tombée(s)`];
-      return { hot: true, count: waiting + due, text: parts.filter(Boolean).join(', ') };
-    }
-    const live = app.liveAgents.length;
-    return live ? { hot: false, count: live, text: `${live} agent(s) actif(s)` } : null;
-  });
+  /** Ce que porte le bouton une fois la barre repliée. */
+  const signal = $derived(app.signal);
   const toggleLabel = $derived(
     sidebar.collapsed ? `Afficher la barre latérale${signal ? ` · ${signal.text}` : ''}` : 'Replier la barre latérale',
   );
@@ -144,9 +132,11 @@
 
 <svelte:window onclick={closeMenu} onkeydown={closeMenu} onblur={() => (menu = null)} />
 
-<!-- Hors de la barre, pour rester à droite des feux tricolores quand elle est repliée. -->
+<!-- Hors de la barre, pour rester à droite des feux tricolores quand elle est repliée. Terminal en
+     pleine fenêtre, c'est son bouton à lui qui porte le signal. -->
 <button
   class="toggle"
+  class:hidden={terminalFull.shown}
   onclick={toggleSidebar}
   aria-expanded={!sidebar.collapsed}
   aria-label={toggleLabel}
@@ -157,7 +147,7 @@
 </button>
 
 <!-- Masquée et non démontée : la largeur réglée et l'état des composants survivent au repli. -->
-<nav class:collapsed={sidebar.collapsed} style:--sidebar-w={width ? `${width}px` : null}>
+<nav class:collapsed={sidebar.collapsed || terminalFull.shown} style:--sidebar-w={width ? `${width}px` : null}>
   <ResizeHandle id="sidebar" edge="right" min={180} max={360} label="Largeur de la barre latérale" bind:width />
   <div class="titlebar" data-tauri-drag-region></div>
 
@@ -273,6 +263,7 @@
     border: 0; border-radius: var(--radius-sm); background: none; color: var(--ink-3);
   }
   .toggle:hover { background: var(--bg-hover); color: var(--ink); }
+  .toggle.hidden { display: none; }
   /* En coin, pour que le bouton garde sa largeur : `--titlebar-inset` couvre un compte à deux chiffres. */
   .signal {
     position: absolute; top: -3px; left: 15px; min-width: 15px; height: 15px; padding: 0 4px;

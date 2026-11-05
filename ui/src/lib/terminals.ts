@@ -192,11 +192,13 @@ function lineLinks(term: Terminal, id: string, activate: (event: MouseEvent, uri
  * Raccourci de Robiade tapé dans un terminal. xterm laisse passer ses trois événements (keydown,
  * keypress, keyup) sans les traiter, la vue le reçoit en keydown : rien ne part dans le PTY.
  */
-export type TerminalShortcut = 'find' | 'bigger' | 'smaller' | 'reset';
+export type TerminalShortcut = 'find' | 'bigger' | 'smaller' | 'reset' | 'full';
 
 export function terminalShortcut(e: KeyboardEvent): TerminalShortcut | null {
   if (!e.metaKey || e.ctrlKey || e.altKey) return null;
   if (e.key === 'f') return 'find';
+  // ⌘⇧↩, comme iTerm pour agrandir un panneau.
+  if (e.key === 'Enter' && e.shiftKey) return 'full';
   if (e.key === '+' || e.key === '=') return 'bigger';
   if (e.key === '-') return 'smaller';
   // En AZERTY, 0 se tape avec ⇧ : la touche compte, pas le caractère.

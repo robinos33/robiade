@@ -32,6 +32,13 @@ performance, communs à toutes les vues.
   confondus ; sinon, en bleu, les agents qui tournent. Le repli est mémorisé sur le poste, et la
   barre se rouvre à la largeur réglée avant.
 - Le panneau de détail d'un agent héberge son terminal ; on peut le détacher dans une fenêtre.
+- **Terminal en pleine fenêtre** : ⌘⇧↩, un bouton à droite de la barre du terminal ou la palette
+  effacent barre latérale, en-tête, liste des agents et panneau Session/Diff, sans démonter ces
+  panneaux. La barre du terminal reste, sous les feux tricolores, et déplace la fenêtre. Le même
+  geste rend la disposition d'avant, largeurs réglées comprises ; Échap n'en sort pas, il
+  appartient à Claude Code. Son bouton porte alors le compteur de la barre repliée : un agent qui
+  attend reste signalé. Le mode survit au changement d'agent et de vue, mais ne s'applique que
+  dans la vue Agents ; il n'est pas mémorisé au redémarrage.
 - Dans le terminal, ⌘+clic ouvre un lien, comme dans iTerm ; ⌘ enfoncé, le lien survolé est
   souligné. Sans ⌘, un clic reste un clic dans le terminal. Claude Code y affiche ses URL en
   clair (`FORCE_HYPERLINK=0`) : xterm 6 ne laisse pas ⌘ décider du soulignement d'un lien OSC 8.
@@ -101,10 +108,10 @@ performance, communs à toutes les vues.
   ligne serait envoyée. Les caractères de contrôle sont retirés avant le collage, sauf tabulation
   et fins de ligne : un titre d'issue venu de GitLab pourrait sinon fermer le bracketed paste et
   envoyer la suite.
-- **Le terminal se recale une fois, au relâchement d'une poignée ou au repli de la barre
-  latérale**, qui est instantané. Chaque recalage envoie un redimensionnement au PTY et fait
+- **Le terminal se recale une fois, au relâchement d'une poignée, au repli de la barre
+  latérale ou au passage en pleine fenêtre**, tous deux instantanés. Chaque recalage envoie un redimensionnement au PTY et fait
   redessiner tout l'écran à Claude Code.
-- Les raccourcis de Robiade (⌘F, ⌘+, ⌘−, ⌘0) ne partent jamais dans le PTY.
+- Les raccourcis de Robiade (⌘F, ⌘+, ⌘−, ⌘0, ⌘⇧↩) ne partent jamais dans le PTY.
 - Un dépôt de fichiers dont un nom contient un caractère de contrôle, retour à la ligne compris,
   est refusé en entier, avec un message : l'antislash ne le neutraliserait pas.
 
@@ -146,6 +153,8 @@ performance, communs à toutes les vues.
   et l'accent compte aussi les échéances tombées, que la barre ouverte signale déjà en accent
   (issue #30). Il s'aligne sur les feux tricolores, pas sur le titre de l'en-tête, sans déplacer
   les feux.
+- Décidé le 2026-11-05 : le terminal en pleine fenêtre reste en pleine fenêtre quand on change
+  d'agent, et le mode n'est pas mémorisé au redémarrage : c'est un mode passager (issue #33).
 
 ## Écarté
 
@@ -169,3 +178,4 @@ performance, communs à toutes les vues.
 - #23 — Interface — panneaux latéraux redimensionnables
 - #27 — Barre latérale — replier les sections Projets et Worktrees
 - #30 — Barre latérale — bouton pour replier la barre entière, et ⌘B
+- #33 — Agents — terminal en pleine fenêtre
