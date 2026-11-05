@@ -37,21 +37,8 @@
   /** Échéances tombées hors du projet affiché : signalées partout, comptées seulement chez elles. */
   const dueElsewhere = $derived(app.allDueTasks.length - app.dueTasks.length);
 
-  /**
-   * Signal le plus fort de la barre, que son bouton porte une fois repliée : l'accent compte les
-   * agents qui attendent et les échéances tombées, de tous les projets ; sinon, le bleu compte les
-   * agents qui tournent. Un agent qui attend ne disparaît pas avec la barre.
-   */
-  const signal = $derived.by(() => {
-    const waiting = app.agents.filter((a) => a.needsAttention).length;
-    const due = app.allDueTasks.length;
-    if (waiting + due > 0) {
-      const parts = [waiting && `${waiting} agent(s) en attente`, due && `${due} échéance(s) tombée(s)`];
-      return { hot: true, count: waiting + due, text: parts.filter(Boolean).join(', ') };
-    }
-    const live = app.liveAgents.length;
-    return live ? { hot: false, count: live, text: `${live} agent(s) actif(s)` } : null;
-  });
+  /** Ce que porte le bouton une fois la barre repliée. */
+  const signal = $derived(app.signal);
   const toggleLabel = $derived(
     sidebar.collapsed ? `Afficher la barre latérale${signal ? ` · ${signal.text}` : ''}` : 'Replier la barre latérale',
   );

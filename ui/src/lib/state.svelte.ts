@@ -127,6 +127,21 @@ class AppState {
   dueTasks = $derived(this.visibleTasks.filter(this.isDue));
   /** Tous projets confondus, tâches globales comprises : de quoi signaler une échéance hors du projet affiché. */
   allDueTasks = $derived(this.tasks.filter(this.isDue));
+  /**
+   * Signal le plus fort, pour un bouton qui cache les listes : l'accent compte les agents qui
+   * attendent et les échéances tombées, de tous les projets ; sinon, le bleu compte les agents qui
+   * tournent. Un agent qui attend ne disparaît pas avec la liste qui le montrait.
+   */
+  signal = $derived.by((): { hot: boolean; count: number; text: string } | null => {
+    const waiting = this.agents.filter((a) => a.needsAttention).length;
+    const due = this.allDueTasks.length;
+    if (waiting + due > 0) {
+      const parts = [waiting && `${waiting} agent(s) en attente`, due && `${due} échéance(s) tombée(s)`];
+      return { hot: true, count: waiting + due, text: parts.filter(Boolean).join(', ') };
+    }
+    const live = this.liveAgents.length;
+    return live ? { hot: false, count: live, text: `${live} agent(s) actif(s)` } : null;
+  });
 
   /** Mes MR qui demandent une action : pipeline rouge, conflits, discussions ouvertes. */
   mrAttention: MergeRequest[] = $derived(
