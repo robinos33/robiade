@@ -192,7 +192,8 @@
       {#each shownProjects as p (p.root)}
         <li>
           <button class="item" class:active={app.project === p.root && app.worktree === null} onclick={() => app.selectProject(p.root)} title={p.root}>
-            <Icon name="folder" />
+            <!-- L'icône porte la couleur du projet : la marque de la ligne, à côté de son nom. -->
+            <span class="ico" style:color={app.colorVar(p.root)}><Icon name="folder" /></span>
             <span class="label">{p.name}</span>
             {@render dot(liveIn(p.root))}
           </button>
@@ -214,7 +215,8 @@
               oncontextmenu={(e) => openMenu(e, w)}
               title={w.path}
             >
-              <Icon name="branch" />
+              <!-- Un worktree prend la couleur de son projet, que l'icône porte déjà : `.of` reste du texte. -->
+              <span class="ico" style:color={app.colorVar(w.root)} title={w.projectName}><Icon name="branch" /></span>
               <span class="label">{w.name}</span>
               {#if app.project === null}<span class="of">{w.projectName}</span>{/if}
               {@render dot(liveInWorktree(w.path))}
@@ -289,6 +291,7 @@
   }
   .item:hover:not(:disabled) { background: var(--bg-hover); color: var(--ink); }
   .item.active { background: var(--bg-active); color: var(--ink); }
+  .ico { display: grid; flex: none; }
   .label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .count { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--ink-3); }
   .count.hot {

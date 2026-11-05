@@ -9,8 +9,8 @@
 
   // Projets puis worktrees : un agent se lance aussi bien dans l'un que dans l'autre.
   const targets = $derived([
-    ...app.projects.map((p) => ({ path: p.root, name: p.name, icon: 'folder', of: null as string | null })),
-    ...app.worktrees.map((w) => ({ path: w.path, name: w.name, icon: 'branch', of: w.projectName })),
+    ...app.projects.map((p) => ({ path: p.root, root: p.root, name: p.name, icon: 'folder', of: null as string | null })),
+    ...app.worktrees.map((w) => ({ path: w.path, root: w.root, name: w.name, icon: 'branch', of: w.projectName })),
   ]);
   const choices = $derived(
     targets.filter((t) => `${t.name} ${t.of ?? ''} ${t.path}`.toLowerCase().includes(query.toLowerCase())).slice(0, 12),
@@ -46,7 +46,8 @@
       {#each choices as t, i (t.path)}
         <li>
           <button class:active={i === index} onmouseenter={() => (index = i)} onclick={() => app.spawn(t.path)}>
-            <Icon name={t.icon} size={14} />
+            <!-- Comme dans la barre latérale : l'icône porte la couleur du projet. -->
+            <span class="ico" style:color={app.colorVar(t.root)}><Icon name={t.icon} size={14} /></span>
             <span class="name">{t.name}</span>
             {#if t.of}<span class="muted">{t.of}</span>{/if}
             <span class="path mono muted">{shortPath(t.path, app.env?.home ?? '')}</span>
@@ -64,6 +65,7 @@
 </div>
 
 <style>
+  .ico { display: grid; flex: none; }
   .scrim {
     position: fixed; inset: 0; z-index: 50; display: grid; justify-items: center; align-items: start;
     padding-top: 14vh; background: rgb(0 0 0 / 0.35); backdrop-filter: blur(2px);
