@@ -343,8 +343,8 @@ fn shown_as<'a>(cited: &'a str, resolved: &'a str) -> &'a str {
 }
 
 /// Fichier d'un lien `file://` du terminal d'un agent (⌘+clic). Le lien vient de la sortie de
-/// l'agent, qui n'est pas fiable : seuls ses assets et les fichiers de son dossier de travail
-/// (projet ou worktree) sont lus, avec les règles de l'onglet Code.
+/// l'agent, qui n'est pas fiable : seuls ses assets, les fichiers de son scratchpad et ceux de son
+/// dossier de travail (projet ou worktree) sont lus, avec les règles de l'onglet Code.
 #[tauri::command]
 pub async fn read_linked_file(app: tauri::AppHandle, id: String, uri: String) -> CmdResult<ProjectFileDto> {
     let path = links::file_url_path(&uri).ok_or("lien de fichier illisible")?;
@@ -353,6 +353,10 @@ pub async fn read_linked_file(app: tauri::AppHandle, id: String, uri: String) ->
         let id = agent_id(&id)?;
         if let Ok(asset) = state.agents.asset(&id, &path) {
             return read_asset_file(&asset);
+        }
+        if let Some(file) = state.agents.scratchpad_file(&id, &path) {
+            let resolved = file.to_string_lossy();
+            return read_viewable(&file, shown_as(&path, &resolved), false);
         }
         read_linked(&project_dir(&state.agents.project_path(&id)?)?, &path)
     })
@@ -363,7 +367,7 @@ pub async fn read_linked_file(app: tauri::AppHandle, id: String, uri: String) ->
 /// Chemins cités en clair dans le terminal d'un agent (`src/foo.rs`, relatif à son dossier), au
 /// survol : chacun devient le chemin absolu à passer à `read_linked_file` en `file://`, ou `None`.
 /// Seuls sont rendus les fichiers que ce ⌘+clic lirait, assets de l'agent ou fichiers de son
-/// dossier : la webview ne peut pas s'en servir pour sonder le reste du disque.
+/// scratchpad ou de son dossier : la webview ne peut pas s'en servir pour sonder le reste du disque.
 #[tauri::command]
 pub async fn resolve_linked_paths(app: tauri::AppHandle, id: String, cited: Vec<String>) -> CmdResult<Vec<Option<String>>> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -373,7 +377,10 @@ pub async fn resolve_linked_paths(app: tauri::AppHandle, id: String, cited: Vec<
         let home = app.path().home_dir().ok();
         let resolve = |cited: &String| {
             let path = links::cited_path(&root, home.as_deref(), cited)?.to_string_lossy().into_owned();
-            (state.agents.asset(&id, &path).is_ok() || is_linkable(&root, &path)).then_some(path)
+            let readable = state.agents.asset(&id, &path).is_ok()
+                || is_linkable(&root, &path)
+                || state.agents.scratchpad_file(&id, &path).is_some();
+            readable.then_some(path)
         };
         Ok(cited.iter().map(resolve).collect())
     })

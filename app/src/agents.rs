@@ -335,6 +335,17 @@ impl AgentRegistry {
         live.get(id).and_then(|l| l.process.clone()).ok_or_else(|| "agent inconnu ou terminé".to_owned())
     }
 
+    /// `path` résolu (`..`, liens, `/tmp` → `/private/tmp`) s'il désigne un fichier existant du
+    /// scratchpad de l'agent, écrit par un outil ou par une commande.
+    pub fn scratchpad_file(&self, id: &AgentId, path: &str) -> Option<PathBuf> {
+        let resolved = Path::new(path).canonicalize().ok()?;
+        let held = {
+            let live = self.live.lock().ok()?;
+            self.in_scratchpad(&live.get(id)?.agent, &resolved)
+        };
+        (held && resolved.is_file()).then_some(resolved)
+    }
+
     /// Un asset de l'agent : seuls les fichiers qu'il a écrits sont lisibles depuis l'interface.
     pub fn asset(&self, id: &AgentId, path: &str) -> Result<Asset, String> {
         let live = self.live.lock().map_err(|e| e.to_string())?;
