@@ -585,12 +585,26 @@ const BOOT = new URLSearchParams(location.search).get('boot');
 
 const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
   /** `?update=installing|ready|failed` : état de la mise à jour au lancement. */
+  settings: () => ({
+    forge: { provider: 'gitlab', url: GITLAB, tokenService: 'gitlab-api-token' },
+    vault: null,
+    restartNeeded: false,
+    providers: [
+      { id: 'gitlab', defaultTokenService: 'gitlab-api-token' },
+      { id: 'github', defaultTokenService: 'github-api-token' },
+    ],
+    defaultVaultTokenService: 'vault-token',
+  }),
+  repository_trunks: (args) => ({ repository: args.repository, configured: null, remoteDefault: 'main' }),
   update_status: () => DEMO_UPDATES[new URLSearchParams(location.search).get('update') ?? ''] ?? null,
   relaunch: () => null,
   environment: () => {
     if (BOOT === 'fail') throw 'environnement illisible (démo)';
     if (BOOT === 'hang') return new Promise(() => {});
-    return { claudePath: '/usr/local/bin/claude', home: HOME, commit: 'b71236c9e4f2a8d1c3b5e7f9a0d2c4e6f8a1b3c5', dirty: false };
+    return {
+      claudePath: '/usr/local/bin/claude', home: HOME, commit: 'b71236c9e4f2a8d1c3b5e7f9a0d2c4e6f8a1b3c5', dirty: false,
+      forge: { provider: 'gitlab', url: GITLAB, tokenService: 'gitlab-api-token' }, vault: null,
+    };
   },
   list_history: () => (BOOT === 'slow' ? new Promise((r) => setTimeout(() => r(sessions), 2000)) : sessions),
   list_agents: () => agents,
