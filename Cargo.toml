@@ -6,6 +6,7 @@ members = ["crates/core", "crates/adapters", "app"]
 edition = "2021"
 version = "0.1.0"
 license = "UNLICENSED"
+publish = false
 
 [workspace.dependencies]
 robiade-core = { path = "crates/core" }

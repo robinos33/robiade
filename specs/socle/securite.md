@@ -59,13 +59,25 @@ Le niveau d'exigence est celui d'un outil d'administration.
 - Journal d'audit local des actions sortantes (quoi, quand, cible, résultat), sans les secrets.
 
 ### Chaîne de build
-- `cargo deny` (licences, advisories), `cargo audit`, `npm audit` en CI ; lockfiles commités.
+- Chaque pull request vers `main` passe un audit des dépendances (GitHub Actions) ; lockfiles commités.
+  `cargo deny` bloque sur une advisory RustSec (vulnérabilité, crate non maintenu ou unsound), une
+  licence hors de la liste permissive (MPL-2.0 comprise) ou une source autre que crates.io, sur la
+  seule cible de l'app. `npm audit` sur `ui/` bloque à partir du niveau high. Une exception Rust
+  s'écrit dans `deny.toml`, avec sa raison et une date de réévaluation ; `npm audit` n'en connaît pas.
+  Risque résiduel : une advisory publiée après la fusion ne se voit qu'au prochain passage de la CI,
+  et le blocage de la fusion tient au check requis sur `main`, réglé côté GitHub, hors du dépôt.
 - **Mise à jour au lancement depuis `origin/main`** ([décision du 2026-11-02](mise-a-jour.md)) : un commit poussé sur
   `main` est construit et installé sans relecture, au lancement suivant. C'est le dépôt perso, où
   je pousse en direct, agents compris : risque assumé. La build tourne avec le PATH de mon shell
   de login, sans hook git, dans un worktree réservé ; jamais dans ma copie de travail.
 - Passes de mes skills `xss-audit` sur `ui/` à chaque jalon (la WebView est le maillon le plus
   exposé) ; `csrf-safe-method-audit` sans objet tant qu'il n'y a pas de HTTP.
+
+## Décisions
+
+- Décidé le 2026-11-05 : `cargo deny` seul pour les crates, sans `cargo audit` (issue #25). Les deux
+  lisent la même base RustSec, mais `cargo audit` ignore la cible et les exceptions de `deny.toml` :
+  il imposerait une seconde liste d'exceptions et bloquerait sur des crates absents du binaire.
 
 ## Tickets
 
@@ -76,3 +88,4 @@ Le niveau d'exigence est celui d'un outil d'administration.
 - #15 — App : mise à jour automatique depuis main au démarrage
 - #40 — Agents — un fichier écrit dans le scratchpad est un asset, quelle que soit son extension
 - #28 — Forge — fournisseur GitHub (pull requests, issues, checks)
+- #25 — Socle — CI : cargo deny, cargo audit et npm audit

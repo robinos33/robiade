@@ -2,6 +2,7 @@
 name = "robiade-core"
 edition.workspace = true
 version.workspace = true
+publish.workspace = true
 
 # Règle hexagonale vérifiée par le compilateur : aucune dépendance d'I/O ici.
 [dependencies]
