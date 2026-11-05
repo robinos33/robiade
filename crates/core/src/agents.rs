@@ -201,11 +201,14 @@ pub struct Agent {
     gauges: Gauges,
     assets: Assets,
     resumed_from: Option<String>,
+    /// Sessions Claude Code successives de l'agent : la première, puis une par `/clear`.
+    sessions: Vec<String>,
     name: Option<String>,
 }
 
 impl Agent {
     pub fn start(id: AgentId, project_path: String, resumed_from: Option<String>, now: Millis) -> Self {
+        let first_session = resumed_from.clone().unwrap_or_else(|| id.as_str().to_owned());
         Self {
             id,
             project_path,
@@ -226,6 +229,7 @@ impl Agent {
             gauges: Gauges::default(),
             assets: Assets::default(),
             resumed_from,
+            sessions: vec![first_session],
             name: None,
         }
     }
@@ -288,6 +292,13 @@ impl Agent {
     /// L'effort se change en cours de session (`/effort`) : le dernier rapporté fait foi.
     pub fn observe_effort(&mut self, effort: Effort) {
         self.effort = Some(effort);
+    }
+
+    /// Session rapportée par un hook : nouvelle après un `/clear`, déjà connue sinon.
+    pub fn observe_session(&mut self, session: &str) {
+        if !self.sessions.iter().any(|s| s == session) {
+            self.sessions.push(session.to_owned());
+        }
     }
 
     /// La statusline est rafraîchie en continu : le dernier relevé remplace le précédent.
@@ -392,6 +403,9 @@ impl Agent {
     pub fn assets(&self) -> &Assets {
         &self.assets
     }
+    pub fn sessions(&self) -> &[String] {
+        &self.sessions
+    }
     pub fn resumed_from(&self) -> Option<&str> {
         self.resumed_from.as_deref()
     }
@@ -450,6 +464,19 @@ mod tests {
         agent.observe_effort(Effort::parse("medium").unwrap());
         agent.observe_effort(Effort::parse("max").unwrap());
         assert_eq!(agent.effort().map(Effort::as_str), Some("max"));
+    }
+
+    #[test]
+    fn keeps_every_session_of_the_agent_once() {
+        let mut agent = agent();
+        agent.observe_session("0b6f1c2e-6b1d-4a5e-9c33-2f1e8d7a4b10");
+        agent.observe_session("9d259b93-5dc0-47c3-b1c8-3084e032dd44");
+        agent.observe_session("9d259b93-5dc0-47c3-b1c8-3084e032dd44");
+        assert_eq!(agent.sessions(), ["0b6f1c2e-6b1d-4a5e-9c33-2f1e8d7a4b10", "9d259b93-5dc0-47c3-b1c8-3084e032dd44"]);
+
+        let id = AgentId::parse("00000000-0000-4000-8000-000000000000").unwrap();
+        let resumed = Agent::start(id, "/p".into(), Some("1b6f64dc-5a64-49af-aa54-67bf35b5afcc".into()), 0);
+        assert_eq!(resumed.sessions(), ["1b6f64dc-5a64-49af-aa54-67bf35b5afcc"]);
     }
 
     #[test]

@@ -25,6 +25,16 @@ struct Live {
     process: Option<Arc<AgentProcess>>,
 }
 
+/// Ce qu'un hook rapporte en plus de l'événement.
+#[derive(Default)]
+struct Observed {
+    session: Option<String>,
+    permission_mode: Option<PermissionMode>,
+    effort: Option<Effort>,
+    written_file: Option<String>,
+    viewed_image: Option<String>,
+}
+
 /// Clé, dans les données d'une notification, de l'agent qu'un clic doit ouvrir.
 pub const NOTIFIED_AGENT: &str = "agent";
 
@@ -158,13 +168,13 @@ impl AgentRegistry {
     }
 
     pub fn apply(&self, id: &AgentId, event: AgentEvent) {
-        self.on_event(id, event, None, None, None, None);
+        self.on_event(id, event, Observed::default());
     }
 
     pub fn observe(&self, id: &AgentId, observation: Observation) {
         match observation {
-            Observation::Event { event, permission_mode, effort, written_file, viewed_image } => {
-                self.on_event(id, event, permission_mode, effort, written_file.as_deref(), viewed_image.as_deref())
+            Observation::Event { event, session, permission_mode, effort, written_file, viewed_image } => {
+                self.on_event(id, event, Observed { session, permission_mode, effort, written_file, viewed_image })
             }
             Observation::Gauges(gauges) => {
                 if let Ok(mut live) = self.live.lock() {
@@ -178,31 +188,27 @@ impl AgentRegistry {
         }
     }
 
-    fn on_event(
-        &self,
-        id: &AgentId,
-        event: AgentEvent,
-        mode: Option<PermissionMode>,
-        effort: Option<Effort>,
-        written_file: Option<&str>,
-        viewed_image: Option<&str>,
-    ) {
+    fn on_event(&self, id: &AgentId, event: AgentEvent, observed: Observed) {
+        let Observed { session, permission_mode: mode, effort, written_file, viewed_image } = observed;
         let ended = matches!(event, AgentEvent::ProcessExited);
         let asks_reply = matches!(event, AgentEvent::WaitingForInput);
         let notification = {
             let Ok(mut live) = self.live.lock() else { return };
             // Un événement d'un agent inconnu (session hors Robiade, agent déjà retiré) est ignoré.
             let Some(entry) = live.get_mut(id) else { return };
+            if let Some(session) = &session {
+                entry.agent.observe_session(session);
+            }
             if let Some(mode) = mode {
                 entry.agent.observe_permission_mode(mode);
             }
             if let Some(effort) = effort {
                 entry.agent.observe_effort(effort);
             }
-            if let Some(path) = written_file {
+            if let Some(path) = &written_file {
                 entry.agent.observe_file_written(path, now());
             }
-            if let Some(path) = viewed_image {
+            if let Some(path) = &viewed_image {
                 entry.agent.observe_image_viewed(path, now());
             }
             let before = entry.agent.status();
