@@ -29,6 +29,7 @@ suit le même plan : « En une phrase », « Comportement », « Règles », « 
 | [agents/statusline.md](agents/statusline.md) | Contexte consommé et quotas lus par la statusline |
 | [agents/historique.md](agents/historique.md) | Liste, recherche et reprise des sessions passées |
 | [agents/notifications.md](agents/notifications.md) | Notification macOS d'un agent, badge du Dock |
+| [agents/assets.md](agents/assets.md) | Fichiers écrits par un agent, scratchpad compris, à ouvrir dans le visualiseur |
 | [forge/merge-requests.md](forge/merge-requests.md) | Lecture des MR, actions confirmées, règles des wagons |
 | [forge/issues.md](forge/issues.md) | Issues d'équipe, démarrer un agent sur une issue |
 | [taches.md](taches.md) | Tâches perso : agrégat, échéance, liens, démarrer un agent, fermeture par l'agent |
