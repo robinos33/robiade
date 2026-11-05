@@ -42,7 +42,8 @@ Le niveau d'exigence est celui d'un outil d'administration.
   fichier relu). Une seule fonction d'ouverture : une page de la forge réglée vers le navigateur (tout autre lien web reste sans effet), `file://`
   vers le visualiseur de Robiade, jamais vers une autre app ; tout autre schéma est ignoré, sans
   boîte de dialogue. Un `file://` est décodé et résolu (`..`, liens) côté Rust, puis lu seulement
-  s'il est un asset de l'agent ou s'il reste dans son dossier de travail, avec les règles de
+  s'il est un asset de l'agent, s'il est dans son scratchpad ([assets](../agents/assets.md)) ou
+  s'il reste dans son dossier de travail, avec les règles de
   l'onglet Code ; un fichier de secrets n'est pas affiché, même à ma demande. Un chemin cité sans
   `file://` (`src/foo.rs:42`) suit la même lecture. Savoir s'il désigne un fichier, au survol,
   passe aussi par Rust, avec les mêmes bornes : la réponse ne renseigne pas sur le reste du disque.
@@ -73,4 +74,5 @@ Le niveau d'exigence est celui d'un outil d'administration.
 - #26 — Socle — indépendance vis-à-vis de l'entreprise : instance GitLab, Vault et branches de tronc dans une page Réglages
 - #13 — Terminal : chemins cliquables, ⌘F, glisser-déposer, taille de police
 - #15 — App : mise à jour automatique depuis main au démarrage
+- #40 — Agents — un fichier écrit dans le scratchpad est un asset, quelle que soit son extension
 - #28 — Forge — fournisseur GitHub (pull requests, issues, checks)
