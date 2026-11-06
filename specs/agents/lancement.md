@@ -22,11 +22,28 @@ Cycle de vie : fermer l'ADE termine ses sessions (confirmation s'il y en a en `R
 `AwaitingPermission`). Rien n'est perdu : au redémarrage, une session se reprend avec
 `claude --resume <sessionId>`.
 
+**Session en cours.** Dans le même process, un `/clear` ouvre une nouvelle session Claude Code et
+un `/resume` en rejoint une autre ; les hooks rapportent l'une comme l'autre (constaté sur Claude
+Code 2.1.318). La session en cours d'un agent est celle du dernier hook reçu. C'est elle que
+« Reprendre », « Redémarrer » et la réouverture au démarrage relancent, et c'est à elle que
+l'historique rattache l'onglet et son nom. Elle est gardée avec l'onglet d'une exécution de
+Robiade à l'autre. La session d'avant un `/clear` reste dans l'historique et dans « Récents », sans
+nom, et se reprend comme une autre.
+
+## Règles
+
+- La session rapportée par un `SessionEnd` ne devient jamais la session en cours : c'est celle qui
+  se termine, et après un `/clear` son hook peut arriver après le `SessionStart` de la suivante.
+
 ## Décisions
 
 **Piloter un agent** — décidé le 2026-10-27 : **CLI intégré**. L'ADE lance le vrai `claude` dans un
 pseudo-terminal affiché par xterm.js. Fidélité totale (même CLI, mêmes skills, mêmes `/commands`) ;
 l'état structuré vient des hooks, jamais du parsing de la sortie terminal.
+
+Décidé le 2026-11-05 : **après un `/clear`, la session d'avant redevient anonyme** dans l'historique
+(issue #44). Le nom de l'onglet suit la session en cours ; le garder aussi sur les sessions
+précédentes obligerait à enregistrer toutes les sessions de l'onglet.
 
 Décidé le 2026-11-06 : **`LC_CTYPE` seul, pas `LANG`**, pour l'agent sans locale (issue #48).
 L'encodage passe en UTF-8 sans changer la langue des messages ni l'ordre de tri des outils que
@@ -44,3 +61,4 @@ l'agent lance, et sans supposer la langue de la machine.
 - #14 — Agents : confirmer la fermeture de l'app dès qu'un agent est ouvert
 - #16 — Agents : ne pas transmettre l'environnement Claude Code hérité au lancement d'un agent
 - #48 — Agents — copier une réponse casse les accents : locale UTF-8 absente hors terminal
+- #44 — Agents — après un /clear, « Reprendre » et « Redémarrer » relancent la session d'avant le clear

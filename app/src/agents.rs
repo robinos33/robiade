@@ -202,6 +202,7 @@ impl AgentRegistry {
             let Ok(mut live) = self.live.lock() else { return };
             // Un événement d'un agent inconnu (session hors Robiade, agent déjà retiré) est ignoré.
             let Some(entry) = live.get_mut(id) else { return };
+            let session_before = entry.agent.session_id().to_owned();
             if let Some(session) = &session {
                 entry.agent.observe_session(session);
             }
@@ -227,7 +228,8 @@ impl AgentRegistry {
                 entry.process = None;
             }
             let after = entry.agent.status();
-            if after != before {
+            // La session change sans que le statut bouge (`/clear` sur un agent au repos).
+            if after != before || entry.agent.session_id() != session_before {
                 let _ = self.journal.save(&entry.agent, now());
             }
             attention_body(before, after, asks_reply)
