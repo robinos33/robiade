@@ -24,6 +24,14 @@ performance, communs à toutes les vues.
   repli est mémorisé sur le poste. Repliée, elle montre son nombre d'éléments et la pastille la
   plus forte de ses lignes (un agent qui attend reste visible), garde la ligne de la sélection
   et rend sa hauteur à l'autre section. La navigation ne se replie pas : le clavier la couvre.
+- Les projets qui ont un agent vivant, qui tourne ou qui attend, sont en tête de `Projets`, les
+  autres en dessous. Je range les projets au glisser-déposer, chacun dans son groupe : ses agents
+  décident du groupe, et un dépôt dans l'autre est refusé. Un seul ordre vaut pour les deux
+  groupes, si bien qu'un projet qui change de groupe y prend la place de son rang. Un projet jamais
+  rangé vient après les projets rangés de son groupe, par dernière activité. Le glisser commence
+  après quelques pixels, pour qu'un clic reste un clic, et Échap l'annule. Une section repliée ne
+  se range pas. L'ordre est mémorisé sur le poste, par dépôt principal : un projet disparu
+  retrouve sa place s'il revient. La palette, « Nouvel agent dans… » et Réglages suivent cet ordre.
 - La barre latérale entière se replie et se rouvre par un bouton posé juste à droite des feux
   tricolores, au même endroit dans les deux états et quel que soit l'onglet, par ⌘B ou par la
   palette. Repliée, elle ne prend aucune largeur, sans rail d'icônes ; l'en-tête des vues réserve
@@ -170,6 +178,13 @@ performance, communs à toutes les vues.
   collages abusifs apparaissaient : dès la première capture, une URL de liste arrêtée pile au bord
   avalait le `-` de la puce suivante. Risque résiduel : une ligne de texte qui suit une URL
   arrêtée par hasard au bord s'y colle encore, de même qu'un élément de liste numérotée.
+- Décidé le 2026-11-06 : l'ordre des projets est gardé sur le poste (`localStorage`), comme le
+  repli des sections, et non en base à côté de la couleur du projet (issue #46). C'est une
+  préférence de disposition, pas un réglage. Risque résiduel : l'ordre ne suit pas une
+  réinstallation qui efface les données de la WebView.
+- Décidé le 2026-11-06 : aucun filet ne sépare les deux groupes de `Projets`, car la pastille
+  marque déjà les projets vivants (issue #46). Le filet sera ajouté si, à l'usage, le refus d'un
+  dépôt dans l'autre groupe surprend.
 
 ## Écarté
 
@@ -195,3 +210,4 @@ performance, communs à toutes les vues.
 - #30 — Barre latérale — bouton pour replier la barre entière, et ⌘B
 - #31 — Terminal — un lien coupé sur deux lignes reste un seul lien, cliquable en entier
 - #33 — Agents — terminal en pleine fenêtre
+- #46 — Barre latérale — ranger les projets au glisser-déposer, ceux qui ont un agent en cours en tête
