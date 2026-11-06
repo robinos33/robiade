@@ -14,6 +14,9 @@ globale de Claude Code :
 - l'agent ne reçoit aucune variable `CLAUDE*` de l'environnement de l'ADE (issue #16) : un ADE lancé
   depuis une session Claude Code les transmettrait, et `claude` se croirait sous-agent, sans
   transcript ni reprise possible.
+- l'agent reçoit `LC_CTYPE=UTF-8` quand l'environnement de l'ADE ne définit aucune de `LC_ALL`,
+  `LC_CTYPE`, `LANG` (issue #48) : c'est le cas d'un ADE lancé depuis le Dock, et la copie de
+  Claude Code casserait alors les accents. Une locale héritée n'est jamais écrasée.
 
 Cycle de vie : fermer l'ADE termine ses sessions (confirmation s'il y en a en `Running` ou
 `AwaitingPermission`). Rien n'est perdu : au redémarrage, une session se reprend avec
@@ -24,6 +27,10 @@ Cycle de vie : fermer l'ADE termine ses sessions (confirmation s'il y en a en `R
 **Piloter un agent** — décidé le 2026-10-27 : **CLI intégré**. L'ADE lance le vrai `claude` dans un
 pseudo-terminal affiché par xterm.js. Fidélité totale (même CLI, mêmes skills, mêmes `/commands`) ;
 l'état structuré vient des hooks, jamais du parsing de la sortie terminal.
+
+Décidé le 2026-11-06 : **`LC_CTYPE` seul, pas `LANG`**, pour l'agent sans locale (issue #48).
+L'encodage passe en UTF-8 sans changer la langue des messages ni l'ordre de tri des outils que
+l'agent lance, et sans supposer la langue de la machine.
 
 ## Écarté
 
@@ -36,3 +43,4 @@ l'état structuré vient des hooks, jamais du parsing de la sortie terminal.
 
 - #14 — Agents : confirmer la fermeture de l'app dès qu'un agent est ouvert
 - #16 — Agents : ne pas transmettre l'environnement Claude Code hérité au lancement d'un agent
+- #48 — Agents — copier une réponse casse les accents : locale UTF-8 absente hors terminal
