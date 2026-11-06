@@ -90,6 +90,91 @@
   const liveInProjects = $derived(app.liveAgents.filter((a) => app.projects.some((p) => p.root === a.projectRoot)));
   const liveInWorktrees = $derived(app.liveAgents.filter((a) => app.worktrees.some((w) => w.path === a.worktreePath)));
 
+  /**
+   * Glisser-déposer des projets, au pointeur : le glisser HTML5 passerait par le dépôt de fichiers
+   * que Tauri gère sur la WebView (`onDragDropEvent`). Il ne commence qu'au-delà de quelques
+   * pixels, pour qu'un clic reste un clic, et ne dépose que dans le groupe du projet : ses agents
+   * le décident, pas moi.
+   */
+  const DRAG_THRESHOLD = 4;
+  type Drop = { before: string } | { after: string };
+  let projectList = $state<HTMLUListElement>();
+  /** Bouton enfoncé sur une ligne ; `started` reste vrai jusqu'au relâchement, même après Échap. */
+  let press: { root: string; y: number; pointer: number; started: boolean } | null = null;
+  /** Glisser en cours ; `drop` est `null` hors du groupe, où le dépôt est refusé. */
+  let drag = $state<{ root: string; live: boolean; drop: Drop | null } | null>(null);
+  let swallowClick = false;
+
+  const isLive = (root: string) => liveIn(root).length > 0;
+
+  function pressProject(e: PointerEvent, root: string) {
+    if (e.button !== 0 || collapsed.projects) return;
+    press = { root, y: e.clientY, pointer: e.pointerId, started: false };
+  }
+
+  function dragProject(e: PointerEvent) {
+    if (!press || e.pointerId !== press.pointer) return;
+    if (!press.started) {
+      if (Math.abs(e.clientY - press.y) < DRAG_THRESHOLD) return;
+      press.started = true;
+      (e.currentTarget as Element).setPointerCapture(e.pointerId);
+      drag = { root: press.root, live: isLive(press.root), drop: null };
+    }
+    if (drag) drag.drop = dropAt(e.clientY, drag.live);
+  }
+
+  /** Dépôt sous le pointeur : avant la ligne dont il couvre la moitié haute, après la dernière du groupe. */
+  function dropAt(y: number, live: boolean): Drop | null {
+    const rows = [...(projectList?.querySelectorAll<HTMLElement>(`li[data-live="${live}"]`) ?? [])];
+    const first = rows.at(0);
+    const last = rows.at(-1);
+    if (!first || !last || y < first.getBoundingClientRect().top || y > last.getBoundingClientRect().bottom) return null;
+    const row = rows.find((r) => {
+      const box = r.getBoundingClientRect();
+      return y < box.top + box.height / 2;
+    });
+    return row ? { before: row.dataset.root! } : { after: last.dataset.root! };
+  }
+
+  function releaseProject(e: PointerEvent) {
+    if (!press || e.pointerId !== press.pointer) return;
+    // Le groupe a pu changer pendant le glisser, si un agent a démarré ou fini : le dépôt ne vaut plus.
+    if (drag?.drop && isLive(drag.root) === drag.live) app.moveProject(drag.root, drag.drop);
+    if (press.started) {
+      swallowClick = true;
+      setTimeout(() => (swallowClick = false));
+    }
+    press = null;
+    drag = null;
+  }
+
+  function cancelDrag(e: KeyboardEvent) {
+    if (!drag || e.key !== 'Escape') return;
+    // En capture, pour que l'Échap n'atteigne pas le terminal qui a le focus.
+    e.preventDefault();
+    e.stopPropagation();
+    drag = null;
+  }
+
+  function selectProject(root: string) {
+    if (!swallowClick) app.selectProject(root);
+  }
+
+  /** Trait de dépôt sur la ligne visée : au-dessus, ou dessous pour la dernière du groupe. */
+  function dropMark(root: string): 'before' | 'after' | null {
+    const drop = drag?.drop;
+    if (!drop) return null;
+    if ('before' in drop) return drop.before === root ? 'before' : null;
+    return drop.after === root ? 'after' : null;
+  }
+
+  // Le curseur suit le pointeur hors de la barre : il se pose sur tout le document.
+  $effect(() => {
+    const root = document.documentElement;
+    root.classList.toggle('project-drag', drag !== null && drag.drop !== null);
+    root.classList.toggle('project-drag-refused', drag !== null && drag.drop === null);
+  });
+
   /** Menu contextuel d'un worktree, ouvert au clic droit à l'endroit du pointeur. */
   let menu = $state<{ worktree: Worktree; x: number; y: number } | null>(null);
   let removing = $state<Worktree | null>(null);
@@ -130,7 +215,7 @@
   </h2>
 {/snippet}
 
-<svelte:window onclick={closeMenu} onkeydown={closeMenu} onblur={() => (menu = null)} />
+<svelte:window onclick={closeMenu} onkeydown={closeMenu} onkeydowncapture={cancelDrag} onblur={() => (menu = null)} />
 
 <!-- Hors de la barre, pour rester à droite des feux tricolores quand elle est repliée. Terminal en
      pleine fenêtre, c'est son bouton à lui qui porte le signal. -->
@@ -188,10 +273,26 @@
         <span class="label">Global</span>
       </button>
     {/if}
-    <ul>
+    <ul bind:this={projectList}>
       {#each shownProjects as p (p.root)}
-        <li>
-          <button class="item" class:active={app.project === p.root && app.worktree === null} onclick={() => app.selectProject(p.root)} title={p.root}>
+        {@const mark = dropMark(p.root)}
+        <li
+          data-root={p.root}
+          data-live={isLive(p.root)}
+          class:dragged={drag?.root === p.root}
+          class:drop-before={mark === 'before'}
+          class:drop-after={mark === 'after'}
+        >
+          <button
+            class="item"
+            class:active={app.project === p.root && app.worktree === null}
+            onclick={() => selectProject(p.root)}
+            onpointerdown={(e) => pressProject(e, p.root)}
+            onpointermove={dragProject}
+            onpointerup={releaseProject}
+            onpointercancel={releaseProject}
+            title={p.root}
+          >
             <!-- L'icône porte la couleur du projet : la marque de la ligne, à côté de son nom. -->
             <span class="ico" style:color={app.colorVar(p.root)}><Icon name="folder" /></span>
             <span class="label">{p.name}</span>
@@ -300,6 +401,11 @@
   .projects { margin-top: 18px; display: flex; flex-direction: column; min-height: 0; flex: 1; }
   .projects ul { overflow-y: auto; margin-top: 2px; }
   .worktrees { flex: 0 1 auto; max-height: 40%; margin-top: 12px; }
+  .dragged .item { opacity: 0.45; }
+  .drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+  .drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
+  :global(html.project-drag), :global(html.project-drag *) { cursor: grabbing !important; }
+  :global(html.project-drag-refused), :global(html.project-drag-refused *) { cursor: not-allowed !important; }
   /* Repliée, une section rend sa hauteur : Projets la prend d'office, Worktrees perd son plafond. */
   .projects.collapsed { flex: none; }
   .projects.collapsed + .worktrees:not(.collapsed) { flex: 1; max-height: none; }
