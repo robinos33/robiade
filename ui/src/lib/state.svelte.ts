@@ -2,6 +2,7 @@ import { forgeName as nameOf, mrPrefix as prefixOf } from './forge';
 import { listen } from '@tauri-apps/api/event';
 import { api } from './api';
 import { localDay } from './format';
+import { moveInOrder, orderProjects, storedOrder, storeOrder } from './projectOrder';
 import { writeOutput } from './terminals';
 import type { Agent, Environment, Forge, GitWorktree, MergeRequest, MrState, Project, ProjectColors, QuitRequest, ReadingTarget, Session, Task, Update, Workspace, Worktree } from './types';
 
@@ -49,7 +50,13 @@ class AppState {
   /** Teintes proposées dans Réglages, dans l'ordre. */
   palette = $state<string[]>([]);
 
-  /** Dépôts principaux seulement : ni worktree, ni sous-dossier, ni dossier disparu. */
+  /** Ordre des projets rangés à la main dans la barre latérale ; voir `projectOrder.ts`. */
+  projectOrder = $state<string[]>(storedOrder());
+
+  /**
+   * Dépôts principaux seulement : ni worktree, ni sous-dossier, ni dossier disparu. Ceux qui ont un
+   * agent vivant d'abord, puis l'ordre rangé, puis la dernière activité.
+   */
   projects: Project[] = $derived.by(() => {
     const byRoot = new Map<string, Project>();
     for (const s of this.history.filter((s) => s.inRepository)) {
@@ -63,8 +70,18 @@ class AppState {
       p.lastActivityAt = Math.max(p.lastActivityAt, a.lastActivityAt);
       byRoot.set(a.projectRoot, p);
     }
-    return [...byRoot.values()].sort((a, b) => b.lastActivityAt - a.lastActivityAt);
+    const recent = [...byRoot.values()].sort((a, b) => b.lastActivityAt - a.lastActivityAt);
+    const live = new Set(this.liveAgents.map((a) => a.projectRoot));
+    return orderProjects(recent, this.projectOrder, (root) => live.has(root));
   });
+
+  /** Range `root` juste avant `before`, ou après `after` en fin de son groupe. */
+  moveProject(root: string, target: { before: string } | { after: string }) {
+    const next = moveInOrder(this.projectOrder, this.projects.map((p) => p.root), root, target);
+    if (next === this.projectOrder) return;
+    this.projectOrder = next;
+    storeOrder(next);
+  }
 
   private newProject(w: Workspace): Project {
     return { root: w.projectRoot, name: w.projectName, lastActivityAt: 0, sessions: 0, gitlabProject: w.gitlabProject };
