@@ -1,5 +1,6 @@
 //! Agents Claude Code dans un pseudo-terminal.
 
+use std::ffi::OsString;
 use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -48,6 +49,11 @@ impl AgentProcess {
         // Sans OSC 8, Claude Code affiche les URL en clair : xterm les reconnaît, et ⌘ décide seul
         // de leur soulignement (robiade#11). Sinon tout dépendrait de l'environnement hérité.
         cmd.env("FORCE_HYPERLINK", "0");
+        // Lancé depuis le Dock, Robiade n'hérite d'aucune locale : `pbcopy`, par lequel Claude Code
+        // copie, ne lirait pas l'UTF-8 et casserait les accents (robiade#48).
+        if lacks_locale(|name| std::env::var_os(name)) {
+            cmd.env("LC_CTYPE", "UTF-8");
+        }
         for (k, v) in spec.env {
             cmd.env(k, v);
         }
@@ -113,9 +119,31 @@ fn is_parent_terminal_var(name: &str) -> bool {
         || name.starts_with("IT2_")
 }
 
+/// Aucune locale définie : l'encodage des outils retombe sur ASCII. Une locale héritée, même autre
+/// qu'UTF-8, est un choix de l'environnement : on la laisse.
+fn lacks_locale(var: impl Fn(&str) -> Option<OsString>) -> bool {
+    ["LC_ALL", "LC_CTYPE", "LANG"].into_iter().all(|name| var(name).is_none_or(|v| v.is_empty()))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{is_leaked_claude_var, is_parent_terminal_var};
+    use std::ffi::OsString;
+
+    use super::{is_leaked_claude_var, is_parent_terminal_var, lacks_locale};
+
+    fn env(vars: &[(&str, &str)]) -> impl Fn(&str) -> Option<OsString> {
+        let vars: Vec<(String, String)> = vars.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        move |name| vars.iter().find(|(k, _)| k == name).map(|(_, v)| v.into())
+    }
+
+    #[test]
+    fn gives_a_utf8_locale_only_when_none_is_inherited() {
+        assert!(lacks_locale(env(&[])));
+        assert!(lacks_locale(env(&[("LANG", ""), ("PATH", "/usr/bin")])));
+        assert!(!lacks_locale(env(&[("LANG", "fr_FR.UTF-8")])));
+        assert!(!lacks_locale(env(&[("LC_CTYPE", "UTF-8")])));
+        assert!(!lacks_locale(env(&[("LC_ALL", "C")])));
+    }
 
     #[test]
     fn strips_inherited_claude_code_variables_and_keeps_the_others() {
