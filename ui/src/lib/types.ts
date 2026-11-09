@@ -170,6 +170,31 @@ export interface MergeRequest extends MrRef {
   approvals: { required: number; left: number; by: string[] } | null;
 }
 
+/** Étape du ticket d'un agent, déduite à chaque lecture. */
+export type LifecycleStep = 'exploration' | 'code' | 'draft' | 'review' | 'merged' | 'closed';
+
+/** Ce qui retient la MR d'un agent, le plus urgent seulement. `waiting` : attend la CI, les relecteurs ou la forge. */
+export type Blocker = (
+  | { kind: 'conflicts' }
+  | { kind: 'pipeline'; status: PipelineStatus }
+  | { kind: 'discussions' }
+  | { kind: 'approvals'; left: number }
+  | { kind: 'approvalsUnknown' }
+  | { kind: 'notMergeable'; status: string }
+  | { kind: 'readyToMerge' }
+) & { waiting: boolean };
+
+export interface Lifecycle {
+  /** Issue de la branche `ticket-<iid>-…` ; sans elle, la frise n'a pas d'étape Ticket. */
+  ticket: number | null;
+  step: LifecycleStep;
+  blocker: Blocker | null;
+  /** MR de la branche de l'agent, quel que soit son état. */
+  mergeRequest: MergeRequest | null;
+  /** La MR n'a pas pu être lue : l'étape s'arrête à ce que l'agent a fait. */
+  forgeError: string | null;
+}
+
 /** Tâche d'équipe, lue sur GitLab : titre et labels non fiables, rendus comme texte. */
 export interface Issue {
   project: string;

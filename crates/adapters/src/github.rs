@@ -27,6 +27,7 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use crate::forge_urls::encode_path;
 use crate::github_urls::{is_repo_path, GitHubUrls};
 use crate::keychain;
 
@@ -317,6 +318,22 @@ impl Forge for GitHub {
         self.pull_request(mr).map(|(found, _, _)| found)
     }
 
+    /// Une PR d'un fork, dont la branche vit chez un autre propriétaire, n'est pas trouvée.
+    fn merge_request_of_branch(&self, project: &str, branch: &str) -> Result<Option<MergeRequest>, ForgeError> {
+        let (owner, _) = repo_parts(project)?;
+        let listed: Vec<RestPullNumber> = self.get(&format!(
+            "/repos/{project}/pulls?head={owner}:{}&state=all&sort=updated&direction=desc&per_page=1",
+            encode_path(branch)
+        ))?;
+        let Some(found) = listed.into_iter().next() else { return Ok(None) };
+        let r = MrRef::new(project, found.number).ok_or(ForgeError::NotFound)?;
+        let (mut mr, facts, _) = self.pull_request(&r)?;
+        if matches!(mr.state, MrState::Draft | MrState::Opened) {
+            mr.approvals = self.approvals_for(&mr, &facts);
+        }
+        Ok(Some(mr))
+    }
+
     fn my_issues(&self) -> Result<Vec<Issue>, ForgeError> {
         let listed: Vec<RestIssue> = self.get(&format!("/issues?filter=assigned&state=open&per_page={PER_PAGE}"))?;
         Ok(sorted_issues(listed, &self.urls))
@@ -468,17 +485,6 @@ fn repo_parts(project: &str) -> Result<(&str, &str), ForgeError> {
         return Err(ForgeError::NotFound);
     }
     project.split_once('/').ok_or(ForgeError::NotFound)
-}
-
-/// Encode tout sauf lettres, chiffres, `-`, `_` et `~` : un nom de branche ou de label devient un
-/// seul segment de chemin. Le point aussi, pour qu'un label `..` ne remonte pas d'un cran.
-fn encode_path(raw: &str) -> String {
-    raw.bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'~' => (b as char).to_string(),
-            _ => format!("%{b:02X}"),
-        })
-        .collect()
 }
 
 fn millis(rfc3339: &str) -> Option<Millis> {
@@ -894,6 +900,11 @@ fn sorted_issues(listed: Vec<RestIssue>, urls: &GitHubUrls) -> Vec<Issue> {
 }
 
 #[derive(Deserialize)]
+struct RestPullNumber {
+    number: u64,
+}
+
+#[derive(Deserialize)]
 struct RestComment {
     user: Option<RestUser>,
     #[serde(default)]
@@ -1130,10 +1141,7 @@ mod tests {
     }
 
     #[test]
-    fn a_branch_or_label_name_becomes_a_single_path_segment() {
-        assert_eq!(encode_path("feat/cache"), "feat%2Fcache");
-        assert_eq!(encode_path("à faire"), "%C3%A0%20faire");
-        assert_eq!(encode_path("../x?y#z"), "%2E%2E%2Fx%3Fy%23z");
+    fn a_project_path_has_an_owner_and_a_repository() {
         assert_eq!(repo_parts("a/b/c"), Err(ForgeError::NotFound));
         assert_eq!(repo_parts("acme/shop"), Ok(("acme", "shop")));
     }

@@ -20,6 +20,12 @@ use crate::dto::{AgentDto, AgentOutput};
 use crate::now;
 use crate::task_cli;
 
+pub struct AgentWork {
+    pub project_path: String,
+    pub forge_project: Option<String>,
+    pub worktree_writes: usize,
+}
+
 struct Live {
     agent: Agent,
     workspace: Workspace,
@@ -310,6 +316,18 @@ impl AgentRegistry {
     }
 
     /// Noms donnés aux onglets, par session Claude Code : l'historique les affiche aussi.
+    /// Dossier de travail, projet de forge et fichiers écrits dans le worktree : ce que la frise
+    /// d'un agent demande au registre.
+    pub fn work(&self, id: &AgentId) -> Option<AgentWork> {
+        let live = self.live.lock().ok()?;
+        let entry = live.get(id)?;
+        Some(AgentWork {
+            project_path: entry.agent.project_path().to_owned(),
+            forge_project: entry.workspace.gitlab_project.clone(),
+            worktree_writes: entry.agent.worktree_writes(),
+        })
+    }
+
     pub fn names_by_session(&self) -> HashMap<String, String> {
         let Ok(live) = self.live.lock() else { return HashMap::new() };
         live.values()

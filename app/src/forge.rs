@@ -2,15 +2,19 @@
 //! le reste est relu après quelques minutes.
 //! - États des MR liées aux sessions : une MR mergée ou fermée ne change plus.
 //! - Mes contributions, par tranches de 30 jours : une tranche lue après sa fin ne change plus.
+//!
+//! La MR de la branche d'un agent, elle, est relue après [`BRANCH_TTL_MS`] : la frise de l'agent
+//! ouvert doit suivre une MR qui vient d'être créée ou marquée prête.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use robiade_core::contributions::Contribution;
-use robiade_core::forge::{Forge, ForgeError, MrOutcomes, MrRef, MrState};
+use robiade_core::forge::{Forge, ForgeError, MergeRequest, MrOutcomes, MrRef, MrState};
 use robiade_core::Millis;
 
 const OPEN_TTL_MS: Millis = 5 * 60 * 1000;
+const BRANCH_TTL_MS: Millis = 30 * 1000;
 /// Lectures simultanées sur GitLab.
 const PARALLEL_READS: usize = 8;
 const DAY_MS: Millis = 86_400_000;
@@ -71,6 +75,39 @@ impl MrStates {
             }
         }
         Ok(mrs.iter().map(|mr| self.cached(mr, now)).collect())
+    }
+}
+
+/// Projet de forge en minuscules, et branche.
+type Branch = (String, String);
+
+/// MR de chaque branche d'agent lue, `None` si la branche n'en a pas.
+pub struct BranchMergeRequests {
+    forge: Arc<dyn Forge>,
+    /// MR de la branche et instant de lecture.
+    known: Mutex<HashMap<Branch, (Option<MergeRequest>, Millis)>>,
+}
+
+impl BranchMergeRequests {
+    pub fn new(forge: Arc<dyn Forge>) -> Self {
+        Self { forge, known: Mutex::default() }
+    }
+
+    pub fn of(&self, project: &str, branch: &str, now: Millis) -> Result<Option<MergeRequest>, ForgeError> {
+        let key = (project.to_ascii_lowercase(), branch.to_owned());
+        if let Some((mr, read_at)) = self.known.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
+            if now - read_at < BRANCH_TTL_MS {
+                return Ok(mr.clone());
+            }
+        }
+        let mr = self.forge.merge_request_of_branch(project, branch)?;
+        self.known.lock().unwrap_or_else(|e| e.into_inner()).insert(key, (mr.clone(), now));
+        Ok(mr)
+    }
+
+    /// Après une action sur une MR : la prochaine lecture repart de la forge.
+    pub fn forget(&self) {
+        self.known.lock().unwrap_or_else(|e| e.into_inner()).clear();
     }
 }
 
@@ -163,6 +200,9 @@ mod tests {
             unreachable!()
         }
         fn merge_request(&self, _: &MrRef) -> Result<MergeRequest, ForgeError> {
+            unreachable!()
+        }
+        fn merge_request_of_branch(&self, _: &str, _: &str) -> Result<Option<MergeRequest>, ForgeError> {
             unreachable!()
         }
         fn my_issues(&self) -> Result<Vec<Issue>, ForgeError> {

@@ -11,6 +11,7 @@ use robiade_core::databases::DbError;
 use robiade_core::db_console::{self, Admission, ConsoleHistory, Policy, StatementKind};
 use robiade_core::merge_actions::AuditEntry;
 use robiade_core::forge::{ForgeError, Issue, IssueRef, MrRef};
+use robiade_core::lifecycle::{Facts, Lifecycle};
 use robiade_core::{issue_start, task_start};
 use robiade_core::history::{SessionSearch, TranscriptReader};
 use robiade_core::contributions::{self, Granularity};
@@ -27,7 +28,7 @@ use crate::dto::{
     ActionPreviewDto, AgentDto, AssetContentDto, AuditEntryDto, ConsoleHistoryDto, ConsoleReplyDto, ConsoleResultDto, FinishedWriteDto,
     ContainerActionPreviewDto, ContainerDto, ContributionBucketDto, DbConnectionDto, DbConnectionInputDto, DbOverviewDto, DbProbeDto, DbTargetDto, EntryDto, EnvironmentDto,
     FileChangeDto, ForgeDto, GranularityDto, IssueActionDto, IssueActionPreviewDto, IssueDto, IssueRefDto, IssueStartDto,
-    IssueReadingDto, IssueStartedDto, MergeRequestDto, MrActionDto, MrReadingDto, MrOutcomesDto, MrRefDto, NewIssueDto, OverviewDto, PageDto,
+    IssueReadingDto, IssueStartedDto, LifecycleDto, MergeRequestDto, MrActionDto, MrReadingDto, MrOutcomesDto, MrRefDto, NewIssueDto, OverviewDto, PageDto,
     PageRequestDto, ProjectFileDto, ProjectFilesDto, RelationDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto, WorktreeCreationDto, WorktreeDto,
     UpdateDto, WorktreeRemovalDto,
 };
@@ -640,6 +641,44 @@ pub async fn preview_mr_action(
     .map_err(|e| e.to_string())?
 }
 
+/// Frise du ticket d'un agent. La MR est cherchée par la branche extraite dans son dossier, sauf
+/// sur une branche de tronc : une MR qui en part n'est pas celle de l'agent.
+#[tauri::command]
+pub async fn agent_lifecycle(app: tauri::AppHandle, id: String) -> CmdResult<LifecycleDto> {
+    let id = agent_id(&id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let work = state.agents.work(&id).ok_or("agent inconnu")?;
+        let branch = state.worktrees.branch(&work.project_path).ok().flatten();
+        let read = match (&work.forge_project, &branch) {
+            (Some(project), Some(branch)) => match state.trunks.of_project(project) {
+                Ok(trunks) if trunks.contains(branch) => Ok(None),
+                Ok(_) => state.branch_mrs.of(project, branch, now()),
+                Err(e) => Err(e),
+            },
+            _ => Ok(None),
+        };
+        let (mr, forge_error) = match read {
+            Ok(mr) => (mr, None),
+            // Sans forge réglée, la frise s'arrête à ce que l'agent a fait, sans erreur.
+            Err(ForgeError::NotConfigured) => (None, None),
+            Err(e) => (None, Some(e.to_string())),
+        };
+        let lifecycle = Lifecycle::of(&Facts {
+            branch: branch.as_deref(),
+            worktree_writes: work.worktree_writes,
+            merge_request: mr.as_ref(),
+        });
+        let dto = mr.map(|m| {
+            let trunks = state.trunks.of_project(&m.mr.project).ok();
+            MergeRequestDto::new(m, trunks.as_ref())
+        });
+        Ok(LifecycleDto::new(lifecycle, dto, forge_error))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Action confirmée : replanifiée sur l'état courant, envoyée, puis inscrite au journal d'audit.
 #[tauri::command]
 pub async fn run_mr_action(app: tauri::AppHandle, target: MrRefDto, action: MrActionDto) -> CmdResult<String> {
@@ -647,6 +686,7 @@ pub async fn run_mr_action(app: tauri::AppHandle, target: MrRefDto, action: MrAc
         let state = app.state::<AppState>();
         let (mr, planned) = planned(&state, &target, action)?;
         let outcome = state.forge.execute(&mr.mr, &planned).map_err(|e| e.to_string());
+        state.branch_mrs.forget();
         let entry = robiade_core::merge_actions::AuditEntry::new(now(), &mr.mr, &planned, outcome.clone());
         if let Err(e) = state.audit.record(&entry) {
             eprintln!("{e}");

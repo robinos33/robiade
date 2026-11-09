@@ -3,7 +3,7 @@
  * Rien de ce fichier n'entre dans le build (seul `index.html` est une entrée Vite).
  */
 import type {
-  ContributionBucket, Granularity, Agent, Container, DbCell, DbColumn, DbConnection, DbPageRequest, Discussion, FileChange, Forge, GitWorktree, Issue, MergeRequest, MrRef, Overview, Session, Task, Tokens, WorktreeRemoval,
+  ContributionBucket, Granularity, Agent, Container, DbCell, DbColumn, DbConnection, DbPageRequest, Discussion, FileChange, Forge, GitWorktree, Issue, Lifecycle, MergeRequest, MrRef, Overview, Session, Task, Tokens, WorktreeRemoval,
 } from '../src/lib/types';
 import { localDay } from '../src/lib/format';
 
@@ -591,6 +591,46 @@ function linkedFile(uri: string) {
  */
 const BOOT = new URLSearchParams(location.search).get('boot');
 
+/** Frise de chaque agent de démo : en revue avec la CI, du code, une discussion, une exploration. */
+const LIFECYCLES: Record<string, Lifecycle> = {
+  [AGENT_IDS[0]!]: { ticket: 231, step: 'review', blocker: { kind: 'pipeline', status: 'running', waiting: true }, mergeRequest: forge.mine[0]!, forgeError: null },
+  [AGENT_IDS[1]!]: { ticket: 19, step: 'code', blocker: null, mergeRequest: null, forgeError: null },
+  [AGENT_IDS[2]!]: { ticket: null, step: 'review', blocker: { kind: 'discussions', waiting: false }, mergeRequest: forge.mine[1]!, forgeError: null },
+  [AGENT_IDS[3]!]: { ticket: null, step: 'exploration', blocker: null, mergeRequest: null, forgeError: null },
+};
+
+/** `?lifecycle=…` : la frise du premier agent à une étape ou sur un blocage donné. */
+function demoLifecycle(scenario: string): Lifecycle {
+  const base = LIFECYCLES[AGENT_IDS[0]!]!;
+  const draft = { ...forge.mine[0]!, state: 'draft' as const };
+  const merged = { ...forge.mine[0]!, state: 'merged' as const };
+  const at = (step: Lifecycle['step'], blocker: Lifecycle['blocker'], mr: MergeRequest | null = base.mergeRequest): Lifecycle =>
+    ({ ...base, step, blocker, mergeRequest: mr });
+  const todo = (b: Omit<NonNullable<Lifecycle['blocker']>, 'waiting'>) => ({ ...b, waiting: false }) as Lifecycle['blocker'];
+  const wait = (b: Omit<NonNullable<Lifecycle['blocker']>, 'waiting'>) => ({ ...b, waiting: true }) as Lifecycle['blocker'];
+  const scenarios: Record<string, Lifecycle> = {
+    exploration: at('exploration', null, null),
+    code: at('code', null, null),
+    draft: at('draft', null, draft),
+    'draft-ci': at('draft', wait({ kind: 'pipeline', status: 'running' }), draft),
+    conflicts: at('review', todo({ kind: 'conflicts' })),
+    failed: at('review', todo({ kind: 'pipeline', status: 'failed' })),
+    manual: at('review', todo({ kind: 'pipeline', status: 'manual' })),
+    discussions: at('review', todo({ kind: 'discussions' })),
+    ci: base,
+    approvals: at('review', wait({ kind: 'approvals', left: 2 })),
+    unknown: at('review', wait({ kind: 'approvalsUnknown' })),
+    rebase: at('review', todo({ kind: 'notMergeable', status: 'need_rebase' })),
+    ready: at('review', todo({ kind: 'readyToMerge' })),
+    merged: at('merged', null, merged),
+    wagon: at('merged', null, { ...merged, wagon: true, targetBranch: 'ticket-230-rappel-panier' }),
+    closed: at('closed', null, { ...forge.mine[0]!, state: 'closed' }),
+    unreadable: { ...at('code', null, null), forgeError: 'forge injoignable : délai dépassé' },
+  };
+  return scenarios[scenario] ?? base;
+}
+const LIFECYCLE = new URLSearchParams(location.search).get('lifecycle');
+
 const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
   /** `?update=installing|ready|failed` : état de la mise à jour au lancement. */
   settings: () => ({
@@ -658,6 +698,8 @@ const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
   },
   stats: () => overview(),
   merge_request_states: () => ({}),
+  agent_lifecycle: (args) =>
+    LIFECYCLE && args.id === AGENT_IDS[0] ? demoLifecycle(LIFECYCLE) : LIFECYCLES[String(args.id)]!,
   merge_request_outcomes: () => ({ total: 31, merged: 24, opened: 5, closed: 2, unknown: 0 }),
   gitlab_activity: (args) => gitlabActivity((args as { granularity: Granularity }).granularity),
   search_history: () => [],
