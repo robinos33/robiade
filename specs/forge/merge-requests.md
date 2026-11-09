@@ -26,7 +26,9 @@ Lien Agents ↔ Forge : une session porteuse d'un `pr-link` ou dont la branche c
 est affichée **sur** la MR, et inversement. La MR d'un agent ouvert se lit, elle, par la branche extraite
 dans son dossier : la plus récente qui en part, **quel que soit son état** (mergée, fermée), avec
 son pipeline et ses approbations, sur les deux forges. Une branche de tronc n'a pas de MR d'agent.
-Relue au plus toutes les 30 s, et après chaque action lancée depuis Robiade. Elle nourrit la
+À défaut (tronc, tête détachée, branche sans MR), c'est la MR du dernier `pr-link` de sa session,
+s'il désigne la forge réglée : un agent sur `main` qui travaille dans ses worktrees. Claude Code
+n'écrit ce lien que pour `gh` : sur GitLab, un tel agent reste sans MR. Relue au plus toutes les 30 s, et après chaque action lancée depuis Robiade. Elle nourrit la
 [frise du ticket](../agents/status.md). Risque résiduel (GitHub) : la PR d'un fork, dont la
 branche vit chez un autre propriétaire, n'est pas trouvée.
 
@@ -65,3 +67,4 @@ fois par lancement et par projet.
 - #26 — Socle — indépendance vis-à-vis de l'entreprise : instance GitLab, Vault et branches de tronc dans une page Réglages
 - #28 — Forge — fournisseur GitHub (pull requests, issues, checks)
 - #51 — Agents — frise du cycle de vie du ticket, fixée sous le terminal
+- #56 — Agents — la frise ignore la PR d'un agent qui travaille en worktree depuis main
