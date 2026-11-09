@@ -54,7 +54,13 @@
   const session = $derived(active ? app.sessionOf(active) : undefined);
   /** Frise du ticket de l'agent actif, lue par `LifecycleBar`. */
   let lifecycle = $state<Lifecycle | null>(null);
-  const mr = $derived(active ? app.mergeRequestOf(active) : null);
+  // La MR de la frise est lue par branche, quel que soit son état et sur les deux forges ; à défaut,
+  // le lien de la session.
+  const mr = $derived.by(() => {
+    const found = lifecycle?.mergeRequest;
+    if (found) return { url: found.webUrl, state: found.state, title: found.title };
+    return active ? app.mergeRequestOf(active) : null;
+  });
   const sessionId = $derived(active ? active.sessionId : '');
   const viewed = $derived(active?.assets.find((a) => a.path === viewing));
 
