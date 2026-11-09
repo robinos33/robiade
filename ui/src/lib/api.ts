@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
-  Agent, IssueReading, MrReading, ProjectFile, ProjectFiles, Container, ContributionBucket, Granularity, DbConnection, DbConnectionInput, DbConsoleHistory, DbConsoleReply, DbFinishedWrite, DbOverview, DbPage, DbPageRequest, DbProbe, DbTarget, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, ProjectColors, RepositoryTrunks, SaveOutcome, SearchHit, Session, Settings, ForgeSettings, VaultSettings, Task, TaskStatus, GitWorktree, Update, WorktreeCreation, WorktreeRemoval,
+  Agent, IssueReading, MrReading, ProjectFile, ProjectFiles, Container, ContributionBucket, Granularity, DbConnection, DbConnectionInput, DbConsoleHistory, DbConsoleReply, DbFinishedWrite, DbOverview, DbPage, DbPageRequest, DbProbe, DbTarget, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, Lifecycle, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, ProjectColors, RepositoryTrunks, SaveOutcome, SearchHit, Session, Settings, ForgeSettings, VaultSettings, Task, TaskStatus, GitWorktree, Update, WorktreeCreation, WorktreeRemoval,
 } from './types';
 
 export const api = {
@@ -72,6 +72,8 @@ export const api = {
   revealInFinder: (worktree: string, path: string) => invoke<void>('reveal_in_finder', { worktree, path }),
   issues: (project: string | null) => invoke<Issue[]>('issues', { project }),
   mergeRequestStates: (urls: string[]) => invoke<Record<string, MrState>>('merge_request_states', { urls }),
+  /** Frise du ticket d'un agent : la MR est relue au plus toutes les 30 s côté Rust. */
+  agentLifecycle: (id: string) => invoke<Lifecycle>('agent_lifecycle', { id }),
   mergeRequestOutcomes: (refs: MrRef[]) => invoke<MrOutcomes>('merge_request_outcomes', { refs }),
   gitlabActivity: (granularity: Granularity) =>
     invoke<ContributionBucket[]>('gitlab_activity', { granularity, utcOffsetMinutes: -new Date().getTimezoneOffset() }),

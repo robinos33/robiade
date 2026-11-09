@@ -14,10 +14,11 @@
   import GaugeBar from '../components/GaugeBar.svelte';
   import AssetViewer from '../components/AssetViewer.svelte';
   import ChangesPanel from '../components/ChangesPanel.svelte';
+  import LifecycleBar from '../components/LifecycleBar.svelte';
   import Icon from '../components/Icon.svelte';
   import ResizeHandle from '../components/ResizeHandle.svelte';
   import TerminalSearch from '../components/TerminalSearch.svelte';
-  import type { Agent, Session } from '../lib/types';
+  import type { Agent, Lifecycle, Session } from '../lib/types';
 
   /** Sessions reprenables proposées sous les onglets, comme le fait `/resume`. */
   const RECENT_SESSIONS = 8;
@@ -51,6 +52,8 @@
 
   const active = $derived(app.agents.find((a) => a.id === app.activeAgentId) ?? app.visibleAgents[0]);
   const session = $derived(active ? app.sessionOf(active) : undefined);
+  /** Frise du ticket de l'agent actif, lue par `LifecycleBar`. */
+  let lifecycle = $state<Lifecycle | null>(null);
   const mr = $derived(active ? app.mergeRequestOf(active) : null);
   const sessionId = $derived(active ? active.sessionId : '');
   const viewed = $derived(active?.assets.find((a) => a.path === viewing));
@@ -371,6 +374,7 @@
               <TerminalSearch bind:this={search} id={active.id} onclose={() => (finding = false)} />
             {/if}
           </div>
+          <LifecycleBar agent={active} bind:lifecycle />
         </div>
 
         <!-- Enveloppe sans défilement : la poignée reste sur la bordure quand le panneau défile. -->
