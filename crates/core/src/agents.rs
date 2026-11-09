@@ -1,6 +1,7 @@
 //! Agents : sessions Claude Code lancées par Robiade, et leur status.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
 use crate::assets::Assets;
 use crate::Millis;
@@ -195,6 +196,9 @@ pub struct Agent {
     failed_turns: u32,
     tools: BTreeMap<String, u32>,
     files_modified: BTreeSet<String>,
+    /// Ceux de `files_modified` qui sont dans son dossier de travail : ce qu'il a codé. Le
+    /// scratchpad, sa mémoire ou un autre dépôt n'en font pas partie.
+    worktree_writes: BTreeSet<String>,
     last_tool: Option<String>,
     permission_mode: Option<PermissionMode>,
     effort: Option<Effort>,
@@ -225,6 +229,7 @@ impl Agent {
             failed_turns: 0,
             tools: BTreeMap::new(),
             files_modified: BTreeSet::new(),
+            worktree_writes: BTreeSet::new(),
             last_tool: None,
             permission_mode: None,
             effort: None,
@@ -318,6 +323,9 @@ impl Agent {
     /// y est un asset, gardé sous ce chemin pour que `/tmp/…` et `/private/tmp/…` n'en fassent qu'un.
     pub fn observe_file_written(&mut self, path: &str, in_scratchpad: Option<&str>, now: Millis) {
         self.files_modified.insert(path.to_owned());
+        if in_scratchpad.is_none() && Path::new(path).starts_with(&self.project_path) {
+            self.worktree_writes.insert(path.to_owned());
+        }
         match in_scratchpad {
             Some(resolved) => self.assets.record_scratchpad(resolved, now),
             None => self.assets.record(path, now),
@@ -399,6 +407,9 @@ impl Agent {
     }
     pub fn files_modified(&self) -> usize {
         self.files_modified.len()
+    }
+    pub fn worktree_writes(&self) -> usize {
+        self.worktree_writes.len()
     }
     pub fn last_tool(&self) -> Option<&str> {
         self.last_tool.as_deref()
@@ -542,6 +553,18 @@ mod tests {
         assert_eq!(a.tools(), [("Bash", 2), ("Agent", 1), ("Edit", 1)]);
         assert_eq!(a.subagents(), 1);
         assert_eq!(a.files_modified(), 2);
+    }
+
+    #[test]
+    fn only_a_file_of_the_working_directory_counts_as_code() {
+        let mut a = agent();
+        a.observe_file_written("/tmp/p/src/a.rs", None, 1);
+        a.observe_file_written("/tmp/p/src/a.rs", None, 2);
+        a.observe_file_written("/private/tmp/claude-501/x/s/scratchpad/plan.md", Some("/private/tmp/claude-501/x/s/scratchpad/plan.md"), 3);
+        a.observe_file_written("/Users/me/.claude/projects/x/memory/note.md", None, 4);
+        a.observe_file_written("/tmp/pp/voisin.rs", None, 5);
+        assert_eq!(a.worktree_writes(), 1);
+        assert_eq!(a.files_modified(), 4, "le compteur du panneau Session garde tout");
     }
 
     #[test]
