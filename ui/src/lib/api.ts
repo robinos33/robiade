@@ -72,8 +72,11 @@ export const api = {
   revealInFinder: (worktree: string, path: string) => invoke<void>('reveal_in_finder', { worktree, path }),
   issues: (project: string | null) => invoke<Issue[]>('issues', { project }),
   mergeRequestStates: (urls: string[]) => invoke<Record<string, MrState>>('merge_request_states', { urls }),
-  /** Frise du ticket d'un agent : la MR est relue au plus toutes les 30 s côté Rust. */
-  agentLifecycle: (id: string) => invoke<Lifecycle>('agent_lifecycle', { id }),
+  /**
+   * Frise du ticket d'un agent : la MR est relue au plus toutes les 30 s côté Rust. `prLink`, le
+   * dernier `pr-link` de sa session, sert quand la branche de son dossier n'a pas de MR.
+   */
+  agentLifecycle: (id: string, prLink: string | null) => invoke<Lifecycle>('agent_lifecycle', { id, prLink }),
   mergeRequestOutcomes: (refs: MrRef[]) => invoke<MrOutcomes>('merge_request_outcomes', { refs }),
   gitlabActivity: (granularity: Granularity) =>
     invoke<ContributionBucket[]>('gitlab_activity', { granularity, utcOffsetMinutes: -new Date().getTimezoneOffset() }),

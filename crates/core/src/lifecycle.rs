@@ -60,7 +60,8 @@ pub struct Facts<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Lifecycle {
-    /// Issue de la branche de ticket ; `None` : la frise n'a pas d'étape Ticket.
+    /// Issue de la branche de ticket : celle du dossier de l'agent, sinon la branche source de sa
+    /// MR (un agent sur `main` qui travaille dans ses worktrees) ; `None` : pas d'étape Ticket.
     pub ticket: Option<u64>,
     pub step: Step,
     pub blocker: Option<Blocker>,
@@ -77,7 +78,10 @@ impl Lifecycle {
             None => Step::Exploration,
         };
         Self {
-            ticket: facts.branch.and_then(issue_of_branch),
+            ticket: facts
+                .branch
+                .and_then(issue_of_branch)
+                .or_else(|| facts.merge_request.and_then(|m| issue_of_branch(&m.source_branch))),
             step,
             blocker: facts.merge_request.and_then(blocker),
         }
@@ -158,6 +162,17 @@ mod tests {
         assert_eq!(free.ticket, None);
         let detached = Lifecycle::of(&Facts { branch: None, worktree_writes: 0, merge_request: None });
         assert_eq!(detached.ticket, None);
+    }
+
+    #[test]
+    fn on_a_trunk_the_ticket_comes_from_the_branch_of_the_merge_request() {
+        let merged = mr(MrState::Merged);
+        let on_main = Lifecycle::of(&Facts { branch: Some("main"), worktree_writes: 0, merge_request: Some(&merged) });
+        assert_eq!((on_main.ticket, on_main.step), (Some(51), Step::Merged));
+        let mut other = mr(MrState::Opened);
+        other.source_branch = "ticket-9-autre".into();
+        let own = Lifecycle::of(&Facts { branch: Some("ticket-51-frise"), worktree_writes: 0, merge_request: Some(&other) });
+        assert_eq!(own.ticket, Some(51), "la branche du dossier passe d'abord");
     }
 
     #[test]

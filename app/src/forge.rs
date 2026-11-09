@@ -3,8 +3,8 @@
 //! - États des MR liées aux sessions : une MR mergée ou fermée ne change plus.
 //! - Mes contributions, par tranches de 30 jours : une tranche lue après sa fin ne change plus.
 //!
-//! La MR de la branche d'un agent, elle, est relue après [`BRANCH_TTL_MS`] : la frise de l'agent
-//! ouvert doit suivre une MR qui vient d'être créée ou marquée prête.
+//! La MR d'un agent, elle, est relue après [`AGENT_TTL_MS`] : la frise de l'agent ouvert doit
+//! suivre une MR qui vient d'être créée ou marquée prête.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -14,7 +14,7 @@ use robiade_core::forge::{Forge, ForgeError, MergeRequest, MrOutcomes, MrRef, Mr
 use robiade_core::Millis;
 
 const OPEN_TTL_MS: Millis = 5 * 60 * 1000;
-const BRANCH_TTL_MS: Millis = 30 * 1000;
+const AGENT_TTL_MS: Millis = 30 * 1000;
 /// Lectures simultanées sur GitLab.
 const PARALLEL_READS: usize = 8;
 const DAY_MS: Millis = 86_400_000;
@@ -78,31 +78,56 @@ impl MrStates {
     }
 }
 
-/// Projet de forge en minuscules, et branche.
-type Branch = (String, String);
-
-/// MR de chaque branche d'agent lue, `None` si la branche n'en a pas.
-pub struct BranchMergeRequests {
-    forge: Arc<dyn Forge>,
-    /// MR de la branche et instant de lecture.
-    known: Mutex<HashMap<Branch, (Option<MergeRequest>, Millis)>>,
+/// Ce qui désigne la MR d'un agent : sa branche (projet en minuscules), ou le lien de sa session.
+#[derive(PartialEq, Eq, Hash)]
+enum Lookup {
+    Branch(String, String),
+    Link(MrRef),
 }
 
-impl BranchMergeRequests {
+/// MR des agents lues, `None` si la branche n'en a pas.
+pub struct AgentMergeRequests {
+    forge: Arc<dyn Forge>,
+    /// MR et instant de lecture.
+    known: Mutex<HashMap<Lookup, (Option<MergeRequest>, Millis)>>,
+}
+
+impl AgentMergeRequests {
     pub fn new(forge: Arc<dyn Forge>) -> Self {
         Self { forge, known: Mutex::default() }
     }
 
-    pub fn of(&self, project: &str, branch: &str, now: Millis) -> Result<Option<MergeRequest>, ForgeError> {
-        let key = (project.to_ascii_lowercase(), branch.to_owned());
+    fn cached(
+        &self,
+        key: Lookup,
+        now: Millis,
+        read: impl FnOnce() -> Result<Option<MergeRequest>, ForgeError>,
+    ) -> Result<Option<MergeRequest>, ForgeError> {
         if let Some((mr, read_at)) = self.known.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
-            if now - read_at < BRANCH_TTL_MS {
+            if now - read_at < AGENT_TTL_MS {
                 return Ok(mr.clone());
             }
         }
-        let mr = self.forge.merge_request_of_branch(project, branch)?;
+        let mr = read()?;
         self.known.lock().unwrap_or_else(|e| e.into_inner()).insert(key, (mr.clone(), now));
         Ok(mr)
+    }
+
+    pub fn of_branch(&self, project: &str, branch: &str, now: Millis) -> Result<Option<MergeRequest>, ForgeError> {
+        let key = Lookup::Branch(project.to_ascii_lowercase(), branch.to_owned());
+        self.cached(key, now, || self.forge.merge_request_of_branch(project, branch))
+    }
+
+    /// MR désignée par le `pr-link` d'une session, quel que soit son état, avec ses approbations
+    /// si elle est ouverte.
+    pub fn of_link(&self, mr: &MrRef, now: Millis) -> Result<Option<MergeRequest>, ForgeError> {
+        self.cached(Lookup::Link(mr.clone()), now, || {
+            let mut found = self.forge.merge_request(mr)?;
+            if matches!(found.state, MrState::Draft | MrState::Opened) {
+                found.approvals = self.forge.approvals(mr).ok();
+            }
+            Ok(Some(found))
+        })
     }
 
     /// Après une action sur une MR : la prochaine lecture repart de la forge.
