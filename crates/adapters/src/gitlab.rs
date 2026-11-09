@@ -18,6 +18,7 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use serde_json::json;
 
+use crate::forge_urls::encode_path;
 use crate::gitlab_urls::GitLabUrls;
 use crate::keychain;
 
@@ -276,6 +277,25 @@ impl Forge for GitLab {
     fn merge_request(&self, mr: &MrRef) -> Result<MergeRequest, ForgeError> {
         let found = self.single(&mr.project, mr.iid)?;
         to_domain(found, &self.urls).ok_or_else(|| ForgeError::Api("MR hors de l'instance configurée".into()))
+    }
+
+    fn merge_request_of_branch(&self, project: &str, branch: &str) -> Result<Option<MergeRequest>, ForgeError> {
+        if !is_project_path(project) {
+            return Err(ForgeError::NotFound);
+        }
+        let listed: Vec<ApiMergeRequest> = self.get(&format!(
+            "/projects/{}/merge_requests?source_branch={}&state=all&order_by=updated_at&sort=desc&per_page=1",
+            project.replace('/', "%2F"),
+            encode_path(branch)
+        ))?;
+        let Some(found) = listed.into_iter().next() else { return Ok(None) };
+        let r = self.urls.merge_request(&found.web_url).ok_or_else(|| ForgeError::Api("MR hors de l'instance configurée".into()))?;
+        // La liste ne donne pas le pipeline : la MR est relue.
+        let mut mr = self.merge_request(&r)?;
+        if matches!(mr.state, MrState::Draft | MrState::Opened) {
+            mr.approvals = self.approvals(&r).ok();
+        }
+        Ok(Some(mr))
     }
 
     fn approvals(&self, mr: &MrRef) -> Result<Approvals, ForgeError> {

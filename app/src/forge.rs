@@ -165,6 +165,9 @@ mod tests {
         fn merge_request(&self, _: &MrRef) -> Result<MergeRequest, ForgeError> {
             unreachable!()
         }
+        fn merge_request_of_branch(&self, _: &str, _: &str) -> Result<Option<MergeRequest>, ForgeError> {
+            unreachable!()
+        }
         fn my_issues(&self) -> Result<Vec<Issue>, ForgeError> {
             unreachable!()
         }

@@ -318,6 +318,22 @@ impl Forge for GitHub {
         self.pull_request(mr).map(|(found, _, _)| found)
     }
 
+    /// Une PR d'un fork, dont la branche vit chez un autre propriétaire, n'est pas trouvée.
+    fn merge_request_of_branch(&self, project: &str, branch: &str) -> Result<Option<MergeRequest>, ForgeError> {
+        let (owner, _) = repo_parts(project)?;
+        let listed: Vec<RestPullNumber> = self.get(&format!(
+            "/repos/{project}/pulls?head={owner}:{}&state=all&sort=updated&direction=desc&per_page=1",
+            encode_path(branch)
+        ))?;
+        let Some(found) = listed.into_iter().next() else { return Ok(None) };
+        let r = MrRef::new(project, found.number).ok_or(ForgeError::NotFound)?;
+        let (mut mr, facts, _) = self.pull_request(&r)?;
+        if matches!(mr.state, MrState::Draft | MrState::Opened) {
+            mr.approvals = self.approvals_for(&mr, &facts);
+        }
+        Ok(Some(mr))
+    }
+
     fn my_issues(&self) -> Result<Vec<Issue>, ForgeError> {
         let listed: Vec<RestIssue> = self.get(&format!("/issues?filter=assigned&state=open&per_page={PER_PAGE}"))?;
         Ok(sorted_issues(listed, &self.urls))
@@ -881,6 +897,11 @@ fn sorted_issues(listed: Vec<RestIssue>, urls: &GitHubUrls) -> Vec<Issue> {
     let mut issues: Vec<Issue> = listed.into_iter().filter_map(|i| issue_to_domain(i, urls)).collect();
     issues.sort_by_key(|i| std::cmp::Reverse(i.updated_at));
     issues
+}
+
+#[derive(Deserialize)]
+struct RestPullNumber {
+    number: u64,
 }
 
 #[derive(Deserialize)]

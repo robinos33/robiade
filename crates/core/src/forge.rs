@@ -99,6 +99,9 @@ impl Forge for NoForge {
     fn merge_request(&self, _: &MrRef) -> Result<MergeRequest, ForgeError> {
         Err(ForgeError::NotConfigured)
     }
+    fn merge_request_of_branch(&self, _: &str, _: &str) -> Result<Option<MergeRequest>, ForgeError> {
+        Err(ForgeError::NotConfigured)
+    }
     fn my_issues(&self) -> Result<Vec<Issue>, ForgeError> {
         Err(ForgeError::NotConfigured)
     }
@@ -320,6 +323,9 @@ pub trait Forge: Send + Sync {
     fn review_requests(&self) -> Result<Vec<MergeRequest>, ForgeError>;
     /// Une MR précise, quel que soit son état.
     fn merge_request(&self, mr: &MrRef) -> Result<MergeRequest, ForgeError>;
+    /// MR la plus récemment mise à jour dont `branch` est la branche source, quel que soit son
+    /// état, avec son pipeline et, ouverte, ses approbations ; `None` si la branche n'en a aucune.
+    fn merge_request_of_branch(&self, project: &str, branch: &str) -> Result<Option<MergeRequest>, ForgeError>;
     /// Issues ouvertes qui me sont assignées, tous projets confondus.
     fn my_issues(&self) -> Result<Vec<Issue>, ForgeError>;
     /// Approbations d'une MR.
