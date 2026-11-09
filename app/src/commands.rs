@@ -653,7 +653,7 @@ pub async fn agent_lifecycle(app: tauri::AppHandle, id: String) -> CmdResult<Lif
         let read = match (&work.forge_project, &branch) {
             (Some(project), Some(branch)) => match state.trunks.of_project(project) {
                 Ok(trunks) if trunks.contains(branch) => Ok(None),
-                Ok(_) => state.branch_mrs.of(project, branch, now()),
+                Ok(_) => state.agent_mrs.of_branch(project, branch, now()),
                 Err(e) => Err(e),
             },
             _ => Ok(None),
@@ -686,7 +686,7 @@ pub async fn run_mr_action(app: tauri::AppHandle, target: MrRefDto, action: MrAc
         let state = app.state::<AppState>();
         let (mr, planned) = planned(&state, &target, action)?;
         let outcome = state.forge.execute(&mr.mr, &planned).map_err(|e| e.to_string());
-        state.branch_mrs.forget();
+        state.agent_mrs.forget();
         let entry = robiade_core::merge_actions::AuditEntry::new(now(), &mr.mr, &planned, outcome.clone());
         if let Err(e) = state.audit.record(&entry) {
             eprintln!("{e}");

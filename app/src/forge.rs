@@ -82,18 +82,18 @@ impl MrStates {
 type Branch = (String, String);
 
 /// MR de chaque branche d'agent lue, `None` si la branche n'en a pas.
-pub struct BranchMergeRequests {
+pub struct AgentMergeRequests {
     forge: Arc<dyn Forge>,
     /// MR de la branche et instant de lecture.
     known: Mutex<HashMap<Branch, (Option<MergeRequest>, Millis)>>,
 }
 
-impl BranchMergeRequests {
+impl AgentMergeRequests {
     pub fn new(forge: Arc<dyn Forge>) -> Self {
         Self { forge, known: Mutex::default() }
     }
 
-    pub fn of(&self, project: &str, branch: &str, now: Millis) -> Result<Option<MergeRequest>, ForgeError> {
+    pub fn of_branch(&self, project: &str, branch: &str, now: Millis) -> Result<Option<MergeRequest>, ForgeError> {
         let key = (project.to_ascii_lowercase(), branch.to_owned());
         if let Some((mr, read_at)) = self.known.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
             if now - read_at < BRANCH_TTL_MS {
