@@ -3,7 +3,7 @@
  * Rien de ce fichier n'entre dans le build (seul `index.html` est une entrée Vite).
  */
 import type {
-  ContributionBucket, Granularity, Agent, Container, DbCell, DbColumn, DbConnection, DbPageRequest, Discussion, FileChange, Forge, GitWorktree, Issue, Lifecycle, MergeRequest, MrRef, Overview, Session, Task, Tokens, WorktreeRemoval,
+  ContributionBucket, Granularity, Agent, Container, DbCell, DbColumn, DbConnection, DbPageRequest, Discussion, FileChange, Forge, GitWorktree, Issue, Lifecycle, MergeRequest, MrRef, Overview, Session, Shortcut, Task, Tokens, WorktreeRemoval,
 } from '../src/lib/types';
 import { localDay } from '../src/lib/format';
 
@@ -631,6 +631,13 @@ function demoLifecycle(scenario: string): Lifecycle {
 }
 const LIFECYCLE = new URLSearchParams(location.search).get('lifecycle');
 
+const pasted = (text: string) => (text.startsWith('/') && !/\s/.test(text) ? `${text} ` : text);
+let shortcuts: Shortcut[] = [
+  { label: '/simplify', text: '/simplify', pasted: '/simplify ' },
+  { label: '/code-review', text: '/code-review', pasted: '/code-review ' },
+  { label: 'Retours PR', text: 'prends en compte les retours de la PR', pasted: 'prends en compte les retours de la PR' },
+];
+
 const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
   /** `?update=installing|ready|failed` : état de la mise à jour au lancement. */
   settings: () => ({
@@ -698,6 +705,9 @@ const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
   },
   stats: () => overview(),
   merge_request_states: () => ({}),
+  shortcuts: () => shortcuts,
+  save_shortcuts: (args) =>
+    (shortcuts = (args.shortcuts as { label: string; text: string }[]).map((s) => ({ label: s.label.trim(), text: s.text.trim(), pasted: pasted(s.text.trim()) }))),
   agent_lifecycle: (args) =>
     LIFECYCLE && args.id === AGENT_IDS[0] ? demoLifecycle(LIFECYCLE) : LIFECYCLES[String(args.id)]!,
   merge_request_outcomes: () => ({ total: 31, merged: 24, opened: 5, closed: 2, unknown: 0 }),
