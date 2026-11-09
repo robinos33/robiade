@@ -11,6 +11,7 @@ use robiade_core::forge::{
     Discussion, ForgeUrls, Issue, IssueRef, IssueState, MergeRequest, MrOutcomes, MrRef, MrState, PipelineStatus,
 };
 use robiade_core::issue_actions::{IssueAction, NewIssue};
+use robiade_core::lifecycle::{Blocker, Lifecycle, Step};
 use robiade_core::trunks::TrunkBranches;
 use robiade_core::project::{self, Workspace};
 use robiade_core::merge_actions::{AuditEntry, MrAction};
@@ -781,6 +782,65 @@ impl From<Discussion> for DiscussionDto {
             notes: d.notes.into_iter().map(|n| NoteDto { author: n.author, body: n.body, created_at: n.created_at }).collect(),
             resolved: d.resolved,
         }
+    }
+}
+
+/// Frise du ticket d'un agent : son étape, ce qui retient sa MR, et la MR elle-même.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LifecycleDto {
+    pub ticket: Option<u64>,
+    pub step: &'static str,
+    pub blocker: Option<BlockerDto>,
+    pub merge_request: Option<MergeRequestDto>,
+    /// La MR n'a pas pu être lue : l'étape s'arrête à ce que l'agent a fait.
+    pub forge_error: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockerDto {
+    #[serde(flatten)]
+    pub what: BlockerKindDto,
+    /// Attend la CI, les relecteurs ou la forge ; sinon, c'est à faire.
+    pub waiting: bool,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum BlockerKindDto {
+    Conflicts,
+    Pipeline { status: &'static str },
+    Discussions,
+    Approvals { left: u32 },
+    ApprovalsUnknown,
+    NotMergeable { status: String },
+    ReadyToMerge,
+}
+
+impl LifecycleDto {
+    pub fn new(l: Lifecycle, merge_request: Option<MergeRequestDto>, forge_error: Option<String>) -> Self {
+        let step = match l.step {
+            Step::Exploration => "exploration",
+            Step::Code => "code",
+            Step::Draft => "draft",
+            Step::Review => "review",
+            Step::Merged => "merged",
+            Step::Closed => "closed",
+        };
+        let blocker = l.blocker.map(|b| BlockerDto {
+            waiting: b.is_waiting(),
+            what: match b {
+                Blocker::Conflicts => BlockerKindDto::Conflicts,
+                Blocker::Pipeline(p) => BlockerKindDto::Pipeline { status: pipeline_status(p) },
+                Blocker::Discussions => BlockerKindDto::Discussions,
+                Blocker::Approvals(left) => BlockerKindDto::Approvals { left },
+                Blocker::ApprovalsUnknown => BlockerKindDto::ApprovalsUnknown,
+                Blocker::NotMergeable(status) => BlockerKindDto::NotMergeable { status },
+                Blocker::ReadyToMerge => BlockerKindDto::ReadyToMerge,
+            },
+        });
+        Self { ticket: l.ticket, step, blocker, merge_request, forge_error }
     }
 }
 
@@ -1613,4 +1673,21 @@ mod tests {
         let expected = [("TOKEN=", false), ("glpat", true), ("-••••••", false)];
         assert_eq!(dto.snippet, expected.map(|(t, h)| (t.to_owned(), h)));
     }
+
+    #[test]
+    fn a_blocker_reads_as_a_tagged_object_for_the_interface() {
+        let lifecycle = Lifecycle { ticket: Some(51), step: Step::Review, blocker: Some(Blocker::Approvals(2)) };
+        let json = serde_json::to_value(LifecycleDto::new(lifecycle, None, None)).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "ticket": 51, "step": "review", "mergeRequest": null, "forgeError": null,
+                "blocker": { "kind": "approvals", "left": 2, "waiting": true },
+            })
+        );
+        let unknown = Lifecycle { ticket: None, step: Step::Review, blocker: Some(Blocker::ApprovalsUnknown) };
+        let json = serde_json::to_value(LifecycleDto::new(unknown, None, None)).unwrap();
+        assert_eq!(json["blocker"], serde_json::json!({ "kind": "approvalsUnknown", "waiting": true }));
+    }
+
 }
