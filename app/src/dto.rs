@@ -713,13 +713,7 @@ impl MergeRequestDto {
             has_conflicts: m.has_conflicts,
             unresolved_discussions: m.unresolved_discussions,
             merge_status: m.merge_status,
-            pipeline: m.pipeline.map(|p| match p {
-                PipelineStatus::Running => "running",
-                PipelineStatus::Success => "success",
-                PipelineStatus::Failed => "failed",
-                PipelineStatus::Manual => "manual",
-                PipelineStatus::Canceled => "canceled",
-            }),
+            pipeline: m.pipeline.map(pipeline_status),
             wagon,
             approvals: m.approvals.map(|a| ApprovalsDto { required: a.required, left: a.left, by: a.by }),
         }
@@ -787,6 +781,16 @@ impl From<Discussion> for DiscussionDto {
             notes: d.notes.into_iter().map(|n| NoteDto { author: n.author, body: n.body, created_at: n.created_at }).collect(),
             resolved: d.resolved,
         }
+    }
+}
+
+pub fn pipeline_status(status: PipelineStatus) -> &'static str {
+    match status {
+        PipelineStatus::Running => "running",
+        PipelineStatus::Success => "success",
+        PipelineStatus::Failed => "failed",
+        PipelineStatus::Manual => "manual",
+        PipelineStatus::Canceled => "canceled",
     }
 }
 
