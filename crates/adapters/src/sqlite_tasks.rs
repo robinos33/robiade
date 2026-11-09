@@ -44,7 +44,9 @@ impl SqliteTaskRepository {
              ALTER TABLE task ADD COLUMN issue_iid INTEGER;
              ALTER TABLE task ADD COLUMN session_id TEXT;",
         ];
-        let done: usize = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).map_err(storage)?;
+        // rusqlite ne lit plus un `usize` : la version est lue en `i64`, et une valeur négative refusée.
+        let done: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).map_err(storage)?;
+        let done = usize::try_from(done).map_err(storage)?;
         for (i, step) in STEPS.iter().enumerate().skip(done) {
             conn.execute_batch(&format!("BEGIN; {step} PRAGMA user_version = {}; COMMIT;", i + 1))
                 .map_err(storage)?;

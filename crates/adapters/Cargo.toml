@@ -14,7 +14,7 @@ chrono = { version = "0.4", default-features = false, features = ["std"] }
 libc = "0.2"
 portable-pty = "0.9"
 rayon = "1"
-rusqlite = { version = "0.37", features = ["bundled"] }
+rusqlite = { version = "0.41", default-features = false, features = ["bundled", "cache"] }
 # Vérification des certificats par le trousseau système pour Elasticsearch, dont les hôtes
 # internes peuvent avoir une autorité de l'entreprise.
 ureq = { version = "3.5.0", features = ["json", "platform-verifier"] }
