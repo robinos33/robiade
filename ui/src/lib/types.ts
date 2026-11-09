@@ -328,6 +328,9 @@ export interface Settings {
 export interface RepositoryTrunks { repository: string; configured: string[] | null; remoteDefault: string | null }
 /** Couleur de chaque projet, par racine de dépôt principal ; un dépôt absent n'en a pas. */
 export interface ProjectColors { palette: string[]; colors: Record<string, string> }
+
+/** Raccourci du terminal : `pasted` est ce qu'un clic colle au curseur du prompt, sans l'envoyer. */
+export interface Shortcut { label: string; text: string; pasted: string }
 /** Enregistrement fait (`settings`), ou suspendu à la confirmation de `confirmHost`. */
 export interface SaveOutcome { settings: Settings | null; confirmHost: string | null }
 

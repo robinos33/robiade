@@ -4,7 +4,7 @@ import { api } from './api';
 import { localDay } from './format';
 import { moveInOrder, orderProjects, storedOrder, storeOrder } from './projectOrder';
 import { writeOutput } from './terminals';
-import type { Agent, Environment, Forge, GitWorktree, MergeRequest, MrState, Project, ProjectColors, QuitRequest, ReadingTarget, Session, Task, Update, Workspace, Worktree } from './types';
+import type { Agent, Environment, Forge, GitWorktree, MergeRequest, MrState, Project, ProjectColors, QuitRequest, ReadingTarget, Session, Shortcut, Task, Update, Workspace, Worktree } from './types';
 
 export type View = 'inbox' | 'agents' | 'history' | 'mr' | 'tasks' | 'stats' | 'env' | 'db' | 'code' | 'settings';
 
@@ -49,6 +49,8 @@ class AppState {
   projectColors = $state<Record<string, string>>({});
   /** Teintes proposées dans Réglages, dans l'ordre. */
   palette = $state<string[]>([]);
+  /** Raccourcis de la barre sous le terminal, dans l'ordre ; réglés dans Réglages. */
+  shortcuts = $state<Shortcut[]>([]);
 
   /** Ordre des projets rangés à la main dans la barre latérale ; voir `projectOrder.ts`. */
   projectOrder = $state<string[]>(storedOrder());
@@ -241,6 +243,7 @@ class AppState {
     // Un événement arrivé pendant la lecture est plus récent qu'elle : il garde la main.
     void api.updateStatus().then((u) => (this.update ??= u));
     void api.projectColors().then((c) => this.showColors(c), () => {});
+    void api.shortcuts().then((s) => (this.shortcuts = s), () => {});
     this.env = await api.environment();
     this.agents = await api.listAgents();
     this.tasks = await api.listTasks();
