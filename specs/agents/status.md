@@ -43,12 +43,14 @@ permissif en triangle seul. Un mode non permissif disparaît, comme sur la ligne
 ticket de l'agent ouvert, et à droite ce qui retient sa MR. Chaque étape vient d'un fait observé,
 relu à chaque lecture ; rien n'est stocké, et une MR repassée en brouillon ramène la frise en arrière.
 - **Ticket #N** : la branche extraite dans le dossier de l'agent est `ticket-<N>-…`, celle d'un
-  agent lancé depuis une issue ou depuis une tâche liée à une issue. Sinon, pas d'étape Ticket.
+  agent lancé depuis une issue ou depuis une tâche liée à une issue ; sinon, la branche source de
+  sa MR. Sinon, pas d'étape Ticket.
 - **Exploration**, puis **Code** dès que l'agent a écrit un fichier de son dossier de travail
   (Write, Edit). Le scratchpad, sa mémoire ou un autre dépôt ne comptent pas ; le compteur
   « Fichiers modifiés » du panneau Session, lui, compte toujours tout.
-- **Brouillon**, **Revue**, **Mergée** : l'état de la MR de la branche, lue sur la forge comme le
-  dit la [lecture des MR](../forge/merge-requests.md). Un wagon mergé affiche « Mergée dans
+- **Brouillon**, **Revue**, **Mergée** : l'état de la MR de l'agent (celle de sa branche, sinon
+  celle de son dernier `pr-link`), lue sur la forge comme le dit la
+  [lecture des MR](../forge/merge-requests.md). Un wagon mergé affiche « Mergée dans
   `<cible>` ». Une MR fermée sans merge prend la place de Revue, barrée d'une croix rouge.
 - **Ce qui retient la MR**, le plus urgent seulement, à partir de Brouillon : conflits, pipeline en
   échec, annulé ou sur un job manuel, discussions non résolues, CI en cours, puis, en Revue
@@ -92,3 +94,4 @@ relu à chaque lecture ; rien n'est stocké, et une MR repassée en brouillon ra
 
 - #24 — Agents — barre du terminal : badges d'état et de mode compacts quand la barre est étroite
 - #51 — Agents — frise du cycle de vie du ticket, fixée sous le terminal
+- #56 — Agents — la frise ignore la PR d'un agent qui travaille en worktree depuis main
