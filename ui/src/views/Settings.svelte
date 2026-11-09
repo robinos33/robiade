@@ -70,6 +70,34 @@
     }
   }
 
+  /** Raccourcis du terminal, en cours d'édition : la barre ne change qu'à l'enregistrement. */
+  let rows = $state<{ label: string; text: string }[]>([]);
+  let shortcutError = $state<string | null>(null);
+  const showShortcuts = () => (rows = app.shortcuts.map(({ label, text }) => ({ label, text })));
+  $effect(() => {
+    void app.shortcuts;
+    showShortcuts();
+  });
+  const shortcutsChanged = $derived(
+    JSON.stringify(rows.map((r) => [r.label.trim(), r.text.trim()]))
+      !== JSON.stringify(app.shortcuts.map((s) => [s.label, s.text])),
+  );
+
+  function move(i: number, by: -1 | 1) {
+    const j = i + by;
+    if (j < 0 || j >= rows.length) return;
+    [rows[i], rows[j]] = [rows[j]!, rows[i]!];
+  }
+
+  async function saveShortcuts() {
+    shortcutError = null;
+    try {
+      app.shortcuts = await api.saveShortcuts(rows.map((r) => ({ label: r.label, text: r.text })));
+    } catch (e) {
+      shortcutError = String(e);
+    }
+  }
+
   /** Troncs par dépôt, et leur saisie : noms séparés par des virgules, dans l'ordre de préférence. */
   let trunks = $state<Record<string, RepositoryTrunks | string>>({});
   let trunkInput = $state<Record<string, string>>({});
@@ -255,6 +283,34 @@
           <p class="muted small">Aucun projet connu : lance un agent dans un dépôt.</p>
         {/each}
       </div>
+
+      <div class="panel">
+        <h2 class="section-title">Raccourcis</h2>
+        <p class="muted small">
+          Sous le terminal d'un agent. Un clic colle le texte au curseur du prompt, sans l'envoyer :
+          Entrée part de toi. Une commande slash seule est suivie d'une espace, pour ses arguments.
+          Actifs seulement quand l'agent attend un prompt.
+        </p>
+        {#each rows as row, i (i)}
+          <div class="shortcut">
+            <input class="field" bind:value={row.label} placeholder="Libellé" maxlength="24" aria-label="Libellé du raccourci {i + 1}" />
+            <textarea class="field mono" bind:value={row.text} rows="1" placeholder="/simplify, ou un prompt" spellcheck="false" aria-label="Texte du raccourci {i + 1}"></textarea>
+            <div class="row-actions">
+              <button class="btn ghost" disabled={i === 0} onclick={() => move(i, -1)} title="Monter" aria-label="Monter">↑</button>
+              <button class="btn ghost" disabled={i === rows.length - 1} onclick={() => move(i, 1)} title="Descendre" aria-label="Descendre">↓</button>
+              <button class="btn ghost" onclick={() => rows.splice(i, 1)} title="Supprimer" aria-label="Supprimer">✕</button>
+            </div>
+          </div>
+        {:else}
+          <p class="muted small">Aucun raccourci : la barre ne s'affiche pas.</p>
+        {/each}
+        {#if shortcutError}<p class="error-text small">{shortcutError}</p>{/if}
+        <footer>
+          <button class="btn" disabled={rows.length >= 20} onclick={() => rows.push({ label: '', text: '' })}>Ajouter</button>
+          <button class="btn ghost" disabled={!shortcutsChanged} onclick={showShortcuts}>Annuler</button>
+          <button class="btn primary" disabled={!shortcutsChanged} onclick={() => void saveShortcuts()}>Enregistrer</button>
+        </footer>
+      </div>
     {:else if !error}
       <p class="muted">Lecture des réglages…</p>
     {/if}
@@ -325,5 +381,9 @@
   .swatch:hover { background: var(--bg-hover); }
   .swatch[aria-checked='true'] { border-color: var(--line-strong); background: var(--bg-active); }
   .swatch:focus-visible { outline: 2px solid var(--ink-2); outline-offset: 1px; }
+  .shortcut { display: grid; grid-template-columns: 160px 1fr auto; align-items: start; gap: 12px; }
+  .shortcut textarea { resize: vertical; min-height: 28px; field-sizing: content; max-height: 160px; }
+  .row-actions { display: flex; gap: 2px; }
+  .row-actions .btn { width: 28px; padding: 0; justify-content: center; }
   .trunk .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); font-size: 13px; }
 </style>
