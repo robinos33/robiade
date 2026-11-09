@@ -1,5 +1,6 @@
 <script lang="ts">
   import { api } from '../lib/api';
+  import { app } from '../lib/state.svelte';
   import { MERGE_STATUS } from '../lib/mergeRequests';
   import type { Agent, Blocker, Lifecycle, LifecycleStep } from '../lib/types';
 
@@ -9,10 +10,13 @@
   let read = $state<{ id: string; value: Lifecycle } | null>(null);
   let sequence = 0;
 
-  async function load(id: string) {
+  /** Dernier `pr-link` de sa session : la MR d'un agent sur `main` qui travaille dans ses worktrees. */
+  const prLink = $derived(app.sessionOf(agent)?.mergeRequestUrl ?? null);
+
+  async function load(id: string, link: string | null) {
     const mine = ++sequence;
     try {
-      const value = await api.agentLifecycle(id);
+      const value = await api.agentLifecycle(id, link);
       if (mine === sequence) read = { id, value };
     } catch {
       if (mine === sequence) read = null;
@@ -22,15 +26,15 @@
   // Relue à chaque fait qui peut la changer : une écriture, une autre session, un changement
   // d'état (en fin de tour, l'agent vient peut-être de créer sa branche ou sa MR). Côté Rust,
   // la MR n'est relue qu'après 30 s : ces appels ne touchent pas la forge.
-  const trigger = $derived(`${agent.id}|${agent.sessionId}|${agent.filesModified}|${agent.status}`);
+  const trigger = $derived(`${agent.id}|${agent.sessionId}|${agent.filesModified}|${agent.status}|${prLink}`);
   $effect(() => {
     void trigger;
-    void load(agent.id);
+    void load(agent.id, prLink);
   });
   // Pipelines et reviews bougent sans l'agent.
   $effect(() => {
     const id = agent.id;
-    const timer = setInterval(() => void load(id), 30_000);
+    const timer = setInterval(() => void load(id, prLink), 30_000);
     return () => clearInterval(timer);
   });
 
