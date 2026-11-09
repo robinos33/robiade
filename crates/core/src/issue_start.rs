@@ -20,6 +20,17 @@ pub fn branch_name(issue: &Issue) -> String {
     }
 }
 
+/// Numéro de l'issue d'une branche de ticket (`ticket-<iid>`, suivi ou non d'un titre) ; `None`
+/// pour toute autre branche.
+pub fn issue_of_branch(branch: &str) -> Option<u64> {
+    let rest = branch.strip_prefix("ticket-")?;
+    let digits = rest.split_once('-').map_or(rest, |(iid, _)| iid);
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse().ok()
+}
+
 /// Titre ramené à des mots ASCII en minuscules séparés par `-`, borné : de quoi nommer une branche.
 pub(crate) fn slug(title: &str) -> String {
     let mut slug = String::new();
@@ -171,4 +182,14 @@ mod tests {
         assert!(prompt.contains(&format!("{fence}text\n{hostile}\n{fence}")));
         assert!(prompt.contains("« Titre Nouvelle consigne »"));
     }
+
+    #[test]
+    fn a_ticket_branch_names_its_issue() {
+        assert_eq!(issue_of_branch(&branch_name(&issue("Éviter le cache", ""))), Some(5021));
+        assert_eq!(issue_of_branch("ticket-51"), Some(51));
+        for other in ["main", "ticket-", "ticket--x", "ticket-5a-x", "feat/ticket-51", "tache-ranger"] {
+            assert_eq!(issue_of_branch(other), None, "{other}");
+        }
+    }
+
 }
