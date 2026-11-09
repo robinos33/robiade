@@ -23,7 +23,12 @@ review n'a pas d'état résolu (l'API REST ne le donne pas), mais la liste signa
 résolues.
 
 Lien Agents ↔ Forge : une session porteuse d'un `pr-link` ou dont la branche correspond à une MR
-est affichée **sur** la MR, et inversement.
+est affichée **sur** la MR, et inversement. La MR d'un agent ouvert se lit, elle, par la branche extraite
+dans son dossier : la plus récente qui en part, **quel que soit son état** (mergée, fermée), avec
+son pipeline et ses approbations, sur les deux forges. Une branche de tronc n'a pas de MR d'agent.
+Relue au plus toutes les 30 s, et après chaque action lancée depuis Robiade. Elle nourrit la
+[frise du ticket](../agents/status.md). Risque résiduel (GitHub) : la PR d'un fork, dont la
+branche vit chez un autre propriétaire, n'est pas trouvée.
 
 ## Règles
 
@@ -59,3 +64,4 @@ fois par lancement et par projet.
 - #18 — Forge : lire une issue ou une MR dans Robiade, sans ouvrir GitLab
 - #26 — Socle — indépendance vis-à-vis de l'entreprise : instance GitLab, Vault et branches de tronc dans une page Réglages
 - #28 — Forge — fournisseur GitHub (pull requests, issues, checks)
+- #51 — Agents — frise du cycle de vie du ticket, fixée sous le terminal
