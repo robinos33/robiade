@@ -642,9 +642,11 @@ pub async fn preview_mr_action(
 }
 
 /// Frise du ticket d'un agent. La MR est cherchée par la branche extraite dans son dossier, sauf
-/// sur une branche de tronc : une MR qui en part n'est pas celle de l'agent.
+/// sur une branche de tronc : une MR qui en part n'est pas celle de l'agent. À défaut, c'est celle
+/// du dernier `pr-link` de sa session (`pr_link`, lu dans l'historique) : un agent sur `main` qui
+/// travaille dans ses worktrees. Le lien n'est suivi que s'il désigne une MR de la forge réglée.
 #[tauri::command]
-pub async fn agent_lifecycle(app: tauri::AppHandle, id: String) -> CmdResult<LifecycleDto> {
+pub async fn agent_lifecycle(app: tauri::AppHandle, id: String, pr_link: Option<String>) -> CmdResult<LifecycleDto> {
     let id = agent_id(&id)?;
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
@@ -657,6 +659,11 @@ pub async fn agent_lifecycle(app: tauri::AppHandle, id: String) -> CmdResult<Lif
                 Err(e) => Err(e),
             },
             _ => Ok(None),
+        };
+        let linked = pr_link.as_deref().and_then(|url| state.forge_urls.merge_request(url));
+        let read = match (read, linked) {
+            (Ok(None), Some(mr)) => state.agent_mrs.of_link(&mr, now()),
+            (read, _) => read,
         };
         let (mr, forge_error) = match read {
             Ok(mr) => (mr, None),
