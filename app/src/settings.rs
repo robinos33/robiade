@@ -1,5 +1,6 @@
 //! Page Réglages : forge et Vault, lus et écrits dans `robiade.db`. Les adaptateurs sont construits
-//! au démarrage : un réglage enregistré s'applique à la relance.
+//! au démarrage : un réglage enregistré s'applique à la relance. Les raccourcis du terminal, eux,
+//! s'appliquent tout de suite.
 
 use std::sync::Arc;
 
@@ -11,6 +12,7 @@ use robiade_adapters::sqlite_settings::SqliteSettings;
 use robiade_adapters::vault::VaultKv;
 use robiade_core::databases::{NoVault, Vault};
 use robiade_core::forge::{Forge, ForgeUrls, NoForge};
+use robiade_core::shortcuts::{Shortcut, Shortcuts};
 use robiade_core::settings::{
     unconfirmed_host, ForgeProvider, ForgeSettings, InstanceUrl, KeychainService, SettingsError, VaultSettings,
     DEFAULT_VAULT_TOKEN_SERVICE,
@@ -193,4 +195,43 @@ pub fn save_vault_settings(
         Ok(SaveOutcomeDto { settings: Some(read(&state.settings, &state.applied)?), confirm_host: None })
     };
     save().map_err(|e| e.to_string())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShortcutDto {
+    pub label: String,
+    pub text: String,
+    /// Ce qu'un clic colle au curseur du prompt.
+    pub pasted: String,
+}
+
+#[derive(Deserialize)]
+pub struct ShortcutInputDto {
+    pub label: String,
+    pub text: String,
+}
+
+fn shortcut_dtos(list: &Shortcuts) -> Vec<ShortcutDto> {
+    list.iter()
+        .map(|s| ShortcutDto { label: s.label().to_owned(), text: s.text().to_owned(), pasted: s.pasted() })
+        .collect()
+}
+
+#[tauri::command]
+pub fn shortcuts(state: State<AppState>) -> CmdResult<Vec<ShortcutDto>> {
+    state.settings.shortcuts().map(|l| shortcut_dtos(&l)).map_err(|e| e.to_string())
+}
+
+/// Remplace la liste entière, dans l'ordre donné. Un raccourci refusé n'enregistre rien.
+#[tauri::command]
+pub fn save_shortcuts(state: State<AppState>, shortcuts: Vec<ShortcutInputDto>) -> CmdResult<Vec<ShortcutDto>> {
+    let list = shortcuts
+        .iter()
+        .enumerate()
+        .map(|(i, s)| Shortcut::new(&s.label, &s.text).map_err(|e| format!("raccourci {} : {e}", i + 1)))
+        .collect::<Result<Vec<_>, _>>()?;
+    let list = Shortcuts::new(list).map_err(|e| e.to_string())?;
+    state.settings.save_shortcuts(&list).map_err(|e| e.to_string())?;
+    Ok(shortcut_dtos(&list))
 }
