@@ -1,12 +1,12 @@
 # Réglages
 
-**En une phrase** : la page Réglages règle l'instance de forge, le Vault, les branches de tronc
-et la couleur de chaque projet, sans toucher au code ; rien n'y est secret.
+**En une phrase** : la page Réglages règle l'instance de forge, le Vault, les branches de tronc,
+la couleur de chaque projet et les raccourcis du terminal, sans toucher au code ; rien n'y est secret.
 
 ## Comportement
 
 - Page **Réglages** (icône en bas de la barre latérale, palette, ⌘,), enregistrée dans
-  `robiade.db`. Trois sections :
+  `robiade.db`. Quatre sections :
   - **Forge** : fournisseur (GitLab ou GitHub, github.com ou Enterprise Server), URL de
     l'instance, service du trousseau du jeton (défaut `gitlab-api-token` ou `github-api-token`).
     Pour GitHub, la page indique les droits d'un jeton fine-grained. Vide : pas de volet Forge (merge requests, issues, activité),
@@ -18,8 +18,10 @@ et la couleur de chaque projet, sans toucher au code ; rien n'y est secret.
     des [worktrees](../environnements/worktrees.md) et des wagons des
     [merge requests](../forge/merge-requests.md). Rattachés au dépôt principal, ces réglages valent
     pour tous ses worktrees.
+  - **Raccourcis** : la liste des [raccourcis du terminal](../agents/raccourcis.md), dans l'ordre
+    de la barre.
 - Forge et Vault sont lus au démarrage : un changement enregistré s'applique à la relance, que la
-  page propose. Les troncs et la couleur s'appliquent tout de suite.
+  page propose. Les troncs, la couleur et les raccourcis s'appliquent tout de suite.
 - **Profil antérieur** (une base qui existait avant les réglages) : au premier lancement, les
   réglages sont repris une seule fois là où mes outils les gardent déjà — l'hôte par défaut de
   `glab` pour la forge, `VAULT_ADDR` lu dans un shell interactif pour Vault — et chaque dépôt déjà
@@ -67,3 +69,4 @@ résiduel ci-dessus.
 - #26 — Socle — indépendance vis-à-vis de l'entreprise : instance GitLab, Vault et branches de tronc dans une page Réglages
 - #28 — Forge — fournisseur GitHub (pull requests, issues, checks)
 - #37 — Projets — une couleur par projet, réglable, reprise partout où le projet apparaît
+- #52 — Agents — barre de raccourcis sous le terminal : coller une commande ou un prompt sans l'envoyer

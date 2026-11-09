@@ -118,15 +118,13 @@
 {/if}
 
 <style>
-  .lifecycle {
-    flex: none; display: flex; align-items: center; gap: 16px; height: 30px; padding: 0 14px;
-    border-top: 1px solid var(--line); background: var(--bg); font-size: 12px; container-type: inline-size;
-  }
-  .steps { display: flex; align-items: center; flex: 1; min-width: 0; margin: 0; padding: 0; list-style: none; }
+  /* Dans la bande sous le terminal, qui porte la container query. */
+  .lifecycle { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; gap: 16px; }
+  .steps { display: flex; align-items: center; flex: 0 1 auto; min-width: 0; margin: 0; padding: 0; list-style: none; }
   .node { display: inline-flex; align-items: center; gap: 5px; flex: none; white-space: nowrap; color: var(--ink-3); }
   .node.done { color: var(--ink-2); }
   .node.current { color: var(--ink); font-weight: 600; }
-  .link { flex: 0 1 28px; min-width: 6px; height: 1px; margin: 0 6px; background: var(--line-strong); }
+  .link { flex: 0 0 28px; height: 1px; margin: 0 6px; background: var(--line-strong); }
   .link.done { background: var(--ink-3); }
 
   svg { flex: none; --c: currentColor; }

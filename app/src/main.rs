@@ -341,6 +341,8 @@ fn main() {
             commands::relaunch,
             commands::quit,
             settings::settings,
+            settings::shortcuts,
+            settings::save_shortcuts,
             settings::save_forge_settings,
             settings::save_vault_settings,
             trunks::repository_trunks,

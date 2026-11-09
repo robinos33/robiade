@@ -11,7 +11,8 @@ await new Promise((r) => setTimeout(r, 300));
 app.view = (params.get('view') ?? 'inbox') as typeof app.view;
 if (params.get('project')) app.selectProject(`/Users/demo/code/${params.get('project')}`);
 if (params.get('dialog') === 'resume') app.resumeOpen = true;
-if (params.get('view') === 'agents') app.openAgent(AGENT_IDS[0]!);
+// `?view=agents&agent=2` : l'agent de démo ouvert, le premier par défaut.
+if (params.get('view') === 'agents') app.openAgent(AGENT_IDS[Number(params.get('agent') ?? 0)] ?? AGENT_IDS[0]!);
 
 /** `?view=db&explore=Boutique prod&table=order&cell=5` : ouvre l'explorateur comme le ferait un clic. */
 async function find(selector: string, text: string): Promise<HTMLElement | undefined> {

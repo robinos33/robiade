@@ -8,6 +8,7 @@ use robiade_core::settings::{
     ForgeProvider, ForgeSettings, InstanceUrl, KeychainService, SettingsError, VaultSettings,
     DEFAULT_VAULT_TOKEN_SERVICE,
 };
+use robiade_core::shortcuts::{Shortcut, Shortcuts};
 use rusqlite::{params, OptionalExtension};
 
 const FORGE_PROVIDER: &str = "forge.provider";
@@ -15,6 +16,14 @@ const FORGE_URL: &str = "forge.url";
 const FORGE_TOKEN_SERVICE: &str = "forge.token_service";
 const VAULT_URL: &str = "vault.url";
 const VAULT_TOKEN_SERVICE: &str = "vault.token_service";
+/// Liste JSON des raccourcis du terminal, `[{"label", "text"}]`.
+const SHORTCUTS: &str = "terminal.shortcuts";
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct StoredShortcut {
+    label: String,
+    text: String,
+}
 
 /// Réglages repris d'un profil antérieur à cette table.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -126,6 +135,25 @@ impl SqliteSettings {
         let url = vault.map(|v| v.url.url());
         self.put(&[(VAULT_URL, url.as_deref()), (VAULT_TOKEN_SERVICE, vault.map(|v| v.token_service.as_str()))])
     }
+
+    /// Raccourcis du terminal ; ceux par défaut tant que la liste n'a jamais été enregistrée. Une
+    /// liste vidée reste vide. Une valeur illisible vaut « jamais réglée », comme pour la forge.
+    pub fn shortcuts(&self) -> Result<Shortcuts, SettingsError> {
+        let Some(raw) = self.get(SHORTCUTS)? else { return Ok(Shortcuts::defaults()) };
+        let read = || {
+            let stored: Vec<StoredShortcut> = serde_json::from_str(&raw).ok()?;
+            let list = stored.iter().map(|s| Shortcut::new(&s.label, &s.text).ok()).collect::<Option<Vec<_>>>()?;
+            Shortcuts::new(list).ok()
+        };
+        Ok(read().unwrap_or_else(Shortcuts::defaults))
+    }
+
+    pub fn save_shortcuts(&self, shortcuts: &Shortcuts) -> Result<(), SettingsError> {
+        let stored: Vec<StoredShortcut> =
+            shortcuts.iter().map(|s| StoredShortcut { label: s.label().to_owned(), text: s.text().to_owned() }).collect();
+        let raw = serde_json::to_string(&stored).map_err(storage)?;
+        self.put(&[(SHORTCUTS, Some(&raw))])
+    }
 }
 
 #[cfg(test)]
@@ -191,4 +219,22 @@ mod tests {
         assert_eq!(settings.vault().unwrap(), Some(vault("v.example.com")));
         std::fs::remove_file(path).unwrap();
     }
+
+    #[test]
+    fn shortcuts_start_with_the_defaults_and_an_emptied_list_stays_empty() {
+        let path = db("raccourcis");
+        let settings = SqliteSettings::open(&path, false, Seed::default).unwrap();
+        assert_eq!(settings.shortcuts().unwrap(), Shortcuts::defaults());
+        let mine = Shortcuts::new(vec![
+            Shortcut::new("Retours PR", "prends en compte les retours de la PR").unwrap(),
+            Shortcut::new("/spec", "/spec").unwrap(),
+        ])
+        .unwrap();
+        settings.save_shortcuts(&mine).unwrap();
+        assert_eq!(settings.shortcuts().unwrap(), mine);
+        settings.save_shortcuts(&Shortcuts::new(vec![]).unwrap()).unwrap();
+        assert_eq!(settings.shortcuts().unwrap().iter().count(), 0);
+        std::fs::remove_file(path).unwrap();
+    }
+
 }

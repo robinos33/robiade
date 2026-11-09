@@ -383,6 +383,22 @@ function shellEscape(path: string): string {
 const ANY_CONTROL = /[\x00-\x1f\x7f-\x9f]/;
 
 /**
+ * Texte d'un raccourci collé au curseur du prompt, sans Entrée. Il a été validé à l'enregistrement ;
+ * un caractère de contrôle (hors tabulation et saut de ligne) le fait quand même refuser, et un
+ * texte sur plusieurs lignes n'est collé qu'en bracketed paste, où un saut de ligne ne vaut pas
+ * Entrée. Renvoie `false` si rien n'a été collé.
+ */
+export function pasteText(id: string, text: string): boolean {
+  const h = hosts.get(id);
+  // `CONTROL` est global : son `test` garderait sa position d'un appel à l'autre.
+  if (!h || !text || new RegExp(CONTROL.source).test(text) || text.includes('\r')) return false;
+  if (!h.term.modes.bracketedPasteMode && text.includes('\n')) return false;
+  h.term.paste(text);
+  h.term.focus();
+  return true;
+}
+
+/**
  * Fichiers déposés sur le terminal : leurs chemins vont au prompt, séparés et suivis d'une espace
  * pour enchaîner un autre dépôt, sans Entrée. Collés et non tapés : Claude Code reçoit un collage.
  * Un nom de fichier peut contenir un retour à la ligne ou un `ESC`, que l'antislash ne neutralise

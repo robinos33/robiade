@@ -15,6 +15,7 @@
   import AssetViewer from '../components/AssetViewer.svelte';
   import ChangesPanel from '../components/ChangesPanel.svelte';
   import LifecycleBar from '../components/LifecycleBar.svelte';
+  import ShortcutBar from '../components/ShortcutBar.svelte';
   import Icon from '../components/Icon.svelte';
   import ResizeHandle from '../components/ResizeHandle.svelte';
   import TerminalSearch from '../components/TerminalSearch.svelte';
@@ -380,7 +381,10 @@
               <TerminalSearch bind:this={search} id={active.id} onclose={() => (finding = false)} />
             {/if}
           </div>
-          <LifecycleBar agent={active} bind:lifecycle />
+          <div class="term-foot">
+            <LifecycleBar agent={active} bind:lifecycle />
+            <ShortcutBar agent={active} />
+          </div>
         </div>
 
         <!-- Enveloppe sans défilement : la poignée reste sur la bordure quand le panneau défile. -->
@@ -593,6 +597,12 @@
   .branch :global(svg) { flex: none; }
   .tail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .term-area { flex: 1; min-height: 0; display: flex; position: relative; }
+  /* Frise du ticket et raccourcis, sur une ligne fixe ; leurs container queries se mesurent sur elle. */
+  .term-foot {
+    flex: none; display: flex; align-items: center; gap: 12px; height: 30px; padding: 0 8px 0 14px;
+    border-top: 1px solid var(--line); background: var(--bg); font-size: 12px; container-type: inline-size;
+  }
+  .term-foot:not(:has(*)) { display: none; }
   .term-area.dropping { outline: 2px solid var(--accent); outline-offset: -2px; }
   /* `fit` suspendu pendant un glisser : xterm garde sa taille, rognée plutôt que débordante. */
   .term { flex: 1; min-width: 0; min-height: 0; overflow: hidden; padding: 10px 0 4px 12px; background: #24273a; /* TERMINAL_THEME.background */ }
