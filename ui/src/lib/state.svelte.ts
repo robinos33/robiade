@@ -4,9 +4,23 @@ import { api } from './api';
 import { localDay } from './format';
 import { moveInOrder, orderProjects, storedOrder, storeOrder } from './projectOrder';
 import { writeOutput } from './terminals';
-import type { Agent, Environment, Forge, GitWorktree, MergeRequest, MrState, Project, ProjectColors, QuitRequest, ReadingTarget, Session, Shortcut, Task, Update, Workspace, Worktree } from './types';
+import type { Agent, Environment, Forge, GitWorktree, MergeRequest, MrState, Project, ProjectColors, QuitRequest, ReadingTarget, Routine, Session, Shortcut, Task, Update, Workspace, Worktree } from './types';
 
-export type View = 'inbox' | 'agents' | 'history' | 'mr' | 'tasks' | 'stats' | 'env' | 'db' | 'code' | 'settings';
+export type View = 'inbox' | 'agents' | 'history' | 'mr' | 'tasks' | 'stats' | 'env' | 'db' | 'code' | 'routines' | 'settings';
+
+/**
+ * Échecs de routine déjà vus : par label, le nombre de passages au moment où je l'ai marqué vu. Un
+ * nouveau passage en échec change ce nombre, et la routine revient dans l'Inbox. Préférence du poste.
+ */
+const SEEN_KEY = 'robiade.routines.seen';
+function storedSeen(): Record<string, number> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SEEN_KEY) ?? '{}');
+    return raw && typeof raw === 'object' ? raw : {};
+  } catch {
+    return {};
+  }
+}
 
 const ATTENTION_ORDER: Record<string, number> = { awaitingPermission: 0, failed: 1, awaitingInput: 2 };
 
@@ -51,6 +65,15 @@ class AppState {
   palette = $state<string[]>([]);
   /** Raccourcis de la barre sous le terminal, dans l'ordre ; réglés dans Réglages. */
   shortcuts = $state<Shortcut[]>([]);
+  /** Routines du préfixe réglé, relues sur launchd ; `routinePrefix` est `null` avant la première lecture. */
+  routines = $state<Routine[]>([]);
+  routinePrefix = $state<string | null>(null);
+  routinesError = $state<string | null>(null);
+  seenRoutineFailures = $state<Record<string, number>>(storedSeen());
+  /** En échec à leur dernier passage, et pas encore vues. */
+  failingRoutines = $derived(
+    this.routines.filter((r) => r.failed && this.seenRoutineFailures[r.label] !== r.runs),
+  );
 
   /** Ordre des projets rangés à la main dans la barre latérale ; voir `projectOrder.ts`. */
   projectOrder = $state<string[]>(storedOrder());
@@ -255,6 +278,9 @@ class AppState {
     void this.refreshForge();
     // Pipelines et reviews bougent sans moi : relus toutes les 2 minutes.
     this.every(120_000, () => void this.refreshForge());
+    // Une routine passe à heure fixe, au plus une fois par minute : 5 minutes suffisent à l'Inbox.
+    void this.refreshRoutines();
+    this.every(300_000, () => void this.refreshRoutines());
   }
 
   private every(ms: number, run: () => void) {
@@ -310,6 +336,29 @@ class AppState {
       roots.map((root) => api.worktrees(root).then((list) => [root, list] as const, () => null)),
     );
     this.gitWorktrees = { ...this.gitWorktrees, ...Object.fromEntries(read.filter((r) => r !== null)) };
+  }
+
+  async refreshRoutines() {
+    try {
+      const read = await api.routines();
+      this.routines = read.routines;
+      this.routinePrefix = read.prefix;
+      this.routinesError = null;
+    } catch (e) {
+      this.routinesError = String(e);
+    }
+  }
+
+  /** Retire l'échec de l'Inbox jusqu'au prochain passage ; un succès l'en sort de toute façon. */
+  markRoutineSeen(r: Routine) {
+    const seen = { ...this.seenRoutineFailures, [r.label]: r.runs ?? 0 };
+    for (const label of Object.keys(seen)) if (!this.routines.some((x) => x.label === label)) delete seen[label];
+    this.seenRoutineFailures = seen;
+    try {
+      localStorage.setItem(SEEN_KEY, JSON.stringify(seen));
+    } catch {
+      // Stockage inaccessible : vu pour la session.
+    }
   }
 
   async refreshTasks() {
