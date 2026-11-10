@@ -98,60 +98,68 @@ pub fn is_cli_token(raw: &str) -> bool {
         && raw.chars().all(|c| c.is_ascii_alphanumeric() || "-._[]".contains(c))
 }
 
-/// Modèle choisi pour un agent : un alias de Claude Code, passé par `--model`.
-pub const MODEL_CHOICES: [&str; 4] = ["fable", "opus", "sonnet", "haiku"];
-
-/// Effort choisi pour un agent, passé par `--effort`.
-pub const EFFORT_CHOICES: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
-
 /// Modèle et effort choisis pour un onglet, repassés à chaque lancement de sa session : `--model`
 /// et `--effort` ne valent que pour le process lancé, et ne touchent pas aux réglages de Claude
 /// Code (`/model` tapé dans le prompt, lui, écrit le défaut global). `None` : aucun flag, le
 /// réglage de Claude Code s'applique.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LaunchChoice {
-    model: Option<&'static str>,
-    effort: Option<&'static str>,
+    model: Option<String>,
+    effort: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
-#[error("choix refusé : « {0} » n'est pas dans la liste")]
-pub struct InvalidLaunchChoice(pub String);
+pub enum InvalidLaunchChoice {
+    #[error("modèle « {0} » absent de ceux que Claude Code propose")]
+    Model(String),
+    #[error("effort « {0} » non proposé pour ce modèle")]
+    Effort(String),
+}
 
 impl LaunchChoice {
-    /// Seules les valeurs des listes sont acceptées : elles finissent en arguments de `claude`.
-    pub fn parse(model: Option<&str>, effort: Option<&str>) -> Result<Self, InvalidLaunchChoice> {
-        let pick = |raw: Option<&str>, allowed: &[&'static str]| match raw {
-            None => Ok(None),
-            Some(raw) => allowed.iter().find(|a| **a == raw).map(|a| Some(*a)).ok_or(InvalidLaunchChoice(raw.to_owned())),
+    /// Seuls un modèle du catalogue et un effort que ce modèle accepte passent ; sans modèle
+    /// choisi, l'effort se vérifie sur l'entrée « défaut ».
+    pub fn parse(
+        model: Option<&str>,
+        effort: Option<&str>,
+        catalog: &[ModelOption],
+    ) -> Result<Self, InvalidLaunchChoice> {
+        let entry = |value: &str| catalog.iter().find(|m| m.value == value && is_cli_token(value));
+        let target = match model {
+            Some(DEFAULT_MODEL) | None => entry(DEFAULT_MODEL),
+            Some(m) => Some(entry(m).ok_or_else(|| InvalidLaunchChoice::Model(m.to_owned()))?),
         };
-        Ok(Self { model: pick(model, &MODEL_CHOICES)?, effort: pick(effort, &EFFORT_CHOICES)? })
-    }
-
-    /// Relecture d'un choix enregistré : une valeur sortie des listes depuis est oubliée.
-    pub fn restore(model: Option<&str>, effort: Option<&str>) -> Self {
-        Self {
-            model: Self::parse(model, None).map(|c| c.model).unwrap_or_default(),
-            effort: Self::parse(None, effort).map(|c| c.effort).unwrap_or_default(),
+        if let Some(e) = effort {
+            let accepted = target.is_some_and(|t| t.efforts.iter().any(|x| x == e)) && is_cli_token(e);
+            if !accepted {
+                return Err(InvalidLaunchChoice::Effort(e.to_owned()));
+            }
         }
+        Ok(Self { model: model.filter(|m| *m != DEFAULT_MODEL).map(str::to_owned), effort: effort.map(str::to_owned) })
     }
 
-    pub fn model(&self) -> Option<&'static str> {
-        self.model
+    /// Relecture d'un choix enregistré, sans catalogue : une valeur mal formée est oubliée.
+    pub fn restore(model: Option<&str>, effort: Option<&str>) -> Self {
+        let token = |raw: Option<&str>| raw.filter(|r| is_cli_token(r) && *r != DEFAULT_MODEL).map(str::to_owned);
+        Self { model: token(model), effort: token(effort) }
     }
 
-    pub fn effort(&self) -> Option<&'static str> {
-        self.effort
+    pub fn model(&self) -> Option<&str> {
+        self.model.as_deref()
+    }
+
+    pub fn effort(&self) -> Option<&str> {
+        self.effort.as_deref()
     }
 
     /// Arguments à ajouter à la ligne de commande de `claude`.
     pub fn args(&self) -> Vec<String> {
         let mut args = Vec::new();
-        if let Some(model) = self.model {
-            args.extend(["--model".to_owned(), model.to_owned()]);
+        if let Some(model) = &self.model {
+            args.extend(["--model".to_owned(), model.clone()]);
         }
-        if let Some(effort) = self.effort {
-            args.extend(["--effort".to_owned(), effort.to_owned()]);
+        if let Some(effort) = &self.effort {
+            args.extend(["--effort".to_owned(), effort.clone()]);
         }
         args
     }
@@ -698,14 +706,43 @@ mod tests {
         assert_eq!(a.saved(100), saved);
     }
 
+    fn catalog() -> Vec<ModelOption> {
+        let option = |value: &str, efforts: &[&str]| ModelOption {
+            value: value.into(),
+            display_name: value.into(),
+            description: String::new(),
+            efforts: efforts.iter().map(|e| (*e).into()).collect(),
+        };
+        vec![option("default", &["low", "high"]), option("sonnet", &["low", "max"]), option("claude-haiku-4-5", &[])]
+    }
+
     #[test]
-    fn a_launch_choice_only_takes_listed_values_and_becomes_flags() {
-        let choice = LaunchChoice::parse(Some("sonnet"), Some("low")).unwrap();
-        assert_eq!(choice.args(), ["--model", "sonnet", "--effort", "low"]);
-        assert_eq!(LaunchChoice::parse(None, None).unwrap().args(), Vec::<String>::new());
-        assert_eq!(LaunchChoice::parse(Some("--settings"), None), Err(InvalidLaunchChoice("--settings".into())));
-        assert!(LaunchChoice::parse(None, Some("ultra")).is_err());
-        assert_eq!(LaunchChoice::restore(Some("gpt"), Some("max")), LaunchChoice::parse(None, Some("max")).unwrap());
+    fn a_launch_choice_takes_what_claude_code_offers_and_becomes_flags() {
+        let choice = LaunchChoice::parse(Some("sonnet"), Some("max"), &catalog()).unwrap();
+        assert_eq!(choice.args(), ["--model", "sonnet", "--effort", "max"]);
+        assert_eq!(LaunchChoice::parse(None, None, &catalog()).unwrap().args(), Vec::<String>::new());
+        assert_eq!(LaunchChoice::parse(Some("default"), None, &catalog()).unwrap(), LaunchChoice::default());
+        assert_eq!(
+            LaunchChoice::parse(Some("--settings"), None, &catalog()),
+            Err(InvalidLaunchChoice::Model("--settings".into()))
+        );
+        assert!(LaunchChoice::parse(Some("opus"), None, &[]).is_err(), "catalogue illisible : rien ne passe");
+    }
+
+    #[test]
+    fn an_effort_must_be_offered_for_the_targeted_model() {
+        assert!(LaunchChoice::parse(None, Some("high"), &catalog()).is_ok(), "défaut");
+        assert!(LaunchChoice::parse(None, Some("max"), &catalog()).is_err(), "le défaut n'a pas max");
+        assert!(LaunchChoice::parse(Some("sonnet"), Some("high"), &catalog()).is_err());
+        assert!(LaunchChoice::parse(Some("claude-haiku-4-5"), Some("low"), &catalog()).is_err(), "sans effort");
+        assert_eq!(LaunchChoice::parse(Some("claude-haiku-4-5"), None, &catalog()).unwrap().model(), Some("claude-haiku-4-5"));
+    }
+
+    #[test]
+    fn a_saved_choice_is_reread_without_catalog_but_never_as_an_option() {
+        let back = LaunchChoice::restore(Some("opus[1m]"), Some("-x"));
+        assert_eq!((back.model(), back.effort()), (Some("opus[1m]"), None));
+        assert_eq!(LaunchChoice::restore(Some("default"), None), LaunchChoice::default());
     }
 
     #[test]
@@ -725,7 +762,7 @@ mod tests {
     #[test]
     fn a_restored_tab_keeps_its_launch_choice() {
         let id = AgentId::parse("0b6f1c2e-6b1d-4a5e-9c33-2f1e8d7a4b10").unwrap();
-        let launch = LaunchChoice::parse(Some("haiku"), None).unwrap();
+        let launch = LaunchChoice::restore(Some("haiku"), None);
         let mut a = agent();
         a.choose(launch.clone());
         let restored = Agent::restore(id, "/p".into(), None, a.saved(1));

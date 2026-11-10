@@ -10,7 +10,7 @@ use robiade_adapters::pty::{AgentProcess, LaunchSpec};
 use robiade_adapters::shell_env::LoginEnv;
 use robiade_adapters::workspace::WorkspaceResolver;
 use robiade_core::agents::{
-    Agent, AgentEvent, AgentId, AgentJournal, AgentStatus, Effort, LaunchChoice, PermissionMode,
+    Agent, AgentEvent, AgentId, AgentJournal, AgentStatus, Effort, LaunchChoice, ModelOption, PermissionMode,
 };
 use robiade_core::assets::Asset;
 use robiade_core::project::Workspace;
@@ -61,6 +61,8 @@ pub struct AgentRegistry {
     /// Racine résolue des scratchpads de Claude Code, `None` si elle ne se résout pas.
     scratchpad_root: Option<PathBuf>,
     live: Mutex<HashMap<AgentId, Live>>,
+    /// Modèles que Claude Code propose, demandés une fois par exécution ; un échec n'est pas gardé.
+    models: Mutex<Option<Vec<ModelOption>>>,
 }
 
 /// Échappement pour la commande de hook, exécutée par Claude Code via un shell.
@@ -87,7 +89,17 @@ impl AgentRegistry {
             })
             .collect();
         let scratchpad_root = robiade_adapters::scratchpad::root();
-        Self { app, workspaces, journal, login, socket, tasks_db, scratchpad_root, live: Mutex::new(live) }
+        Self {
+            app,
+            workspaces,
+            journal,
+            login,
+            socket,
+            tasks_db,
+            scratchpad_root,
+            live: Mutex::new(live),
+            models: Mutex::new(None),
+        }
     }
 
     pub fn socket(&self) -> &Path {
@@ -316,6 +328,20 @@ impl AgentRegistry {
             }
         }
         self.spawn(Path::new(&path), Some(session), None, cols, rows)
+    }
+
+    /// Modèles de l'écran `/model` de Claude Code, avec les efforts que chacun accepte. Les
+    /// réglages de projet ne comptent pas : la liste est demandée depuis le dossier personnel.
+    pub fn models(&self) -> Result<Vec<ModelOption>, String> {
+        let mut cached = self.models.lock().map_err(|e| e.to_string())?;
+        if let Some(models) = cached.as_ref() {
+            return Ok(models.clone());
+        }
+        let claude = self.login.claude.as_deref().ok_or("binaire `claude` introuvable dans le PATH du shell de login")?;
+        let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
+        let models = robiade_adapters::claude_models::fetch(claude, &self.login.path, &home)?;
+        *cached = Some(models.clone());
+        Ok(models)
     }
 
     /// Change le modèle ou l'effort de l'agent, puis le relance sur sa session pour l'appliquer.

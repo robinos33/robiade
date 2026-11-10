@@ -54,13 +54,29 @@ pub struct AgentDto {
     pub permissive: bool,
     pub effort: Option<String>,
     /// Modèle et effort choisis pour l'onglet, `None` : réglage de Claude Code.
-    pub chosen_model: Option<&'static str>,
-    pub chosen_effort: Option<&'static str>,
+    pub chosen_model: Option<String>,
+    pub chosen_effort: Option<String>,
     pub gauges: GaugesDto,
     pub assets: Vec<AssetDto>,
     /// Session Claude Code en cours : celle que « Reprendre » et « Redémarrer » relancent.
     pub session_id: String,
     pub name: Option<String>,
+}
+
+/// Un modèle de l'écran `/model` de Claude Code ; `value` « default » : aucun flag.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelOptionDto {
+    pub value: String,
+    pub display_name: String,
+    pub description: String,
+    pub efforts: Vec<String>,
+}
+
+impl From<robiade_core::agents::ModelOption> for ModelOptionDto {
+    fn from(m: robiade_core::agents::ModelOption) -> Self {
+        Self { value: m.value, display_name: m.display_name, description: m.description, efforts: m.efforts }
+    }
 }
 
 #[derive(Serialize, Clone)]
@@ -244,8 +260,8 @@ impl AgentDto {
             permission_mode: a.permission_mode().map(|m| m.as_str().to_owned()),
             permissive: a.permission_mode().is_some_and(|m| m.is_permissive()),
             effort: a.effort().map(|e| e.as_str().to_owned()),
-            chosen_model: a.launch().model(),
-            chosen_effort: a.launch().effort(),
+            chosen_model: a.launch().model().map(str::to_owned),
+            chosen_effort: a.launch().effort().map(str::to_owned),
             gauges: a.gauges().into(),
             assets: a.assets().iter().map(AssetDto::from).collect(),
             session_id: a.session_id().to_owned(),

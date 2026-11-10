@@ -177,7 +177,7 @@ mod tests {
         let journal = SqliteAgentJournal::open(Path::new(":memory:")).unwrap();
         let id = AgentId::parse("0b6f1c2e-6b1d-4a5e-9c33-2f1e8d7a4b10").unwrap();
         let mut agent = Agent::start(id, "/p".into(), None, 10);
-        let launch = LaunchChoice::parse(Some("sonnet"), Some("low")).unwrap();
+        let launch = LaunchChoice::restore(Some("sonnet"), Some("low"));
         agent.choose(launch.clone());
         journal.save(&agent, 10).unwrap();
         assert_eq!(journal.recent(0).unwrap()[0].launch(), &launch);
