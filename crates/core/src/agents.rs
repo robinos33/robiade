@@ -77,6 +77,27 @@ impl Effort {
     }
 }
 
+/// Un modèle que Claude Code propose dans son écran `/model`, lu auprès de la CLI : la liste
+/// dépend du compte et de la version. `efforts` : les niveaux qu'il accepte, vide s'il n'en a pas.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelOption {
+    pub value: String,
+    pub display_name: String,
+    pub description: String,
+    pub efforts: Vec<String>,
+}
+
+/// Valeur de l'entrée « défaut » du catalogue : aucun flag, le réglage de Claude Code s'applique.
+pub const DEFAULT_MODEL: &str = "default";
+
+/// Une valeur qui part en argument de `claude` : courte, sans espace, commence par une lettre ou
+/// un chiffre (jamais par `-`, qui serait lu comme une option). `[` et `]` pour `opus[1m]`.
+pub fn is_cli_token(raw: &str) -> bool {
+    (1..=64).contains(&raw.len())
+        && raw.starts_with(|c: char| c.is_ascii_alphanumeric())
+        && raw.chars().all(|c| c.is_ascii_alphanumeric() || "-._[]".contains(c))
+}
+
 /// Modèle choisi pour un agent : un alias de Claude Code, passé par `--model`.
 pub const MODEL_CHOICES: [&str; 4] = ["fable", "opus", "sonnet", "haiku"];
 

@@ -2,6 +2,7 @@
 
 pub mod backup;
 pub mod claude_code;
+pub mod claude_models;
 pub mod docker;
 pub mod elasticsearch;
 pub mod engines;
