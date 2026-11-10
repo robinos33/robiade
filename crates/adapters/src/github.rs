@@ -374,7 +374,9 @@ impl Forge for GitHub {
 
     fn project_issues(&self, project: &str) -> Result<Vec<Issue>, ForgeError> {
         repo_parts(project)?;
-        let listed: Vec<RestIssue> = self.get(&format!("/repos/{project}/issues?state=open&per_page={PER_PAGE}"))?;
+        let me = self.me_login()?;
+        let listed: Vec<RestIssue> =
+            self.get(&format!("/repos/{project}/issues?assignee={me}&state=open&per_page={PER_PAGE}"))?;
         Ok(sorted_issues(listed, &self.urls))
     }
 

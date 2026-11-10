@@ -544,7 +544,7 @@ pub async fn merge_requests(app: tauri::AppHandle) -> CmdResult<ForgeDto> {
     .map_err(|e: robiade_core::forge::ForgeError| e.to_string())
 }
 
-/// Issues ouvertes d'un projet GitLab, ou celles qui me sont assignées si `project` est absent.
+/// Issues ouvertes qui me sont assignées, dans un projet ou, si `project` est absent, tous projets confondus.
 #[tauri::command]
 pub async fn issues(state: State<'_, AppState>, project: Option<String>) -> CmdResult<Vec<IssueDto>> {
     let forge = state.forge.clone();

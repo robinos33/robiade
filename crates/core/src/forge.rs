@@ -336,7 +336,9 @@ pub trait Forge: Send + Sync {
     fn issue(&self, issue: &IssueRef) -> Result<Issue, ForgeError>;
     /// Fils d'échanges d'une issue, dans l'ordre chronologique, sans les notes système.
     fn issue_discussions(&self, issue: &IssueRef) -> Result<Vec<Discussion>, ForgeError>;
-    /// Issues ouvertes d'un projet (chemin complet, validé par `is_project_path`).
+    /// Issues ouvertes d'un projet (chemin complet, validé par `is_project_path`) qui me sont assignées.
+    /// Filtrées par la forge, pas après lecture : la liste tient en une page, mes issues d'un gros
+    /// projet d'équipe ne doivent pas passer derrière celles des autres.
     fn project_issues(&self, project: &str) -> Result<Vec<Issue>, ForgeError>;
     /// Branche par défaut d'un projet : son tronc quand son dépôt n'en règle pas.
     fn default_branch(&self, project: &str) -> Result<String, ForgeError>;

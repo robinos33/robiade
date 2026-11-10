@@ -373,7 +373,10 @@ impl Forge for GitLab {
         if !is_project_path(project) {
             return Err(ForgeError::NotFound);
         }
-        let path = format!("/projects/{}/issues?state=opened&per_page={PER_PAGE}", project.replace('/', "%2F"));
+        let path = format!(
+            "/projects/{}/issues?scope=assigned_to_me&state=opened&per_page={PER_PAGE}",
+            project.replace('/', "%2F")
+        );
         Ok(sorted_issues(self.get(&path)?, &self.urls))
     }
 }
