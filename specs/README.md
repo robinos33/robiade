@@ -47,6 +47,7 @@ suit le même plan : « En une phrase », « Comportement », « Règles », « 
 | [db/mariadb.md](db/mariadb.md) | Console MariaDB : mêmes règles, adaptées au dialecte |
 | [db/mongo-elastic.md](db/mongo-elastic.md) | Mongo et Elastic, sans lecture seule de session |
 | [code.md](code.md) | Onglet Code, visualiseur de fichiers en lecture seule |
+| [routines.md](routines.md) | Routines : LaunchAgents du préfixe réglé, vus, lancés, créés et modifiés |
 
 ## Périmètre
 
@@ -63,10 +64,12 @@ suit le même plan : « En une phrase », « Comportement », « Règles », « 
 - **Inbox** : ce qui demande mon attention, par projet et global.
 - **Code** : parcourir et lire les fichiers du projet ou du worktree sélectionné, en lecture
   seule, pour un coup d'œil sans ouvrir PhpStorm.
+- **Routines** : mes tâches planifiées locales, des LaunchAgents que launchd lance. Les voir, les
+  lancer, les activer ou les désactiver, en créer et en modifier.
 
 ### Hors périmètre (explicitement)
 - Être la source de vérité de quoi que ce soit, hors tâches perso et préférences d'interface.
-- Agents distants, routines cloud, autres machines.
+- Agents distants, routines cloud, autres machines. Les routines locales passent par launchd, jamais par un planificateur de l'ADE.
 - Sessions Claude Code lancées hors de l'ADE (iTerm, IDE) : ni affichées ni pilotées. Leur
   transcript reste consultable dans l'historique, rien de plus.
 - Édition de données dans la grille DB (cellule par cellule) en v1 : voir [explorateur et grille](db/explorateur-grille.md).
@@ -83,6 +86,7 @@ suit le même plan : « En une phrase », « Comportement », « Règles », « 
 | MR, pipelines, issues | GitLab | Cache court (TTL), jetable |
 | Worktrees, branches | Le dépôt Git | Rien |
 | Conteneurs | Docker Engine | Rien |
+| Routines | Les plists de `~/Library/LaunchAgents` du préfixe réglé, et launchd | Rien (l'échec vu se retient sur le poste) |
 | Connexions DB | Config ADE : chaque champ en valeur, référence trousseau ou référence Vault | La config, **sans valeur secrète** : une URL ou un mot de passe se désigne, il ne se saisit pas — sauf pour une base dev locale |
 | Statistiques | Dérivées des transcripts | Agrégats SQLite, **reconstructibles** |
 | Résultats de requêtes DB | La base interrogée | **Rien sur disque** : en mémoire, le temps de l'affichage |
