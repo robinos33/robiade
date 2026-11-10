@@ -77,6 +77,65 @@ impl Effort {
     }
 }
 
+/// Modèle choisi pour un agent : un alias de Claude Code, passé par `--model`.
+pub const MODEL_CHOICES: [&str; 4] = ["fable", "opus", "sonnet", "haiku"];
+
+/// Effort choisi pour un agent, passé par `--effort`.
+pub const EFFORT_CHOICES: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
+
+/// Modèle et effort choisis pour un onglet, repassés à chaque lancement de sa session : `--model`
+/// et `--effort` ne valent que pour le process lancé, et ne touchent pas aux réglages de Claude
+/// Code (`/model` tapé dans le prompt, lui, écrit le défaut global). `None` : aucun flag, le
+/// réglage de Claude Code s'applique.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LaunchChoice {
+    model: Option<&'static str>,
+    effort: Option<&'static str>,
+}
+
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[error("choix refusé : « {0} » n'est pas dans la liste")]
+pub struct InvalidLaunchChoice(pub String);
+
+impl LaunchChoice {
+    /// Seules les valeurs des listes sont acceptées : elles finissent en arguments de `claude`.
+    pub fn parse(model: Option<&str>, effort: Option<&str>) -> Result<Self, InvalidLaunchChoice> {
+        let pick = |raw: Option<&str>, allowed: &[&'static str]| match raw {
+            None => Ok(None),
+            Some(raw) => allowed.iter().find(|a| **a == raw).map(|a| Some(*a)).ok_or(InvalidLaunchChoice(raw.to_owned())),
+        };
+        Ok(Self { model: pick(model, &MODEL_CHOICES)?, effort: pick(effort, &EFFORT_CHOICES)? })
+    }
+
+    /// Relecture d'un choix enregistré : une valeur sortie des listes depuis est oubliée.
+    pub fn restore(model: Option<&str>, effort: Option<&str>) -> Self {
+        Self {
+            model: Self::parse(model, None).map(|c| c.model).unwrap_or_default(),
+            effort: Self::parse(None, effort).map(|c| c.effort).unwrap_or_default(),
+        }
+    }
+
+    pub fn model(&self) -> Option<&'static str> {
+        self.model
+    }
+
+    pub fn effort(&self) -> Option<&'static str> {
+        self.effort
+    }
+
+    /// Arguments à ajouter à la ligne de commande de `claude`.
+    pub fn args(&self) -> Vec<String> {
+        let mut args = Vec::new();
+        if let Some(model) = self.model {
+            args.extend(["--model".to_owned(), model.to_owned()]);
+        }
+        if let Some(effort) = self.effort {
+            args.extend(["--effort".to_owned(), effort.to_owned()]);
+        }
+        args
+    }
+}
+
 /// Jauges rapportées par la statusline de Claude Code : modèle, contexte, quotas.
 /// Chaque champ est optionnel : le JSON de la statusline n'est pas un contrat stable.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -178,6 +237,7 @@ pub struct Saved {
     pub waited_ms: Millis,
     pub permission_ms: Millis,
     pub failed_turns: u32,
+    pub launch: LaunchChoice,
 }
 
 /// Un agent vivant dans Robiade.
@@ -209,6 +269,7 @@ pub struct Agent {
     /// Sessions Claude Code successives de l'agent : la première, puis une par `/clear` ou `/resume`.
     sessions: Vec<String>,
     name: Option<String>,
+    launch: LaunchChoice,
 }
 
 impl Agent {
@@ -238,6 +299,7 @@ impl Agent {
             sessions: vec![session.clone()],
             session,
             name: None,
+            launch: LaunchChoice::default(),
         }
     }
 
@@ -250,6 +312,7 @@ impl Agent {
         agent.waited_ms = saved.waited_ms;
         agent.permission_ms = saved.permission_ms;
         agent.failed_turns = saved.failed_turns;
+        agent.launch = saved.launch;
         agent
     }
 
@@ -262,6 +325,7 @@ impl Agent {
             waited_ms: self.waited_ms(now),
             permission_ms: self.permission_ms(now),
             failed_turns: self.failed_turns,
+            launch: self.launch.clone(),
         }
     }
 
@@ -269,6 +333,21 @@ impl Agent {
     pub fn rename(&mut self, raw: &str) {
         let name: String = raw.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(NAME_MAX_CHARS).collect();
         self.name = (!name.is_empty()).then_some(name);
+    }
+
+    /// Modèle et effort repassés à chaque lancement de la session de l'onglet.
+    pub fn choose(&mut self, launch: LaunchChoice) {
+        self.launch = launch;
+    }
+
+    pub fn launch(&self) -> &LaunchChoice {
+        &self.launch
+    }
+
+    /// Un changement de modèle ou d'effort relance l'agent : seulement quand rien n'est en cours.
+    /// Pendant un tour ou une demande de permission, la relance couperait ce qui se passe.
+    pub fn accepts_launch_change(&self) -> bool {
+        matches!(self.status, AgentStatus::AwaitingInput | AgentStatus::Idle | AgentStatus::Ended)
     }
 
     /// Session Claude Code en cours : celle qu'une reprise ou un redémarrage relance. Au départ,
@@ -596,6 +675,40 @@ mod tests {
         assert_eq!(a.status(), AgentStatus::Ended);
         assert_eq!(a.session_id(), "s-1");
         assert_eq!(a.saved(100), saved);
+    }
+
+    #[test]
+    fn a_launch_choice_only_takes_listed_values_and_becomes_flags() {
+        let choice = LaunchChoice::parse(Some("sonnet"), Some("low")).unwrap();
+        assert_eq!(choice.args(), ["--model", "sonnet", "--effort", "low"]);
+        assert_eq!(LaunchChoice::parse(None, None).unwrap().args(), Vec::<String>::new());
+        assert_eq!(LaunchChoice::parse(Some("--settings"), None), Err(InvalidLaunchChoice("--settings".into())));
+        assert!(LaunchChoice::parse(None, Some("ultra")).is_err());
+        assert_eq!(LaunchChoice::restore(Some("gpt"), Some("max")), LaunchChoice::parse(None, Some("max")).unwrap());
+    }
+
+    #[test]
+    fn a_launch_change_waits_for_the_agent_to_be_quiet() {
+        let mut a = agent();
+        assert!(!a.accepts_launch_change(), "en démarrage");
+        a.apply(AgentEvent::PromptSubmitted, 1);
+        assert!(!a.accepts_launch_change(), "en plein tour");
+        a.apply(AgentEvent::PermissionRequested, 2);
+        assert!(!a.accepts_launch_change(), "en demande de permission");
+        a.apply(AgentEvent::TurnFinished, 3);
+        assert!(a.accepts_launch_change());
+        a.apply(AgentEvent::ProcessExited, 4);
+        assert!(a.accepts_launch_change(), "terminé : le choix reprend la session");
+    }
+
+    #[test]
+    fn a_restored_tab_keeps_its_launch_choice() {
+        let id = AgentId::parse("0b6f1c2e-6b1d-4a5e-9c33-2f1e8d7a4b10").unwrap();
+        let launch = LaunchChoice::parse(Some("haiku"), None).unwrap();
+        let mut a = agent();
+        a.choose(launch.clone());
+        let restored = Agent::restore(id, "/p".into(), None, a.saved(1));
+        assert_eq!(restored.launch(), &launch);
     }
 
     #[test]

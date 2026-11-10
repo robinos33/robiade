@@ -4,7 +4,7 @@
 use std::path::Path;
 use std::sync::Mutex;
 
-use robiade_core::agents::{Agent, AgentId, AgentJournal, JournalError, Saved};
+use robiade_core::agents::{Agent, AgentId, AgentJournal, JournalError, LaunchChoice, Saved};
 use robiade_core::Millis;
 use rusqlite::{params, Connection, Row};
 
@@ -40,6 +40,9 @@ impl SqliteAgentJournal {
             // Session en cours, qui suit `/clear` et `/resume` ; à défaut, `resumed_from` (onglets
             // enregistrés avant elle), puis l'identifiant de l'onglet.
             "session_id TEXT",
+            // Modèle et effort choisis pour l'onglet, repassés à chaque reprise (issue #59).
+            "model_choice TEXT",
+            "effort_choice TEXT",
         ] {
             let name = column.split(' ').next().unwrap_or_default();
             let exists: bool = conn
@@ -74,13 +77,17 @@ impl SqliteAgentJournal {
             waited_ms: row.get(6)?,
             permission_ms: row.get(7)?,
             failed_turns: row.get(8)?,
+            launch: LaunchChoice::restore(
+                row.get::<_, Option<String>>(9)?.as_deref(),
+                row.get::<_, Option<String>>(10)?.as_deref(),
+            ),
         };
         Ok(Some(Agent::restore(id, row.get(1)?, row.get(2)?, saved)))
     }
 }
 
-const COLUMNS: &str =
-    "id, project_path, session_id, name, started_at, last_activity_at, waited_ms, permission_ms, failed_turns";
+const COLUMNS: &str = "id, project_path, session_id, name, started_at, last_activity_at, waited_ms, permission_ms, \
+                       failed_turns, model_choice, effort_choice";
 
 impl AgentJournal for SqliteAgentJournal {
     fn recent(&self, since: Millis) -> Result<Vec<Agent>, JournalError> {
@@ -96,9 +103,10 @@ impl AgentJournal for SqliteAgentJournal {
         let conn = self.conn.lock().map_err(storage)?;
         conn.execute(
             &format!(
-                "INSERT INTO agent ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                "INSERT INTO agent ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
                  ON CONFLICT(id) DO UPDATE SET session_id = ?3, name = ?4, last_activity_at = ?6,
-                     waited_ms = ?7, permission_ms = ?8, failed_turns = ?9"
+                     waited_ms = ?7, permission_ms = ?8, failed_turns = ?9, model_choice = ?10,
+                     effort_choice = ?11"
             ),
             params![
                 agent.id().as_str(),
@@ -109,7 +117,9 @@ impl AgentJournal for SqliteAgentJournal {
                 saved.last_activity_at,
                 saved.waited_ms,
                 saved.permission_ms,
-                saved.failed_turns
+                saved.failed_turns,
+                saved.launch.model(),
+                saved.launch.effort()
             ],
         )
         .map_err(storage)?;
@@ -160,6 +170,20 @@ mod tests {
         agent.observe_session("9d259b93-5dc0-47c3-b1c8-3084e032dd44");
         journal.save(&agent, 20).unwrap();
         assert_eq!(journal.recent(0).unwrap()[0].session_id(), "9d259b93-5dc0-47c3-b1c8-3084e032dd44");
+    }
+
+    #[test]
+    fn reopens_a_tab_with_its_model_and_effort() {
+        let journal = SqliteAgentJournal::open(Path::new(":memory:")).unwrap();
+        let id = AgentId::parse("0b6f1c2e-6b1d-4a5e-9c33-2f1e8d7a4b10").unwrap();
+        let mut agent = Agent::start(id, "/p".into(), None, 10);
+        let launch = LaunchChoice::parse(Some("sonnet"), Some("low")).unwrap();
+        agent.choose(launch.clone());
+        journal.save(&agent, 10).unwrap();
+        assert_eq!(journal.recent(0).unwrap()[0].launch(), &launch);
+        agent.choose(LaunchChoice::default());
+        journal.save(&agent, 20).unwrap();
+        assert_eq!(journal.recent(0).unwrap()[0].launch(), &LaunchChoice::default());
     }
 
     #[test]
