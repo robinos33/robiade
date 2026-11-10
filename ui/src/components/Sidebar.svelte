@@ -23,18 +23,20 @@
     { view: 'env', label: 'Environnements', icon: 'env', key: '7' },
     { view: 'code', label: 'Code', icon: 'code', key: '8' },
     { view: 'db', label: 'Bases de données', icon: 'db', key: '' },
+    { view: 'routines', label: 'Routines', icon: 'routines', key: '9' },
   ];
 
   function badge(view: View): number | null {
     if (view === 'inbox') return app.attention.length || null;
     if (view === 'agents') return app.visibleAgents.filter((a) => a.status !== 'ended').length || null;
     if (view === 'mr') return app.pendingReviews.length + app.mrAttention.length || null;
+    if (view === 'routines') return app.failingRoutines.length || null;
     if (view === 'tasks') return app.dueTasks.length || app.visibleTasks.filter((t) => t.status === 'doing').length || null;
     return null;
   }
 
   /** Pastille : l'Inbox, et les tâches dès qu'une échéance tombe — leur compte remplace alors celui des « en cours ». */
-  const hot = (view: View) => view === 'inbox' || (view === 'tasks' && app.dueTasks.length > 0);
+  const hot = (view: View) => view === 'inbox' || view === 'routines' || (view === 'tasks' && app.dueTasks.length > 0);
   /** Échéances tombées hors du projet affiché : signalées partout, comptées seulement chez elles. */
   const dueElsewhere = $derived(app.allDueTasks.length - app.dueTasks.length);
 
