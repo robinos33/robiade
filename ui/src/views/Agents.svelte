@@ -16,6 +16,7 @@
   import ChangesPanel from '../components/ChangesPanel.svelte';
   import LifecycleBar from '../components/LifecycleBar.svelte';
   import ShortcutBar from '../components/ShortcutBar.svelte';
+  import LaunchPicker from '../components/LaunchPicker.svelte';
   import Icon from '../components/Icon.svelte';
   import ResizeHandle from '../components/ResizeHandle.svelte';
   import TerminalSearch from '../components/TerminalSearch.svelte';
@@ -430,9 +431,8 @@
                 <dt title="Tokens × tarif public de l'API ; avec un abonnement, ce n'est pas ce que tu paies">Coût estimé</dt>
                 <dd class="num">{dollars(session.cost.dollars)}</dd>
                 <dt>Messages</dt><dd class="num">{session.userMessages} / {session.assistantMessages}</dd>
-                <dt>Modèle</dt><dd class="mono ellipsis">{active.gauges.model ?? session.models.at(-1) ?? '—'}</dd>
-                <dt>Effort</dt><dd class="mono">{active.effort ?? '—'}</dd>
               {/if}
+              <LaunchPicker agent={active} />
               <dt>Contexte</dt><dd class="num">{active.gauges.context ? `${active.gauges.context.percent} %` : '—'}</dd>
             </dl>
             {#if !session}

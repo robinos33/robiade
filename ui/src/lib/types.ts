@@ -32,6 +32,9 @@ export interface Agent extends Workspace {
   permissionMode: string | null;
   /** Effort de raisonnement rapporté par les hooks ; absent avant le premier outil. */
   effort: string | null;
+  /** Modèle et effort choisis pour l'onglet, repassés à chaque reprise ; `null` : réglage de Claude Code. */
+  chosenModel: string | null;
+  chosenEffort: string | null;
   permissive: boolean;
   gauges: Gauges;
   /** Fichiers affichables écrits par l'agent, le plus récent en tête. */

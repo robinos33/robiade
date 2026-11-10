@@ -66,6 +66,8 @@ function agent(id: string, project: number, worktree: string | null, status: Age
     lastTool: 'Bash',
     permissionMode: 'acceptEdits',
     effort: 'high',
+    chosenModel: null,
+    chosenEffort: null,
     permissive: false,
     gauges: {
       model: 'Opus 5.5',
@@ -670,6 +672,18 @@ const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
   },
   list_history: () => (BOOT === 'slow' ? new Promise((r) => setTimeout(() => r(sessions), 2000)) : sessions),
   list_agents: () => agents,
+  // La vraie commande relance l'agent sous un nouvel onglet ; ici, l'onglet change sur place.
+  choose_agent_launch: (args) => {
+    const a = agents.find((x) => x.id === args.id)!;
+    if (!['awaitingInput', 'idle', 'ended'].includes(a.status)) throw 'l’agent travaille ou attend une permission';
+    const model = (args.model as string | null) ?? null, effort = (args.effort as string | null) ?? null;
+    Object.assign(a, {
+      chosenModel: model, chosenEffort: effort, status: 'idle', effort: effort ?? 'high',
+      gauges: { ...a.gauges, model: model ? `${model[0].toUpperCase()}${model.slice(1)} 5.5` : 'Opus 5.5' },
+    });
+    emit('agents:changed', [...agents]);
+    return a;
+  },
   list_tasks: () => tasks,
   create_task: (args) => {
     const task: Task = {

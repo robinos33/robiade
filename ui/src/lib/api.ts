@@ -33,6 +33,9 @@ export const api = {
   resizeAgent: (id: string, cols: number, rows: number) => invoke<void>('resize_agent', { id, cols, rows }),
   killAgent: (id: string) => invoke<void>('kill_agent', { id }),
   restartAgent: (id: string, cols: number, rows: number) => invoke<Agent>('restart_agent', { id, cols, rows }),
+  /** Relance l'agent sur sa session avec ce modèle et cet effort ; `null` : réglage de Claude Code. */
+  chooseAgentLaunch: (id: string, model: string | null, effort: string | null, cols: number, rows: number) =>
+    invoke<Agent>('choose_agent_launch', { id, model, effort, cols, rows }),
   markAgentSeen: (id: string) => invoke<void>('mark_agent_seen', { id }),
   renameAgent: (id: string, name: string) => invoke<void>('rename_agent', { id, name }),
   forgetAgent: (id: string) => invoke<void>('forget_agent', { id }),
