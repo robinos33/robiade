@@ -3,7 +3,7 @@
  * Rien de ce fichier n'entre dans le build (seul `index.html` est une entrée Vite).
  */
 import type {
-  ContributionBucket, Granularity, Agent, Container, DbCell, DbColumn, DbConnection, DbPageRequest, Discussion, FileChange, Forge, GitWorktree, Issue, Lifecycle, MergeRequest, MrRef, Overview, Session, Shortcut, Task, Tokens, WorktreeRemoval,
+  ContributionBucket, Granularity, Agent, Container, DbCell, DbColumn, DbConnection, DbPageRequest, Discussion, FileChange, Forge, GitWorktree, Issue, Lifecycle, MergeRequest, ModelOption, MrRef, Overview, Session, Shortcut, Task, Tokens, WorktreeRemoval,
 } from '../src/lib/types';
 import { localDay } from '../src/lib/format';
 
@@ -84,6 +84,17 @@ function agent(id: string, project: number, worktree: string | null, status: Age
     ...over,
   };
 }
+
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+/** Extrait de la réponse `initialize` de Claude Code 2.1.322. */
+const MODELS: ModelOption[] = [
+  { value: 'default', displayName: 'Default (recommended)', description: 'Opus 5.5 · Best for everyday, complex tasks', efforts: EFFORTS },
+  { value: 'opus', displayName: 'Opus 5.5', description: 'For complex work and everyday tasks', efforts: EFFORTS },
+  { value: 'fable', displayName: 'Fable 5.2', description: 'For your toughest challenges', efforts: EFFORTS },
+  { value: 'sonnet', displayName: 'Sonnet 5.5', description: 'Most efficient for simpler tasks', efforts: EFFORTS },
+  { value: 'haiku', displayName: 'Haiku 5.5', description: 'Fastest for quick answers', efforts: EFFORTS },
+  { value: 'claude-haiku-4-5-20251001', displayName: 'Haiku 4.5', description: 'Fastest for quick answers', efforts: [] },
+];
 
 export const AGENT_IDS = ["7f3c9e21-4b8a-4d6e-9c1f-2a5b8e0d3f47", "b2e4a7c9-1d3f-4e8b-a6c2-9f0e5d7b1a38", "c9d1f3e5-7a2b-4c8d-b0e6-3f5a9c1d7e24", "e5a7c9b1-3d5f-4a2c-8e0b-6d1f4a9c2b57"];
 
@@ -672,6 +683,7 @@ const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
   },
   list_history: () => (BOOT === 'slow' ? new Promise((r) => setTimeout(() => r(sessions), 2000)) : sessions),
   list_agents: () => agents,
+  agent_models: () => MODELS,
   // La vraie commande relance l'agent sous un nouvel onglet ; ici, l'onglet change sur place.
   choose_agent_launch: (args) => {
     const a = agents.find((x) => x.id === args.id)!;
@@ -679,7 +691,7 @@ const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
     const model = (args.model as string | null) ?? null, effort = (args.effort as string | null) ?? null;
     Object.assign(a, {
       chosenModel: model, chosenEffort: effort, status: 'idle', effort: effort ?? 'high',
-      gauges: { ...a.gauges, model: model ? `${model[0].toUpperCase()}${model.slice(1)} 5.5` : 'Opus 5.5' },
+      gauges: { ...a.gauges, model: MODELS.find((m) => m.value === (model ?? 'default'))!.displayName.replace('Default (recommended)', 'Opus 5.5') },
     });
     emit('agents:changed', [...agents]);
     return a;

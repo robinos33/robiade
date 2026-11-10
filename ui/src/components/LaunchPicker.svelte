@@ -1,14 +1,24 @@
-<script lang="ts">
+<script lang="ts" module>
   import { api } from '../lib/api';
+  import type { ModelOption } from '../lib/types';
+
+  /** Une seule demande pour tous les agents ; un échec se retente à l'affichage suivant. */
+  let catalog: Promise<ModelOption[]> | null = null;
+  function loadModels(): Promise<ModelOption[]> {
+    catalog ??= api.agentModels().catch((e) => {
+      catalog = null;
+      throw e;
+    });
+    return catalog;
+  }
+</script>
+
+<script lang="ts">
   import { app } from '../lib/state.svelte';
   import type { Agent, AgentStatus } from '../lib/types';
 
   /** Lignes Modèle et Effort du panneau Session, à placer dans un `<dl>`. */
   let { agent }: { agent: Agent } = $props();
-
-  // Les mêmes listes que `MODEL_CHOICES` et `EFFORT_CHOICES` côté Rust, qui refuse toute autre valeur.
-  const MODELS = ['fable', 'opus', 'sonnet', 'haiku'];
-  const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 
   /** Un choix relance l'agent : jamais pendant un tour ni une demande de permission, qu'il couperait. */
   const WHY: Record<AgentStatus, string> = {
@@ -20,19 +30,43 @@
     failed: 'Le dernier tour a échoué : relance l’agent avant de changer de modèle',
     ended: '',
   };
+  /** Entrée « défaut » de l'écran `/model` : aucun flag, le réglage de Claude Code s'applique. */
+  const DEFAULT = 'default';
 
+  let models: ModelOption[] = $state([]);
+  let unreadable = $state('');
   let relaunching = $state(false);
   // Remet les listes sur le choix enregistré après un refus.
   let reset = $state(0);
 
+  $effect(() => {
+    loadModels().then(
+      (m) => ((models = m), (unreadable = '')),
+      (e) => (unreadable = `Liste des modèles de Claude Code illisible : ${e}`),
+    );
+  });
+
   const why = $derived(WHY[agent.status]);
-  const disabled = $derived(relaunching || why !== '');
-  const hint = $derived(why || 'Relance l’agent sur sa session, avec --model et --effort. Rien n’est écrit dans les réglages de Claude Code.');
+  const disabled = $derived(relaunching || why !== '' || unreadable !== '');
+  const hint = $derived(
+    why || unreadable || 'Relance l’agent sur sa session, avec --model et --effort. Rien n’est écrit dans les réglages de Claude Code.',
+  );
+  const entry = (value: string | null) => models.find((m) => m.value === (value ?? DEFAULT));
+  /** Efforts du modèle visé : celui choisi, sinon l'entrée « défaut ». */
+  const efforts = $derived(entry(agent.chosenModel)?.efforts ?? []);
+  // Un choix enregistré que la liste ne propose plus (autre compte, autre version) reste affiché.
+  const strayModel = $derived(agent.chosenModel !== null && models.length > 0 && !entry(agent.chosenModel));
+  const strayEffort = $derived(agent.chosenEffort !== null && !efforts.includes(agent.chosenEffort));
   // Le modèle en service est dans la barre de jauges, au-dessus du terminal ; l'effort ne s'affiche
   // qu'ici. S'il diffère du choix (un `/effort` tapé dans le terminal), il est montré à côté.
   const effortDiffers = $derived(agent.chosenEffort !== null && agent.effort !== null && agent.effort !== agent.chosenEffort);
+  /** Sans choix, l'effort en service est celui du défaut : il le nomme. Avec un choix, plus rien ne le dit. */
+  const effortDefault = $derived(agent.chosenEffort === null && agent.effort !== null ? `${agent.effort} (défaut)` : 'défaut');
+  const noEffort = $derived(models.length > 0 && efforts.length === 0);
 
   async function choose(model: string | null, effort: string | null) {
+    // Un effort que le nouveau modèle n'accepte pas est abandonné plutôt que refusé.
+    if (effort !== null && !(entry(model)?.efforts ?? []).includes(effort)) effort = null;
     relaunching = true;
     try {
       const fresh = await api.chooseAgentLaunch(agent.id, model, effort, 120, 36);
@@ -45,36 +79,33 @@
     }
   }
 
-  /** Sans choix, l'effort en service est celui du défaut : il le nomme. Avec un choix, plus rien ne le dit. */
-  const effortDefault = $derived(agent.chosenEffort === null && agent.effort !== null ? `${agent.effort} (défaut)` : 'défaut');
-
-  const value = (e: Event) => (e.currentTarget as HTMLSelectElement).value || null;
+  const value = (e: Event) => {
+    const v = (e.currentTarget as HTMLSelectElement).value;
+    return v === '' || v === DEFAULT ? null : v;
+  };
 </script>
 
 {#key reset}
   <dt>Modèle</dt>
   <dd class="pick" title={hint}>
-    <select
-      aria-label="Modèle"
-      {disabled}
-      value={agent.chosenModel ?? ''}
-      onchange={(e) => choose(value(e), agent.chosenEffort)}
-    >
-      <option value="">défaut</option>
-      {#each MODELS as m (m)}<option value={m}>{m}</option>{/each}
+    <select aria-label="Modèle" {disabled} value={agent.chosenModel ?? DEFAULT} onchange={(e) => choose(value(e), agent.chosenEffort)}>
+      {#if !entry(null)}<option value={DEFAULT}>défaut</option>{/if}
+      {#if strayModel}<option value={agent.chosenModel ?? ''}>{agent.chosenModel}</option>{/if}
+      {#each models as m (m.value)}<option value={m.value} title={m.description}>{m.displayName}</option>{/each}
     </select>
   </dd>
   <dt>Effort</dt>
-  <dd class="pick" title={hint}>
+  <dd class="pick" title={noEffort && !why && !unreadable ? 'Ce modèle n’a pas de niveau d’effort' : hint}>
     {#if effortDiffers}<span class="mono effective">{agent.effort}</span>{/if}
     <select
       aria-label="Effort"
-      {disabled}
+      disabled={disabled || (noEffort && agent.chosenEffort === null)}
       value={agent.chosenEffort ?? ''}
       onchange={(e) => choose(agent.chosenModel, value(e))}
     >
       <option value="">{effortDefault}</option>
-      {#each EFFORTS as l (l)}<option value={l}>{l}</option>{/each}
+      {#if strayEffort}<option value={agent.chosenEffort ?? ''}>{agent.chosenEffort}</option>{/if}
+      {#each efforts as l (l)}<option value={l}>{l}</option>{/each}
     </select>
   </dd>
 {/key}
