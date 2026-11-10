@@ -104,6 +104,26 @@
       </div>
     {/if}
 
+    {#if app.failingRoutines.length > 0}
+      <div class="block">
+        <h2 class="section-title">Routines en échec</h2>
+        <ul class="cards">
+          {#each app.failingRoutines as r (r.label)}
+            <li class="with-action">
+              <button class="card failed" onclick={() => (app.view = 'routines')}>
+                <span class="what">
+                  <strong>{r.name}</strong>
+                  {r.lastExit?.kind === 'signal' ? `arrêtée par un signal (${r.lastExit.signal})` : `a échoué (code ${r.lastExit?.code})`} à son dernier passage
+                </span>
+                {#if r.logsWrittenAt}<span class="muted num">{ago(r.logsWrittenAt, app.now)}</span>{/if}
+              </button>
+              <button class="btn ghost seen" onclick={() => app.markRoutineSeen(r)} title="Retirer de l'Inbox jusqu'au prochain passage">Vu</button>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
+
     {#if brokenContainers.length > 0}
       <div class="block">
         <h2 class="section-title">Conteneurs en échec</h2>
@@ -200,6 +220,8 @@
   .card.failed { border-left-color: var(--danger); }
   .card.awaitingInput { border-left-color: var(--accent); }
   .what { flex: 1; }
+  .with-action { display: flex; gap: 6px; align-items: stretch; }
+  .seen { flex: none; align-self: center; }
   .rows { display: flex; flex-direction: column; }
   .row {
     display: flex; align-items: center; gap: 12px; width: 100%; height: 34px; padding: 0 10px;
