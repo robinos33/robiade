@@ -98,6 +98,23 @@
     }
   }
 
+  /** Préfixe des routines : il décide quels LaunchAgents Robiade montre et pilote. */
+  let prefixInput = $state('');
+  let prefixError = $state<string | null>(null);
+  $effect(() => {
+    prefixInput = app.routinePrefix ?? '';
+  });
+
+  async function savePrefix() {
+    prefixError = null;
+    try {
+      app.routinePrefix = await api.saveRoutinePrefix(prefixInput);
+      await app.refreshRoutines();
+    } catch (e) {
+      prefixError = String(e);
+    }
+  }
+
   /** Troncs par dépôt, et leur saisie : noms séparés par des virgules, dans l'ordre de préférence. */
   let trunks = $state<Record<string, RepositoryTrunks | string>>({});
   let trunkInput = $state<Record<string, string>>({});
@@ -282,6 +299,29 @@
         {:else}
           <p class="muted small">Aucun projet connu : lance un agent dans un dépôt.</p>
         {/each}
+      </div>
+
+      <div class="panel">
+        <h2 class="section-title">Routines</h2>
+        <p class="muted small">
+          Robiade montre et pilote les LaunchAgents de <code>~/Library/LaunchAgents</code> dont le label
+          commence par ce préfixe, et nomme ainsi ceux qu'il crée. Aucun autre service n'est lu ni touché.
+        </p>
+        <label>
+          <span>Préfixe des labels</span>
+          <input
+            class="field mono"
+            bind:value={prefixInput}
+            placeholder="com.exemple."
+            spellcheck="false"
+            autocomplete="off"
+            onkeydown={(e) => e.key === 'Enter' && void savePrefix()}
+          />
+        </label>
+        {#if prefixError}<p class="error-text small">{prefixError}</p>{/if}
+        <footer>
+          <button class="btn primary" disabled={prefixInput.trim() === (app.routinePrefix ?? '')} onclick={() => void savePrefix()}>Enregistrer</button>
+        </footer>
       </div>
 
       <div class="panel">
