@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use robiade_core::agents::AgentId;
+use robiade_core::agents::{AgentId, LaunchChoice};
 use robiade_adapters::keychain;
 use robiade_core::containers::{Container, ContainerAction, ContainerId};
 use robiade_core::databases::{Connection, ConnectionId, ConnectionRepository, Part, Source, Target};
@@ -280,6 +280,25 @@ pub async fn restart_agent(app: tauri::AppHandle, id: String, cols: u16, rows: u
     let id = agent_id(&id)?;
     tauri::async_runtime::spawn_blocking(move || {
         app.state::<AppState>().agents.restart(&id, cols.clamp(20, 500), rows.clamp(5, 200))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Change le modèle ou l'effort d'un agent (`None` : réglage de Claude Code) et le relance.
+#[tauri::command]
+pub async fn choose_agent_launch(
+    app: tauri::AppHandle,
+    id: String,
+    model: Option<String>,
+    effort: Option<String>,
+    cols: u16,
+    rows: u16,
+) -> CmdResult<AgentDto> {
+    let id = agent_id(&id)?;
+    let launch = LaunchChoice::parse(model.as_deref(), effort.as_deref()).map_err(|e| e.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().agents.choose_launch(&id, launch, cols.clamp(20, 500), rows.clamp(5, 200))
     })
     .await
     .map_err(|e| e.to_string())?

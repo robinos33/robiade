@@ -283,6 +283,7 @@ fn main() {
             commands::resize_agent,
             commands::kill_agent,
             commands::restart_agent,
+            commands::choose_agent_launch,
             commands::mark_agent_seen,
             commands::rename_agent,
             commands::forget_agent,

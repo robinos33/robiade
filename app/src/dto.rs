@@ -53,6 +53,9 @@ pub struct AgentDto {
     pub permission_mode: Option<String>,
     pub permissive: bool,
     pub effort: Option<String>,
+    /// Modèle et effort choisis pour l'onglet, `None` : réglage de Claude Code.
+    pub chosen_model: Option<&'static str>,
+    pub chosen_effort: Option<&'static str>,
     pub gauges: GaugesDto,
     pub assets: Vec<AssetDto>,
     /// Session Claude Code en cours : celle que « Reprendre » et « Redémarrer » relancent.
@@ -241,6 +244,8 @@ impl AgentDto {
             permission_mode: a.permission_mode().map(|m| m.as_str().to_owned()),
             permissive: a.permission_mode().is_some_and(|m| m.is_permissive()),
             effort: a.effort().map(|e| e.as_str().to_owned()),
+            chosen_model: a.launch().model(),
+            chosen_effort: a.launch().effort(),
             gauges: a.gauges().into(),
             assets: a.assets().iter().map(AssetDto::from).collect(),
             session_id: a.session_id().to_owned(),
