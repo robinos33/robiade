@@ -6,10 +6,14 @@ Code.
 
 ## Comportement
 
-- Modèle : « défaut », puis les alias de Claude Code (`fable`, `opus`, `sonnet`, `haiku`). Effort :
-  « défaut », puis `low` à `max`. « défaut » ne passe aucun flag : le réglage de Claude Code
-  s'applique. Sans choix, l'effort en service nomme le défaut (« high (défaut) ») ; le modèle en
-  service est dans la barre de jauges, au-dessus du terminal.
+- **Les listes sont celles de Claude Code** : les modèles de son écran `/model`, avec ses libellés
+  et ses descriptions, et pour l'effort les niveaux que le modèle visé accepte (celui choisi, sinon
+  l'entrée « défaut »). Elles dépendent du compte et de la version de Claude Code, et sont
+  demandées à la CLI une fois par exécution de Robiade. Un modèle sans niveau d'effort grise la
+  liste Effort ; un effort que le nouveau modèle n'accepte pas est abandonné au changement.
+- L'entrée « défaut » ne passe aucun flag : le réglage de Claude Code s'applique. Sans choix,
+  l'effort en service nomme le défaut (« high (défaut) ») ; le modèle en service est dans la barre
+  de jauges, au-dessus du terminal.
 - Un choix **relance l'agent sur sa session** par le chemin de « Redémarrer », avec `--model` et
   `--effort`. La conversation continue, avec la nouvelle valeur.
 - **Le choix appartient à l'onglet** : il est gardé d'une exécution de Robiade à l'autre et repassé
@@ -23,8 +27,14 @@ Code.
 - **Actif seulement quand rien n'est en cours** : `AwaitingInput`, `Idle` ou `Ended`, où le choix
   reprend la session. Ailleurs, les listes sont grisées avec la raison au survol, et la commande
   refuse : une relance couperait le tour ou la demande de permission.
-- Seules les valeurs des listes partent en arguments de `claude` ; toute autre valeur est refusée,
-  et une valeur enregistrée sortie des listes depuis est oubliée à la relecture.
+- Seules les valeurs que Claude Code propose partent en arguments de `claude` : la commande vérifie
+  le choix sur la liste. Un choix enregistré se relit sans elle, pourvu qu'il reste un argument sûr
+  (court, sans espace, jamais en tête `-`) : il est repassé tel quel, même si la liste ne le
+  propose plus.
+- La liste se demande sans appel à l'API ni trace : `claude -p` en protocole `stream-json`, requête
+  `initialize`, session non enregistrée, hooks coupés. Elle est demandée depuis le dossier
+  personnel : les réglages de projet (`availableModels`) n'y comptent pas. Illisible, les listes
+  sont grisées avec l'erreur au survol, et la demande se retente à l'affichage suivant.
 - `~/.claude/settings.json` n'est jamais écrit : `--model` et `--effort` ne valent que pour le
   process lancé (vérifié sur Claude Code 2.1.322).
 
@@ -39,12 +49,18 @@ prompt deviennent le défaut global de Claude Code, iTerm compris. **Risque rés
 perd un prompt à moitié tapé. L'état est vérifié avant la relance, pas pendant : un prompt envoyé
 entre les deux voit son tour coupé.
 
+Décidé le 2026-11-10 : **les listes viennent de Claude Code**, pas d'une liste en dur (issue #59,
+à la demande de Robin). **Risque résiduel** : la requête `initialize` est celle de l'Agent SDK
+(`supportedModels()`), sans contrat publié pour la CLI ; si son format change, les listes se
+grisent.
+
 ## Écarté
 
 - Taper `/model X` ou `/effort X` dans le PTY : cela changerait le défaut global.
 - Piloter le menu `/model` au clavier (flèches puis `s`, pour la session seule) : on dépendrait de
   l'affichage de Claude Code, que les hooks ne décrivent pas.
 - Choisir le modèle dans « Nouvel agent » : un clic de plus à chaque lancement.
+- Une liste de modèles en dur : elle se périme à chaque sortie de modèle et ignore le compte.
 
 ## Tickets
 
