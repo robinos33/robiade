@@ -3,7 +3,7 @@
  * Rien de ce fichier n'entre dans le build (seul `index.html` est une entrée Vite).
  */
 import type {
-  ContributionBucket, Granularity, Agent, Container, DbCell, DbColumn, DbConnection, DbPageRequest, Discussion, FileChange, Forge, GitWorktree, Issue, Lifecycle, MergeRequest, MrRef, Overview, Session, Shortcut, Task, Tokens, WorktreeRemoval,
+  ContributionBucket, Granularity, Agent, Container, DbCell, DbColumn, DbConnection, DbPageRequest, Discussion, FileChange, Forge, GitWorktree, Issue, Lifecycle, MergeRequest, MrRef, Overview, Routine, RoutineInput, Session, Shortcut, Task, Tokens, WorktreeRemoval,
 } from '../src/lib/types';
 import { localDay } from '../src/lib/format';
 
@@ -318,6 +318,61 @@ const container = (
   workingDir: project === null ? null : `${HOME}/code/${PROJECTS[project]!.name}`,
   workspace: project === null ? null : workspace(project),
 });
+
+const PREFIX = 'com.demo.';
+const LOGS = `${HOME}/Library/Logs/Robiade/routines`;
+function routine(name: string, patch: Partial<Routine>): Routine {
+  return {
+    label: PREFIX + name,
+    name,
+    file: `${HOME}/Library/LaunchAgents/${PREFIX}${name}.plist`,
+    state: 'idle',
+    pid: null,
+    runs: 12,
+    lastExit: { kind: 'code', code: 0, signal: null },
+    failed: false,
+    logsWrittenAt: NOW - 7 * 60 * MIN,
+    schedule: 'lun–ven 9h00',
+    nextRun: NOW + 16 * 60 * MIN,
+    command: ['/usr/bin/python3', `${HOME}/scripts/${name}.py`],
+    workingDir: null,
+    stdout: `${LOGS}/${name}.out.log`,
+    stderr: `${LOGS}/${name}.err.log`,
+    problem: null,
+    readOnly: null,
+    form: { name, program: '/usr/bin/python3', arguments: [`${HOME}/scripts/${name}.py`], workingDir: null, days: [1, 2, 3, 4, 5], times: ['9:00'] },
+    ...patch,
+  };
+}
+let routines: Routine[] = [
+  routine('briefing', {}),
+  routine('rapport-du-soir', {
+    schedule: 'lun–ven 17h30', nextRun: NOW + 4 * 60 * MIN, runs: 9, logsWrittenAt: NOW - 20 * 60 * MIN,
+    lastExit: { kind: 'code', code: 1, signal: null }, failed: true,
+    form: { name: 'rapport-du-soir', program: '/usr/bin/python3', arguments: [`${HOME}/scripts/rapport-du-soir.py`], workingDir: null, days: [1, 2, 3, 4, 5], times: ['17:30'] },
+  }),
+  routine('sauvegarde-notes', {
+    state: 'disabled', runs: null, lastExit: null, nextRun: null, schedule: 'tous les jours 23h00',
+    command: ['/bin/sh', '-c', 'tar czf ~/Backups/notes.tgz ~/Notes'],
+    form: { name: 'sauvegarde-notes', program: '/bin/sh', arguments: ['-c', 'tar czf ~/Backups/notes.tgz ~/Notes'], workingDir: null, days: [1, 2, 3, 4, 5, 6, 7], times: ['23:00'] },
+  }),
+  routine('miroir-depots', {
+    schedule: 'toutes les heures à :15', nextRun: NOW + 38 * MIN, runs: 214,
+    command: ['/opt/homebrew/bin/git', '-C', `${HOME}/code/miroirs`, 'fetch', '--all'],
+    readOnly: "clés que Robiade n'écrit pas : RunAtLoad", form: null,
+  }),
+];
+const ROUTINE_LOGS: Record<string, { stdout: string; stderr: string }> = {
+  briefing: { stdout: '=== briefing 2026-11-10T09:00:02 ===\n3 MR à relire, 1 pipeline rouge.\n[Slack] envoyé\n', stderr: '' },
+  'rapport-du-soir': {
+    stdout: '=== rapport 2026-11-09T17:30:01 ===\n',
+    stderr: 'Traceback (most recent call last):\n  File "rapport-du-soir.py", line 42, in <module>\n    token = keychain("forge-api-token")\nKeyError: \'forge-api-token\'\n',
+  },
+};
+function plistOf(input: RoutineInput): string {
+  const args = [input.program, ...input.arguments].map((a) => `\t\t<string>${a}</string>`).join('\n');
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0">\n<dict>\n\t<key>Label</key>\n\t<string>${input.editing ?? PREFIX + input.name}</string>\n\t<key>ProgramArguments</key>\n\t<array>\n${args}\n\t</array>\n\t<key>StartCalendarInterval</key>\n\t<array>…</array>\n</dict>\n</plist>\n`;
+}
 
 const containers: Container[] = [
   container('boutique-php', 0, 'php', 'boutique/php:8.4', 'running', 'Up 3 hours (healthy)', [[80, null], [443, null]]),
@@ -734,6 +789,30 @@ const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
   project_files: () => ({ files: PROJECT_FILES, secrets: ['.env'] }),
   read_project_file: (args) => projectFile(String(args.path), Boolean(args.reveal)),
   containers: () => containers,
+  routines: () => ({ prefix: PREFIX, routines }),
+  routine_logs: (args) => {
+    const name = String(args.label).slice(PREFIX.length);
+    return ROUTINE_LOGS[name] ?? { stdout: null, stderr: null };
+  },
+  prepare_routine_action: (args) => ({ routine: routines.find((r) => r.label === args.label)!, action: args.action, blocker: null }),
+  run_routine_action: (args) => {
+    if (args.action === 'delete') routines = routines.filter((r) => r.label !== args.label);
+    return null;
+  },
+  prepare_routine_save: (args) => {
+    const input = args.input as RoutineInput;
+    return {
+      label: input.editing ?? PREFIX + input.name,
+      file: `${HOME}/Library/LaunchAgents/${input.editing ?? PREFIX + input.name}.plist`,
+      plist: plistOf(input),
+      schedule: 'lun–ven 9h00',
+      nextRun: NOW + 16 * 60 * MIN,
+      blocker: input.program.startsWith('/') ? null : `${input.program} n'existe pas`,
+    };
+  },
+  save_routine: (args) => (args.input as RoutineInput).editing ?? PREFIX + (args.input as RoutineInput).name,
+  save_routine_prefix: (args) => String(args.prefix).trim(),
+  reveal_routine: () => null,
   worktrees: (args) => worktrees.filter((w) => w.repository === args.repository),
   prepare_worktree_creation: (args) => ({
     repository: args.repository,
