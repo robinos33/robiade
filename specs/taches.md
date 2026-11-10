@@ -24,7 +24,8 @@ C'est le seul contexte où l'ADE porte de l'état, donc le seul où un agrégat 
   est liée, si elle est déjà finie ou si plusieurs le sont. La vue Tâches se relit à son ouverture
   et au retour dans l'app.
 - Vue unifiée : la liste des tâches d'un projet montre les deux types côte à côte, typés
-  visuellement ; seules les tâches perso sont éditables en place.
+  visuellement ; seules les tâches perso sont éditables en place. Côté équipe, seules les
+  [issues qui me sont assignées](forge/issues.md).
 
 ## Règles
 

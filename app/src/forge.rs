@@ -245,7 +245,7 @@ mod tests {
         fn issue_discussions(&self, _: &IssueRef) -> Result<Vec<Discussion>, ForgeError> {
             unreachable!()
         }
-        fn project_issues(&self, _: &str) -> Result<Vec<Issue>, ForgeError> {
+        fn my_project_issues(&self, _: &str) -> Result<Vec<Issue>, ForgeError> {
             unreachable!()
         }
         fn default_branch(&self, _: &str) -> Result<String, ForgeError> {

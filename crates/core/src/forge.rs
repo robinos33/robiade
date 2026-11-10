@@ -117,7 +117,7 @@ impl Forge for NoForge {
     fn issue_discussions(&self, _: &IssueRef) -> Result<Vec<Discussion>, ForgeError> {
         Err(ForgeError::NotConfigured)
     }
-    fn project_issues(&self, _: &str) -> Result<Vec<Issue>, ForgeError> {
+    fn my_project_issues(&self, _: &str) -> Result<Vec<Issue>, ForgeError> {
         Err(ForgeError::NotConfigured)
     }
     fn default_branch(&self, _: &str) -> Result<String, ForgeError> {
@@ -336,8 +336,10 @@ pub trait Forge: Send + Sync {
     fn issue(&self, issue: &IssueRef) -> Result<Issue, ForgeError>;
     /// Fils d'échanges d'une issue, dans l'ordre chronologique, sans les notes système.
     fn issue_discussions(&self, issue: &IssueRef) -> Result<Vec<Discussion>, ForgeError>;
-    /// Issues ouvertes d'un projet (chemin complet, validé par `is_project_path`).
-    fn project_issues(&self, project: &str) -> Result<Vec<Issue>, ForgeError>;
+    /// Issues ouvertes d'un projet (chemin complet, validé par `is_project_path`) qui me sont assignées.
+    /// Filtrées par la forge, pas après lecture : la liste tient en une page, mes issues d'un gros
+    /// projet d'équipe ne doivent pas passer derrière celles des autres.
+    fn my_project_issues(&self, project: &str) -> Result<Vec<Issue>, ForgeError>;
     /// Branche par défaut d'un projet : son tronc quand son dépôt n'en règle pas.
     fn default_branch(&self, project: &str) -> Result<String, ForgeError>;
     /// Envoie une action planifiée sur une MR.

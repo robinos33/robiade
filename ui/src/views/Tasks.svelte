@@ -42,7 +42,7 @@
   /** `AAAA-MM-JJ`, vide tant qu'aucune échéance n'est choisie. */
   let dueOn = $state('');
 
-  /** Issues du projet GitLab sélectionné, ou celles qui me sont assignées en vue globale. */
+  /** Issues qui me sont assignées : celles du projet sélectionné, ou de tous les projets en vue globale. */
   let issues = $state<Issue[] | null>(null);
   let issuesError = $state<string | null>(null);
   const issuesScope = $derived(!app.env?.forge ? null : app.project === null ? 'assigned' : app.selectedGitlabProject);
@@ -204,7 +204,7 @@
 
     <div class="team">
       <h2 class="section-title">
-        Tâches d'équipe · {app.forgeName} · {issuesScope === 'assigned' ? 'assignées à moi' : (issuesScope ?? '—')}
+        Tâches d'équipe · {app.forgeName} · {issuesScope === null ? '—' : issuesScope === 'assigned' ? 'assignées à moi' : `${issuesScope} · assignées à moi`}
         {#if issues}<span class="num">{issues.length}</span>{/if}
         {#if issuesScope !== null && issuesScope !== 'assigned'}
           {@const project = issuesScope}
@@ -266,7 +266,7 @@
               {/if}
             </li>
           {:else}
-            <li class="none muted">Aucune issue ouverte.</li>
+            <li class="none muted">Aucune issue ouverte ne m’est assignée.</li>
           {/each}
         </ul>
       {/if}
