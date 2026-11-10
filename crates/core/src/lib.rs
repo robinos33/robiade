@@ -23,6 +23,7 @@ pub mod merge_actions;
 pub mod pricing;
 pub mod project;
 pub mod project_colors;
+pub mod routine_schedule;
 pub mod scratchpad;
 pub mod secrets;
 pub mod settings;
