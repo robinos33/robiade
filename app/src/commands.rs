@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use robiade_core::agents::AgentId;
+use robiade_core::agents::{AgentId, LaunchChoice};
 use robiade_adapters::keychain;
 use robiade_core::containers::{Container, ContainerAction, ContainerId};
 use robiade_core::databases::{Connection, ConnectionId, ConnectionRepository, Part, Source, Target};
@@ -28,7 +28,7 @@ use crate::dto::{
     ActionPreviewDto, AgentDto, AssetContentDto, AuditEntryDto, ConsoleHistoryDto, ConsoleReplyDto, ConsoleResultDto, FinishedWriteDto,
     ContainerActionPreviewDto, ContainerDto, ContributionBucketDto, DbConnectionDto, DbConnectionInputDto, DbOverviewDto, DbProbeDto, DbTargetDto, EntryDto, EnvironmentDto,
     FileChangeDto, ForgeDto, GranularityDto, IssueActionDto, IssueActionPreviewDto, IssueDto, IssueRefDto, IssueStartDto,
-    IssueReadingDto, IssueStartedDto, LifecycleDto, MergeRequestDto, MrActionDto, MrReadingDto, MrOutcomesDto, MrRefDto, NewIssueDto, OverviewDto, PageDto,
+    IssueReadingDto, IssueStartedDto, LifecycleDto, MergeRequestDto, ModelOptionDto, MrActionDto, MrReadingDto, MrOutcomesDto, MrRefDto, NewIssueDto, OverviewDto, PageDto,
     PageRequestDto, ProjectFileDto, ProjectFilesDto, RelationDto, SearchHitDto, SessionDto, TaskDto, TaskStatusDto, WorktreeCreationDto, WorktreeDto,
     UpdateDto, WorktreeRemovalDto,
 };
@@ -280,6 +280,36 @@ pub async fn restart_agent(app: tauri::AppHandle, id: String, cols: u16, rows: u
     let id = agent_id(&id)?;
     tauri::async_runtime::spawn_blocking(move || {
         app.state::<AppState>().agents.restart(&id, cols.clamp(20, 500), rows.clamp(5, 200))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Modèles que Claude Code propose : la liste de son écran `/model`.
+#[tauri::command]
+pub async fn agent_models(app: tauri::AppHandle) -> CmdResult<Vec<ModelOptionDto>> {
+    tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().agents.models())
+        .await
+        .map_err(|e| e.to_string())?
+        .map(|models| models.into_iter().map(ModelOptionDto::from).collect())
+}
+
+/// Change le modèle ou l'effort d'un agent (`None` : réglage de Claude Code) et le relance.
+#[tauri::command]
+pub async fn choose_agent_launch(
+    app: tauri::AppHandle,
+    id: String,
+    model: Option<String>,
+    effort: Option<String>,
+    cols: u16,
+    rows: u16,
+) -> CmdResult<AgentDto> {
+    let id = agent_id(&id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let agents = &app.state::<AppState>().agents;
+        let catalog = agents.models()?;
+        let launch = LaunchChoice::parse(model.as_deref(), effort.as_deref(), &catalog).map_err(|e| e.to_string())?;
+        agents.choose_launch(&id, launch, cols.clamp(20, 500), rows.clamp(5, 200))
     })
     .await
     .map_err(|e| e.to_string())?

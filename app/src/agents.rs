@@ -9,7 +9,9 @@ use robiade_adapters::hooks::{self, Observation};
 use robiade_adapters::pty::{AgentProcess, LaunchSpec};
 use robiade_adapters::shell_env::LoginEnv;
 use robiade_adapters::workspace::WorkspaceResolver;
-use robiade_core::agents::{Agent, AgentEvent, AgentId, AgentJournal, AgentStatus, Effort, PermissionMode};
+use robiade_core::agents::{
+    Agent, AgentEvent, AgentId, AgentJournal, AgentStatus, Effort, LaunchChoice, ModelOption, PermissionMode,
+};
 use robiade_core::assets::Asset;
 use robiade_core::project::Workspace;
 use robiade_core::scratchpad;
@@ -59,6 +61,8 @@ pub struct AgentRegistry {
     /// Racine résolue des scratchpads de Claude Code, `None` si elle ne se résout pas.
     scratchpad_root: Option<PathBuf>,
     live: Mutex<HashMap<AgentId, Live>>,
+    /// Modèles que Claude Code propose, demandés une fois par exécution ; un échec n'est pas gardé.
+    models: Mutex<Option<Vec<ModelOption>>>,
 }
 
 /// Échappement pour la commande de hook, exécutée par Claude Code via un shell.
@@ -85,7 +89,17 @@ impl AgentRegistry {
             })
             .collect();
         let scratchpad_root = robiade_adapters::scratchpad::root();
-        Self { app, workspaces, journal, login, socket, tasks_db, scratchpad_root, live: Mutex::new(live) }
+        Self {
+            app,
+            workspaces,
+            journal,
+            login,
+            socket,
+            tasks_db,
+            scratchpad_root,
+            live: Mutex::new(live),
+            models: Mutex::new(None),
+        }
     }
 
     pub fn socket(&self) -> &Path {
@@ -115,6 +129,20 @@ impl AgentRegistry {
             None => vec!["--session-id".to_owned(), id.as_str().to_owned()],
         };
         args.extend(["--settings".to_owned(), hooks::settings_json(&relay)]);
+        // `--model` et `--effort` ne valent que pour ce process : une reprise repasse ceux de
+        // l'onglet qu'elle remplace.
+        let launch = match &resume {
+            Some(session) => self
+                .live
+                .lock()
+                .map_err(|e| e.to_string())?
+                .values()
+                .find(|l| l.process.is_none() && l.agent.session_id() == session.as_str())
+                .map(|l| l.agent.launch().clone())
+                .unwrap_or_default(),
+            None => LaunchChoice::default(),
+        };
+        args.extend(launch.args());
         if let Some(prompt) = prompt {
             // Un argument qui commence par `-` serait lu comme une option de `claude`.
             if prompt.trim_start().starts_with('-') {
@@ -154,6 +182,7 @@ impl AgentRegistry {
         let path = cwd.to_string_lossy().into_owned();
         let workspace = self.workspaces.resolve(&path);
         let mut agent = Agent::start(id.clone(), path, resume.as_ref().map(|r| r.as_str().to_owned()), now());
+        agent.choose(launch);
         let mut live = self.live.lock().map_err(|e| e.to_string())?;
         // Reprendre une session remplace son onglet terminé, qui lui passe son nom.
         if let Some(session) = &resume {
@@ -299,6 +328,41 @@ impl AgentRegistry {
             }
         }
         self.spawn(Path::new(&path), Some(session), None, cols, rows)
+    }
+
+    /// Modèles de l'écran `/model` de Claude Code, avec les efforts que chacun accepte. Les
+    /// réglages de projet ne comptent pas : la liste est demandée depuis le dossier personnel.
+    pub fn models(&self) -> Result<Vec<ModelOption>, String> {
+        let mut cached = self.models.lock().map_err(|e| e.to_string())?;
+        if let Some(models) = cached.as_ref() {
+            return Ok(models.clone());
+        }
+        let claude = self.login.claude.as_deref().ok_or("binaire `claude` introuvable dans le PATH du shell de login")?;
+        let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
+        let models = robiade_adapters::claude_models::fetch(claude, &self.login.path, &home)?;
+        *cached = Some(models.clone());
+        Ok(models)
+    }
+
+    /// Change le modèle ou l'effort de l'agent, puis le relance sur sa session pour l'appliquer.
+    /// Refusé tant qu'un tour ou une demande de permission est en cours : la relance les couperait.
+    pub fn choose_launch(
+        self: &Arc<Self>,
+        id: &AgentId,
+        launch: LaunchChoice,
+        cols: u16,
+        rows: u16,
+    ) -> Result<AgentDto, String> {
+        {
+            let mut live = self.live.lock().map_err(|e| e.to_string())?;
+            let entry = live.get_mut(id).ok_or("agent inconnu")?;
+            if !entry.agent.accepts_launch_change() {
+                return Err("l'agent travaille ou attend une permission : change-le quand il attend un prompt".into());
+            }
+            entry.agent.choose(launch);
+            let _ = self.journal.save(&entry.agent, now());
+        }
+        self.restart(id, cols, rows)
     }
 
     /// Ferme l'onglet d'un agent terminé ; sa session reste dans l'historique.

@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
-  Agent, IssueReading, MrReading, ProjectFile, ProjectFiles, Container, ContributionBucket, Granularity, DbConnection, DbConnectionInput, DbConsoleHistory, DbConsoleReply, DbFinishedWrite, DbOverview, DbPage, DbPageRequest, DbProbe, DbTarget, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, Lifecycle, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, ProjectColors, RepositoryTrunks, SaveOutcome, SearchHit, Session, Settings, Shortcut, ForgeSettings, VaultSettings, Task, TaskStatus, GitWorktree, Update, WorktreeCreation, WorktreeRemoval,
+  Agent, ModelOption, IssueReading, MrReading, ProjectFile, ProjectFiles, Container, ContributionBucket, Granularity, DbConnection, DbConnectionInput, DbConsoleHistory, DbConsoleReply, DbFinishedWrite, DbOverview, DbPage, DbPageRequest, DbProbe, DbTarget, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, Lifecycle, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, ProjectColors, RepositoryTrunks, SaveOutcome, SearchHit, Session, Settings, Shortcut, ForgeSettings, VaultSettings, Task, TaskStatus, GitWorktree, Update, WorktreeCreation, WorktreeRemoval,
 } from './types';
 
 export const api = {
@@ -33,6 +33,11 @@ export const api = {
   resizeAgent: (id: string, cols: number, rows: number) => invoke<void>('resize_agent', { id, cols, rows }),
   killAgent: (id: string) => invoke<void>('kill_agent', { id }),
   restartAgent: (id: string, cols: number, rows: number) => invoke<Agent>('restart_agent', { id, cols, rows }),
+  /** Modèles que Claude Code propose (son écran `/model`), demandés une fois par exécution. */
+  agentModels: () => invoke<ModelOption[]>('agent_models'),
+  /** Relance l'agent sur sa session avec ce modèle et cet effort ; `null` : réglage de Claude Code. */
+  chooseAgentLaunch: (id: string, model: string | null, effort: string | null, cols: number, rows: number) =>
+    invoke<Agent>('choose_agent_launch', { id, model, effort, cols, rows }),
   markAgentSeen: (id: string) => invoke<void>('mark_agent_seen', { id }),
   renameAgent: (id: string, name: string) => invoke<void>('rename_agent', { id, name }),
   forgetAgent: (id: string) => invoke<void>('forget_agent', { id }),

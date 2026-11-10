@@ -17,6 +17,8 @@ globale de Claude Code :
 - l'agent reçoit `LC_CTYPE=UTF-8` quand l'environnement de l'ADE ne définit aucune de `LC_ALL`,
   `LC_CTYPE`, `LANG` (issue #48) : c'est le cas d'un ADE lancé depuis le Dock, et la copie de
   Claude Code casserait alors les accents. Une locale héritée n'est jamais écrasée.
+- le modèle et l'effort choisis pour l'onglet partent en `--model` et `--effort`, à chaque
+  lancement de sa session : voir [modèle et effort](modele-effort.md).
 
 Cycle de vie : fermer l'ADE termine ses sessions (confirmation s'il y en a en `Running` ou
 `AwaitingPermission`). Rien n'est perdu : au redémarrage, une session se reprend avec

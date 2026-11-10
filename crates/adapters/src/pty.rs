@@ -106,7 +106,7 @@ impl AgentProcess {
 }
 
 /// Variable héritée de Claude Code, à ne pas transmettre à un agent.
-fn is_leaked_claude_var(name: &str) -> bool {
+pub(crate) fn is_leaked_claude_var(name: &str) -> bool {
     name == "CLAUDECODE" || name.starts_with("CLAUDE_")
 }
 

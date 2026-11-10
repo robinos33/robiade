@@ -31,6 +31,7 @@ suit le même plan : « En une phrase », « Comportement », « Règles », « 
 | [agents/notifications.md](agents/notifications.md) | Notification macOS d'un agent, badge du Dock |
 | [agents/assets.md](agents/assets.md) | Fichiers écrits par un agent, scratchpad compris, à ouvrir dans le visualiseur |
 | [agents/raccourcis.md](agents/raccourcis.md) | Barre de raccourcis sous le terminal : une commande ou un prompt collé sans être envoyé |
+| [agents/modele-effort.md](agents/modele-effort.md) | Modèle et effort d'un agent, choisis dans le panneau Session |
 | [forge/merge-requests.md](forge/merge-requests.md) | Lecture des MR, actions confirmées, règles des wagons |
 | [forge/issues.md](forge/issues.md) | Issues d'équipe, démarrer un agent sur une issue |
 | [taches.md](taches.md) | Tâches perso : agrégat, échéance, liens, démarrer un agent, fermeture par l'agent |
