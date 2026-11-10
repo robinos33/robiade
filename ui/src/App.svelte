@@ -18,10 +18,11 @@
   import Environments from './views/Environments.svelte';
   import Databases from './views/Databases.svelte';
   import Code from './views/Code.svelte';
+  import RoutinesView from './views/Routines.svelte';
   import Settings from './views/Settings.svelte';
   import ReadingPanel from './components/ReadingPanel.svelte';
 
-  const KEYS: Record<string, View> = { '1': 'inbox', '2': 'agents', '3': 'history', '4': 'tasks', '5': 'stats', '6': 'mr', '7': 'env', '8': 'code' };
+  const KEYS: Record<string, View> = { '1': 'inbox', '2': 'agents', '3': 'history', '4': 'tasks', '5': 'stats', '6': 'mr', '7': 'env', '8': 'code', '9': 'routines' };
 
   /**
    * Écran de démarrage, posé sur l'interface qui se remplit dessous. Il reste le temps de l'`init`,
@@ -67,6 +68,7 @@
     {:else if app.view === 'env'}<Environments />
     {:else if app.view === 'db'}<Databases />
     {:else if app.view === 'code'}<Code />
+    {:else if app.view === 'routines'}<RoutinesView />
     {:else if app.view === 'settings'}<Settings />
     {:else}<Stats />{/if}
   </main>
