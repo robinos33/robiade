@@ -369,7 +369,7 @@ impl Forge for GitLab {
         Err(ForgeError::Api(format!("plus de {MAX_EVENT_PAGES} pages d'événements GitLab sur la période")))
     }
 
-    fn project_issues(&self, project: &str) -> Result<Vec<Issue>, ForgeError> {
+    fn my_project_issues(&self, project: &str) -> Result<Vec<Issue>, ForgeError> {
         if !is_project_path(project) {
             return Err(ForgeError::NotFound);
         }

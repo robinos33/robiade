@@ -372,7 +372,7 @@ impl Forge for GitHub {
         Ok(found)
     }
 
-    fn project_issues(&self, project: &str) -> Result<Vec<Issue>, ForgeError> {
+    fn my_project_issues(&self, project: &str) -> Result<Vec<Issue>, ForgeError> {
         repo_parts(project)?;
         let me = self.me_login()?;
         let listed: Vec<RestIssue> =

@@ -549,7 +549,7 @@ pub async fn merge_requests(app: tauri::AppHandle) -> CmdResult<ForgeDto> {
 pub async fn issues(state: State<'_, AppState>, project: Option<String>) -> CmdResult<Vec<IssueDto>> {
     let forge = state.forge.clone();
     let issues = tauri::async_runtime::spawn_blocking(move || match project {
-        Some(p) => forge.project_issues(&p),
+        Some(p) => forge.my_project_issues(&p),
         None => forge.my_issues(),
     })
     .await
