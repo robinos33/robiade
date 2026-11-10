@@ -10,6 +10,12 @@ seule question : **qu'est-ce qui demande mon action maintenant ?** Par ordre de 
 2. pipeline rouge sur une de mes MR ;
 3. MR des autres en attente de ma review ;
 4. discussion non résolue sur une de mes MR ;
-5. agent terminé dont je n'ai pas lu la fin.
+5. [routine](routines.md) en échec à son dernier passage, tant que je ne l'ai pas marquée vue. Un
+   nouveau passage en échec la fait revenir, un passage réussi l'en sort ;
+6. agent terminé dont je n'ai pas lu la fin.
 
 Le [status d'une session](agents/status.md) est la brique de base ; l'Inbox en est l'agrégation.
+
+## Tickets
+
+- #62 — Routines — voir, lancer et créer mes tâches planifiées launchd
