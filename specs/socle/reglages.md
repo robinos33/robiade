@@ -1,12 +1,13 @@
 # Réglages
 
 **En une phrase** : la page Réglages règle l'instance de forge, le Vault, les branches de tronc,
-la couleur de chaque projet et les raccourcis du terminal, sans toucher au code ; rien n'y est secret.
+la couleur de chaque projet, les raccourcis du terminal et le préfixe des routines, sans toucher au
+code ; rien n'y est secret.
 
 ## Comportement
 
 - Page **Réglages** (icône en bas de la barre latérale, palette, ⌘,), enregistrée dans
-  `robiade.db`. Quatre sections :
+  `robiade.db`. Cinq sections :
   - **Forge** : fournisseur (GitLab ou GitHub, github.com ou Enterprise Server), URL de
     l'instance, service du trousseau du jeton (défaut `gitlab-api-token` ou `github-api-token`).
     Pour GitHub, la page indique les droits d'un jeton fine-grained. Vide : pas de volet Forge (merge requests, issues, activité),
@@ -20,8 +21,10 @@ la couleur de chaque projet et les raccourcis du terminal, sans toucher au code 
     pour tous ses worktrees.
   - **Raccourcis** : la liste des [raccourcis du terminal](../agents/raccourcis.md), dans l'ordre
     de la barre.
+  - **Routines** : le préfixe des labels des [routines](../routines.md), qui décide quels
+    LaunchAgents Robiade montre et pilote. Un profil neuf démarre avec `dev.robin.robiade.routine.`.
 - Forge et Vault sont lus au démarrage : un changement enregistré s'applique à la relance, que la
-  page propose. Les troncs, la couleur et les raccourcis s'appliquent tout de suite.
+  page propose. Les troncs, la couleur, les raccourcis et le préfixe des routines s'appliquent tout de suite.
 - **Profil antérieur** (une base qui existait avant les réglages) : au premier lancement, les
   réglages sont repris une seule fois là où mes outils les gardent déjà — l'hôte par défaut de
   `glab` pour la forge, `VAULT_ADDR` lu dans un shell interactif pour Vault — et chaque dépôt déjà
@@ -70,3 +73,4 @@ résiduel ci-dessus.
 - #28 — Forge — fournisseur GitHub (pull requests, issues, checks)
 - #37 — Projets — une couleur par projet, réglable, reprise partout où le projet apparaît
 - #52 — Agents — barre de raccourcis sous le terminal : coller une commande ou un prompt sans l'envoyer
+- #62 — Routines — voir, lancer et créer mes tâches planifiées launchd
