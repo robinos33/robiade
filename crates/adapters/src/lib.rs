@@ -13,6 +13,7 @@ pub mod github;
 pub mod github_urls;
 pub mod hooks;
 pub mod keychain;
+pub mod launchd;
 pub mod legacy_settings;
 pub mod mariadb;
 pub mod mongo;
