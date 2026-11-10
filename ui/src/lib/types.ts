@@ -384,6 +384,59 @@ export interface Container {
 /** Ce que l'action ferait, sur le conteneur relu ; `blocker` dit pourquoi c'est refusé. */
 export interface ContainerActionPreview { container: Container; action: ContainerAction; blocker: string | null }
 
+/** État de launchd : chargée et en cours, chargée en attente, désactivée, ou ni l'un ni l'autre. */
+export type RoutineState = 'running' | 'idle' | 'disabled' | 'unloaded';
+export type RoutineAction = 'run' | 'disable' | 'enable' | 'delete';
+
+/** Formulaire d'une routine ; `days` en ISO (1 = lundi), `times` en `9:00`. */
+export interface RoutineForm {
+  name: string;
+  program: string;
+  arguments: string[];
+  workingDir: string | null;
+  days: number[];
+  times: string[];
+}
+
+/** Un LaunchAgent du préfixe réglé, plist et état relus sur launchd. */
+export interface Routine {
+  label: string;
+  name: string;
+  file: string;
+  state: RoutineState;
+  pid: number | null;
+  runs: number | null;
+  lastExit: { kind: 'never' | 'code' | 'signal'; code: number | null; signal: string | null } | null;
+  failed: boolean;
+  /** Dernière écriture d'un journal : l'heure approximative du dernier passage. */
+  logsWrittenAt: number | null;
+  schedule: string | null;
+  nextRun: number | null;
+  command: string[];
+  workingDir: string | null;
+  stdout: string | null;
+  stderr: string | null;
+  /** Plist illisible, ou label qui n'est pas son nom de fichier. */
+  problem: string | null;
+  /** Pourquoi Robiade ne la modifie pas ; `null` si elle est modifiable. */
+  readOnly: string | null;
+  form: RoutineForm | null;
+}
+
+export interface Routines { prefix: string; routines: Routine[] }
+export interface RoutineLogs { stdout: string | null; stderr: string | null }
+export interface RoutineActionPreview { routine: Routine; action: RoutineAction; blocker: string | null }
+export interface RoutineSavePreview {
+  label: string;
+  file: string;
+  plist: string;
+  schedule: string;
+  nextRun: number | null;
+  blocker: string | null;
+}
+/** `editing` : label de la routine modifiée ; `null` pour en créer une. */
+export type RoutineInput = RoutineForm & { editing: string | null };
+
 export type DbEngine = 'postgres' | 'mariadb' | 'mongo' | 'elasticsearch';
 export type DbStage = 'dev' | 'staging' | 'prod';
 export type DbPart = 'url' | 'host' | 'port' | 'database' | 'user' | 'password';
