@@ -1,4 +1,4 @@
-//! Réglages du poste dans `robiade.db`, en clé-valeur : forge et Vault. Aucun secret, seulement des
+//! Réglages du poste dans `robiade.db`, en clé-valeur : forge, Vault, raccourcis, préfixe des routines. Aucun secret, seulement des
 //! hôtes et des noms de services du trousseau.
 
 use std::path::Path;
@@ -8,6 +8,7 @@ use robiade_core::settings::{
     ForgeProvider, ForgeSettings, InstanceUrl, KeychainService, SettingsError, VaultSettings,
     DEFAULT_VAULT_TOKEN_SERVICE,
 };
+use robiade_core::routines::RoutinePrefix;
 use robiade_core::shortcuts::{Shortcut, Shortcuts};
 use rusqlite::{params, OptionalExtension};
 
@@ -18,6 +19,8 @@ const VAULT_URL: &str = "vault.url";
 const VAULT_TOKEN_SERVICE: &str = "vault.token_service";
 /// Liste JSON des raccourcis du terminal, `[{"label", "text"}]`.
 const SHORTCUTS: &str = "terminal.shortcuts";
+/// Début des labels launchd des routines.
+const ROUTINE_PREFIX: &str = "routines.prefix";
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct StoredShortcut {
@@ -154,6 +157,17 @@ impl SqliteSettings {
         let raw = serde_json::to_string(&stored).map_err(storage)?;
         self.put(&[(SHORTCUTS, Some(&raw))])
     }
+
+    /// Préfixe des routines ; celui d'un profil neuf tant qu'aucun n'est enregistré, ou si
+    /// l'enregistré n'est plus valide.
+    pub fn routine_prefix(&self) -> Result<RoutinePrefix, SettingsError> {
+        let stored = self.get(ROUTINE_PREFIX)?.and_then(|raw| RoutinePrefix::parse(&raw).ok());
+        Ok(stored.unwrap_or_else(RoutinePrefix::default_prefix))
+    }
+
+    pub fn save_routine_prefix(&self, prefix: &RoutinePrefix) -> Result<(), SettingsError> {
+        self.put(&[(ROUTINE_PREFIX, Some(prefix.as_str()))])
+    }
 }
 
 #[cfg(test)]
@@ -218,6 +232,16 @@ mod tests {
         assert_eq!(settings.forge().unwrap(), None);
         assert_eq!(settings.vault().unwrap(), Some(vault("v.example.com")));
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn the_routine_prefix_starts_with_the_app_identifier() {
+        let path = db("routines");
+        let settings = SqliteSettings::open(&path, false, Seed::default).unwrap();
+        assert_eq!(settings.routine_prefix().unwrap(), RoutinePrefix::default_prefix());
+        let mine = RoutinePrefix::parse("com.exemple.").unwrap();
+        settings.save_routine_prefix(&mine).unwrap();
+        assert_eq!(settings.routine_prefix().unwrap(), mine);
     }
 
     #[test]
