@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
-  Agent, ModelOption, IssueReading, MrReading, ProjectFile, ProjectFiles, Container, ContributionBucket, Granularity, DbConnection, DbConnectionInput, DbConsoleHistory, DbConsoleReply, DbFinishedWrite, DbOverview, DbPage, DbPageRequest, DbProbe, DbTarget, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, Lifecycle, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, ProjectColors, RepositoryTrunks, SaveOutcome, SearchHit, Session, Settings, Shortcut, ForgeSettings, VaultSettings, Task, TaskStatus, GitWorktree, Update, WorktreeCreation, WorktreeRemoval,
+  Agent, ModelOption, IssueReading, MrReading, ProjectFile, ProjectFiles, Container, ContributionBucket, Granularity, DbConnection, DbConnectionInput, DbConsoleHistory, DbConsoleReply, DbFinishedWrite, DbOverview, DbPage, DbPageRequest, DbProbe, DbTarget, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, Lifecycle, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, ProjectColors, RepositoryTrunks, SaveOutcome, SearchHit, Session, Settings, Shortcut, ForgeSettings, VaultSettings, Task, TaskStatus, GitWorktree, Routines, RoutineAction, RoutineActionPreview, RoutineInput, RoutineLogs, RoutineSavePreview, Update, WorktreeCreation, WorktreeRemoval,
 } from './types';
 
 export const api = {
@@ -89,6 +89,17 @@ export const api = {
   prepareContainerAction: (id: string, action: ContainerAction) =>
     invoke<ContainerActionPreview>('prepare_container_action', { id, action }),
   runContainerAction: (id: string, action: ContainerAction) => invoke<void>('run_container_action', { id, action }),
+  routines: () => invoke<Routines>('routines'),
+  routineLogs: (label: string) => invoke<RoutineLogs>('routine_logs', { label }),
+  prepareRoutineAction: (label: string, action: RoutineAction) =>
+    invoke<RoutineActionPreview>('prepare_routine_action', { label, action }),
+  runRoutineAction: (label: string, action: RoutineAction) => invoke<void>('run_routine_action', { label, action }),
+  prepareRoutineSave: (input: RoutineInput) => invoke<RoutineSavePreview>('prepare_routine_save', { input }),
+  /** Renvoie le label de la routine enregistrée. */
+  saveRoutine: (input: RoutineInput) => invoke<string>('save_routine', { input }),
+  saveRoutinePrefix: (prefix: string) => invoke<string>('save_routine_prefix', { prefix }),
+  /** `script` : le script lancé plutôt que le plist. */
+  revealRoutine: (label: string, script: boolean) => invoke<void>('reveal_routine', { label, script }),
   followContainerLogs: (id: string) => invoke<number>('follow_container_logs', { id }),
   stopContainerLogs: (stream: number) => invoke<void>('stop_container_logs', { stream }),
   dbConnections: () => invoke<DbConnection[]>('db_connections'),

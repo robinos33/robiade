@@ -139,6 +139,29 @@ let bin = '';
 bytes.forEach((b) => (bin += String.fromCharCode(b)));
 emit('agent:output', { id: AGENT_IDS[0]!, data: btoa(bin) });
 // `?view=tasks&read=Panier` : lit dans le panneau l'issue ou la MR dont le titre contient ce texte.
+// `?view=routines&routine=rapport-du-soir` : le détail ouvert ; `&new=1` ou `&modify=briefing` : l'éditeur ;
+// `&preview=1` : son aperçu du plist.
+if (params.get('view') === 'routines') {
+  if (params.get('routine')) await click('li.row .main', params.get('routine')!);
+  if (params.get('new')) await click('.page-head .btn', 'Nouvelle routine');
+  if (params.get('modify')) {
+    const row = await find('li.row', params.get('modify')!);
+    [...(row?.querySelectorAll<HTMLElement>('.actions button') ?? [])].find((b) => b.textContent === 'Modifier')?.click();
+  }
+  if (params.get('new')) {
+    const field = await find('input.field', '');
+    if (field instanceof HTMLInputElement) {
+      field.value = 'essai';
+      field.dispatchEvent(new Event('input'));
+    }
+    const fields = document.querySelectorAll<HTMLInputElement>('.dialog input.field');
+    if (fields[1]) {
+      fields[1].value = '/bin/echo';
+      fields[1].dispatchEvent(new Event('input'));
+    }
+  }
+  if (params.get('preview')) await click('.dialog .btn', 'Voir le plist');
+}
 if (params.get('read')) await click('.issue .link, .mr-row .title', params.get('read')!);
 // `?update=failed&output` : ouvre la sortie d'une mise à jour échouée.
 if (params.has('output')) await click('button.update', 'Mise à jour échouée');

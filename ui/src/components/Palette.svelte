@@ -13,7 +13,7 @@
 
   const VIEWS: [View, string][] = [
     ['inbox', 'Inbox'], ['agents', 'Agents'], ['history', 'Historique'], ['tasks', 'Tâches'], ['stats', 'Statistiques'],
-    ['env', 'Environnements'], ['db', 'Bases de données'], ['code', 'Code'], ['settings', 'Réglages'],
+    ['env', 'Environnements'], ['db', 'Bases de données'], ['code', 'Code'], ['routines', 'Routines'], ['settings', 'Réglages'],
   ];
 
   const commands = $derived.by<Command[]>(() => {
