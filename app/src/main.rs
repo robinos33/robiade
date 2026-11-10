@@ -8,6 +8,7 @@ mod db_sessions;
 mod dto;
 mod forge;
 mod project_colors;
+mod routines;
 mod settings;
 mod task_cli;
 mod trunks;
@@ -19,6 +20,7 @@ use std::sync::Arc;
 use robiade_adapters::claude_code::TranscriptStore;
 use robiade_adapters::docker::DockerEngine;
 use robiade_adapters::git::GitCli;
+use robiade_adapters::launchd::Launchd;
 use robiade_adapters::sqlite_agents::SqliteAgentJournal;
 use robiade_adapters::engines::Engines;
 use robiade_adapters::sqlite_audit::SqliteAuditLog;
@@ -66,6 +68,7 @@ pub struct AppState {
     pub settings: SqliteSettings,
     pub trunks: trunks::Trunks,
     pub project_colors: SqliteProjectColors,
+    pub routines: routines::RoutineContext,
     /// Réglages lus au démarrage, ceux que la forge et le Vault utilisent.
     pub applied: settings::Applied,
     /// Fermeture confirmée dans l'interface malgré des agents au travail.
@@ -178,6 +181,7 @@ fn main() {
             let login = shell_env::resolve();
             let updates = Arc::new(updates::Updates::default());
             let build_path = login.path.clone();
+            let routine_path = Some(login.path.clone()).filter(|p| !p.is_empty());
             let git = Arc::new(GitCli::with_path(login.path.clone()));
             let registry = Arc::new(agents::AgentRegistry::new(
                 app.handle().clone(),
@@ -232,6 +236,11 @@ fn main() {
                 tasks,
                 trunks,
                 project_colors: SqliteProjectColors::open(&data_dir.join("robiade.db"))?,
+                routines: routines::RoutineContext {
+                    launchd: Arc::new(Launchd::for_user(&home)),
+                    home: home.to_string_lossy().into_owned(),
+                    path: routine_path,
+                },
                 agents: registry,
                 vcs: git.clone(),
                 worktrees: git,
@@ -351,6 +360,14 @@ fn main() {
             trunks::save_repository_trunks,
             project_colors::project_colors,
             project_colors::save_project_color,
+            routines::routines,
+            routines::routine_logs,
+            routines::prepare_routine_action,
+            routines::run_routine_action,
+            routines::prepare_routine_save,
+            routines::save_routine,
+            routines::save_routine_prefix,
+            routines::reveal_routine,
         ])
         .build(tauri::generate_context!())
         .expect("échec du démarrage de Robiade")
