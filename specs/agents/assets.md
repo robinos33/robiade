@@ -24,6 +24,9 @@ dans le visualiseur de Robiade.
 - Un asset s'ouvre avec les règles de l'onglet Code ([Code](../code.md)) : au-delà de 1 Mo de
   texte ou de 20 Mo d'image, ou avec un octet nul en tête, il reste dans la liste et le
   visualiseur dit pourquoi il ne l'affiche pas. Les jetons connus sont masqués.
+- Un clic droit sur une image du visualiseur, ici comme dans l'onglet Code, ouvre le menu de
+  Robiade et non celui de WebKit, dont « Copier l'image » laisse le presse-papiers vide. Son
+  « Copier l'image » y met l'image en PNG ; un GIF animé n'en garde que l'image affichée.
 
 ## Règles
 
@@ -55,3 +58,4 @@ des fichiers ordinaires, sans rien ouvrir de plus.
 ## Tickets
 
 - #40 — Agents — un fichier écrit dans le scratchpad est un asset, quelle que soit son extension
+- #65 — Visualiseur — le clic droit « Copier l'image » ne copie rien dans le presse-papiers
