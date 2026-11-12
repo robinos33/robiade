@@ -17,9 +17,12 @@
 
 <span class="badge {status}" class:compact title={LABELS[status]}>
   <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
-    {#if status === 'running' || status === 'starting'}
+    {#if status === 'running'}
       <circle cx="6" cy="6" r="3" class="fill" />
       <circle cx="6" cy="6" r="5" class="ring" />
+    {:else if status === 'starting'}
+      <!-- Arc qui tourne : aucun hook encore reçu. Distinct du point pulsé d'« En cours » et du cercle d'« En pause ». -->
+      <path d="M6 2a4 4 0 1 1-4 4" class="stroke spin" />
     {:else if status === 'awaitingPermission'}
       <path d="M6 1.2 11 10.4H1z" class="fill" />
       <rect x="5.4" y="4.4" width="1.2" height="3" rx=".6" class="glyph" />
@@ -57,6 +60,8 @@
     fill: none; stroke: var(--c); stroke-width: 1.2; opacity: 0.5;
     transform-origin: 6px 6px; animation: pulse 1.6s ease-out infinite;
   }
+  .spin { transform-origin: 6px 6px; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes pulse {
     from { transform: scale(0.6); opacity: 0.7; }
     to { transform: scale(1.15); opacity: 0; }

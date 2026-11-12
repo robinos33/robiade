@@ -9,6 +9,7 @@ indicateurs qui disent où elle en est ; sous le terminal, une frise dit où en 
 
 | État | Déclencheur | Rendu |
 |---|---|---|
+| `Starting` | lancement du process, jusqu'au premier hook (`SessionStart` le fait passer en `Idle`) | arc qui tourne, distinct d'`Running` même sans libellé : un agent qui y reste ne reçoit pas ses hooks |
 | `Running` | `UserPromptSubmit`, `PreToolUse`, `PostToolUse` | animé, neutre |
 | `AwaitingPermission` | `PermissionRequest` | **le plus visible** : bloque l'agent |
 | `AwaitingInput` | `Stop`, `Notification` (idle) — tour fini, pas encore lu | visible |
@@ -95,3 +96,4 @@ relu à chaque lecture ; rien n'est stocké, et une MR repassée en brouillon ra
 - #24 — Agents — barre du terminal : badges d'état et de mode compacts quand la barre est étroite
 - #51 — Agents — frise du cycle de vie du ticket, fixée sous le terminal
 - #56 — Agents — la frise ignore la PR d'un agent qui travaille en worktree depuis main
+- #67 — Agents — « Démarrage » a la même pastille que « En cours » : indiscernables en compact
