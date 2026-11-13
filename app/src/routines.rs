@@ -7,7 +7,7 @@ use std::sync::Arc;
 use robiade_adapters::local_clock;
 use robiade_core::merge_actions::AuditEntry;
 use robiade_core::routine_schedule::{Weekday, WeeklySchedule};
-use robiade_core::routine_skill::SkillOption;
+use robiade_core::routine_skill::{SkillOption, SkillRun};
 use robiade_core::routines::{
     default_logs, Label, LastExit, Routine, RoutineAction, RoutineName, RoutinePrefix, RoutineSpec, Routines,
     ServiceState,
@@ -40,6 +40,38 @@ pub struct LastExitDto {
     pub signal: Option<String>,
 }
 
+/// Le skill d'une routine de skill ; le dossier est celui de la routine.
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillFormDto {
+    pub skill: String,
+    pub arguments: String,
+    /// `None` : aucun flag, le réglage de Claude Code s'applique.
+    pub model: Option<String>,
+    pub effort: Option<String>,
+    pub max_turns: u32,
+    /// Une règle de permission par entrée.
+    pub allowed_tools: Vec<String>,
+}
+
+impl SkillFormDto {
+    fn of(run: &SkillRun) -> Self {
+        Self {
+            skill: run.skill().to_owned(),
+            arguments: run.arguments().to_owned(),
+            model: run.model().map(str::to_owned),
+            effort: run.effort().map(str::to_owned),
+            max_turns: run.max_turns(),
+            allowed_tools: run.allowed_tools().to_vec(),
+        }
+    }
+
+    fn run(&self) -> CmdResult<SkillRun> {
+        SkillRun::new(&self.skill, &self.arguments, self.model.as_deref(), self.effort.as_deref(), self.max_turns, &self.allowed_tools)
+            .map_err(err)
+    }
+}
+
 /// Ce qu'il faut pour pré-remplir le formulaire d'une routine modifiable.
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -47,6 +79,8 @@ pub struct RoutineFormDto {
     pub name: String,
     pub program: String,
     pub arguments: Vec<String>,
+    /// Présent : une routine de skill, dont `program` et `arguments` se déduisent.
+    pub skill: Option<SkillFormDto>,
     pub working_dir: Option<String>,
     /// Jours ISO : 1 = lundi … 7 = dimanche.
     pub days: Vec<u8>,
@@ -72,6 +106,8 @@ pub struct RoutineDto {
     /// Prochain créneau, si la routine est chargée.
     pub next_run: Option<i64>,
     pub command: Vec<String>,
+    /// `/skill arguments` d'une routine de skill.
+    pub skill: Option<String>,
     pub working_dir: Option<String>,
     pub stdout: Option<String>,
     pub stderr: Option<String>,
@@ -105,6 +141,7 @@ fn form_of(name: &str, spec: &RoutineSpec) -> RoutineFormDto {
         name: name.to_owned(),
         program: spec.program()[0].clone(),
         arguments: spec.program()[1..].to_vec(),
+        skill: SkillRun::parse(spec.program()).as_ref().map(SkillFormDto::of),
         working_dir: spec.working_dir().map(str::to_owned),
         days: schedule.days().iter().map(|d| d.iso()).collect(),
         times: schedule.times().iter().map(|(h, m)| format!("{h}:{m:02}")).collect(),
@@ -138,6 +175,7 @@ fn dto(r: Routine, prefix: &RoutinePrefix, at: i64) -> RoutineDto {
         schedule: definition.map(|d| d.schedule.describe()),
         next_run,
         command: definition.map(|d| d.command()).unwrap_or_default(),
+        skill: definition.and_then(|d| SkillRun::parse(&d.command())).map(|run| run.prompt()),
         working_dir: definition.and_then(|d| d.working_dir.clone()),
         stdout: definition.and_then(|d| d.stdout.clone()),
         stderr: definition.and_then(|d| d.stderr.clone()),
@@ -309,7 +347,15 @@ fn weekly(form: &RoutineFormDto) -> CmdResult<WeeklySchedule> {
 /// ses journaux et son `PATH`.
 fn planned(state: &AppState, input: &RoutineInputDto) -> CmdResult<(Label, RoutineSpec, Option<String>)> {
     let form = &input.form;
-    let program = std::iter::once(form.program.trim().to_owned()).chain(form.arguments.iter().cloned()).collect();
+    let program = match &form.skill {
+        None => std::iter::once(form.program.trim().to_owned()).chain(form.arguments.iter().cloned()).collect(),
+        Some(skill) => {
+            if form.working_dir.as_deref().is_none_or(|d| d.trim().is_empty()) {
+                return Err("une routine de skill a besoin d'un dossier de travail".into());
+            }
+            skill.run()?.program(claude(state)?)
+        }
+    };
     let schedule = weekly(form)?;
     let launchd = &state.routines.launchd;
     let (label, spec, refusal) = match &input.editing {
