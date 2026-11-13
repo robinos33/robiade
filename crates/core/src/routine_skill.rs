@@ -37,6 +37,23 @@ pub enum SkillRunError {
     TooManyRules,
 }
 
+/// Un skill que `claude` propose depuis un dossier : de son utilisateur, du projet, d'un plugin.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkillOption {
+    pub name: String,
+    pub description: String,
+    /// Forme attendue des arguments (`[low|high] [<pr#>]`) ; vide si le skill n'en dit rien.
+    pub argument_hint: String,
+}
+
+/// Un nom de skill tel que `claude` l'accepte après `/` : `audit`, `plugin:skill`.
+pub fn is_skill_name(raw: &str) -> bool {
+    !raw.is_empty()
+        && raw.len() <= SKILL_MAX
+        && raw.starts_with(|c: char| c.is_ascii_alphanumeric())
+        && raw.chars().all(|c| c.is_ascii_alphanumeric() || "-_.:".contains(c))
+}
+
 /// Le skill lancé, et ce qui borne son passage.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkillRun {
@@ -61,11 +78,7 @@ impl SkillRun {
         allowed_tools: &[String],
     ) -> Result<Self, SkillRunError> {
         let skill = skill.trim().trim_start_matches('/');
-        let skill_ok = !skill.is_empty()
-            && skill.len() <= SKILL_MAX
-            && skill.starts_with(|c: char| c.is_ascii_alphanumeric())
-            && skill.chars().all(|c| c.is_ascii_alphanumeric() || "-_.:".contains(c));
-        if !skill_ok {
+        if !is_skill_name(skill) {
             return Err(SkillRunError::InvalidSkill);
         }
         let arguments = arguments.trim();
