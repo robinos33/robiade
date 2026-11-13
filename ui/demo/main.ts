@@ -140,6 +140,7 @@ bytes.forEach((b) => (bin += String.fromCharCode(b)));
 emit('agent:output', { id: AGENT_IDS[0]!, data: btoa(bin) });
 // `?view=tasks&read=Panier` : lit dans le panneau l'issue ou la MR dont le titre contient ce texte.
 // `?view=routines&routine=rapport-du-soir` : le détail ouvert ; `&new=1` ou `&modify=briefing` : l'éditeur ;
+// `&kind=skill` : une routine de skill neuve, dans `&dir=` (boutique par défaut), sur `&skill=` ;
 // `&preview=1` : son aperçu du plist.
 if (params.get('view') === 'routines') {
   if (params.get('routine')) await click('li.row .main', params.get('routine')!);
@@ -154,10 +155,19 @@ if (params.get('view') === 'routines') {
       field.value = 'essai';
       field.dispatchEvent(new Event('input'));
     }
-    const fields = document.querySelectorAll<HTMLInputElement>('.dialog input.field');
-    if (fields[1]) {
-      fields[1].value = '/bin/echo';
-      fields[1].dispatchEvent(new Event('input'));
+    const fill = (field: HTMLInputElement | null | undefined, value: string) => {
+      if (!field) return;
+      field.value = value;
+      field.dispatchEvent(new Event('input'));
+    };
+    if (params.get('kind') === 'skill') {
+      await click('.dialog button', 'Skill Claude Code');
+      fill(await find('.dialog input[list="re-projects"]', ''), params.get('dir') ?? '/Users/demo/code/boutique');
+      // Le catalogue part après la frappe, une demi-seconde plus tard.
+      await new Promise((r) => setTimeout(r, 800));
+      if (params.get('skill')) fill(document.querySelector<HTMLInputElement>('.dialog input[list="re-skills"]'), params.get('skill')!);
+    } else {
+      fill(document.querySelectorAll<HTMLInputElement>('.dialog input.field')[1], '/bin/echo');
     }
   }
   if (params.get('preview')) await click('.dialog .btn', 'Voir le plist');

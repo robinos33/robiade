@@ -3,7 +3,7 @@
  * Rien de ce fichier n'entre dans le build (seul `index.html` est une entrée Vite).
  */
 import type {
-  ContributionBucket, Granularity, Agent, Container, DbCell, DbColumn, DbConnection, DbPageRequest, Discussion, FileChange, Forge, GitWorktree, Issue, Lifecycle, MergeRequest, ModelOption, MrRef, Overview, Routine, RoutineInput, Session, Shortcut, Task, Tokens, WorktreeRemoval,
+  ContributionBucket, Granularity, Agent, Container, DbCell, DbColumn, DbConnection, DbPageRequest, Discussion, FileChange, Forge, GitWorktree, Issue, Lifecycle, MergeRequest, ModelOption, MrRef, Overview, Routine, RoutineInput, RoutineSkill, Session, Shortcut, Task, Tokens, WorktreeRemoval,
 } from '../src/lib/types';
 import { localDay } from '../src/lib/format';
 
@@ -348,26 +348,52 @@ function routine(name: string, patch: Partial<Routine>): Routine {
     schedule: 'lun–ven 9h00',
     nextRun: NOW + 16 * 60 * MIN,
     command: ['/usr/bin/python3', `${HOME}/scripts/${name}.py`],
+    skill: null,
     workingDir: null,
     stdout: `${LOGS}/${name}.out.log`,
     stderr: `${LOGS}/${name}.err.log`,
     problem: null,
     readOnly: null,
-    form: { name, program: '/usr/bin/python3', arguments: [`${HOME}/scripts/${name}.py`], workingDir: null, days: [1, 2, 3, 4, 5], times: ['9:00'] },
+    form: { name, program: '/usr/bin/python3', arguments: [`${HOME}/scripts/${name}.py`], skill: null, workingDir: null, days: [1, 2, 3, 4, 5], times: ['9:00'] },
     ...patch,
   };
+}
+const CLAUDE = `${HOME}/.local/bin/claude`;
+/** Une routine de skill : `claude -p "/skill …"` dans le dossier d'un projet. */
+function skillRoutine(name: string, project: number, skill: RoutineSkill, patch: Partial<Routine>): Routine {
+  const dir = `${HOME}/code/${PROJECTS[project]!.name}`;
+  const prompt = skill.arguments ? `/${skill.skill} ${skill.arguments}` : `/${skill.skill}`;
+  const command = [CLAUDE, '-p', prompt, '--max-turns', String(skill.maxTurns)];
+  if (skill.model) command.push('--model', skill.model);
+  if (skill.effort) command.push('--effort', skill.effort);
+  if (skill.allowedTools.length) command.push('--allowedTools', ...skill.allowedTools);
+  return routine(name, {
+    command, skill: prompt, workingDir: dir,
+    form: { name, program: CLAUDE, arguments: command.slice(1), skill, workingDir: dir, days: [1, 2, 3, 4, 5], times: ['8:45'] },
+    schedule: 'lun–ven 8h45',
+    ...patch,
+  });
 }
 let routines: Routine[] = [
   routine('briefing', {}),
   routine('rapport-du-soir', {
     schedule: 'lun–ven 17h30', nextRun: NOW + 4 * 60 * MIN, runs: 9, logsWrittenAt: NOW - 20 * 60 * MIN,
     lastExit: { kind: 'code', code: 1, signal: null }, failed: true,
-    form: { name: 'rapport-du-soir', program: '/usr/bin/python3', arguments: [`${HOME}/scripts/rapport-du-soir.py`], workingDir: null, days: [1, 2, 3, 4, 5], times: ['17:30'] },
+    form: { name: 'rapport-du-soir', program: '/usr/bin/python3', arguments: [`${HOME}/scripts/rapport-du-soir.py`], skill: null, workingDir: null, days: [1, 2, 3, 4, 5], times: ['17:30'] },
   }),
   routine('sauvegarde-notes', {
     state: 'disabled', runs: null, lastExit: null, nextRun: null, schedule: 'tous les jours 23h00',
     command: ['/bin/sh', '-c', 'tar czf ~/Backups/notes.tgz ~/Notes'],
-    form: { name: 'sauvegarde-notes', program: '/bin/sh', arguments: ['-c', 'tar czf ~/Backups/notes.tgz ~/Notes'], workingDir: null, days: [1, 2, 3, 4, 5, 6, 7], times: ['23:00'] },
+    form: { name: 'sauvegarde-notes', program: '/bin/sh', arguments: ['-c', 'tar czf ~/Backups/notes.tgz ~/Notes'], skill: null, workingDir: null, days: [1, 2, 3, 4, 5, 6, 7], times: ['23:00'] },
+  }),
+  skillRoutine('revue-du-matin', 0, {
+    skill: 'revue-du-matin', arguments: '--depuis hier', model: 'sonnet', effort: 'medium', maxTurns: 30,
+    allowedTools: ['Bash(gh pr list:*)', 'Bash(gh pr view:*)'],
+  }, { logsWrittenAt: NOW - 8 * 60 * MIN }),
+  skillRoutine('audit-des-dependances', 1, {
+    skill: 'audit-deps', arguments: '', model: null, effort: null, maxTurns: 10, allowedTools: [],
+  }, {
+    schedule: 'lun 7h30', runs: 4, lastExit: { kind: 'code', code: 1, signal: null }, failed: true, logsWrittenAt: NOW - 3 * 24 * 60 * MIN,
   }),
   routine('miroir-depots', {
     schedule: 'toutes les heures à :15', nextRun: NOW + 38 * MIN, runs: 214,
@@ -377,13 +403,21 @@ let routines: Routine[] = [
 ];
 const ROUTINE_LOGS: Record<string, { stdout: string; stderr: string }> = {
   briefing: { stdout: '=== briefing 2026-11-10T09:00:02 ===\n3 MR à relire, 1 pipeline rouge.\n[Slack] envoyé\n', stderr: '' },
+  'revue-du-matin': { stdout: '## Revue du matin\n\n- #142 attend ta relecture depuis hier.\n- #139 : CI rouge sur `lint`.\n', stderr: '' },
+  'audit-des-dependances': { stdout: 'Error: Reached max turns (10)', stderr: '' },
   'rapport-du-soir': {
     stdout: '=== rapport 2026-11-09T17:30:01 ===\n',
     stderr: 'Traceback (most recent call last):\n  File "rapport-du-soir.py", line 42, in <module>\n    token = keychain("forge-api-token")\nKeyError: \'forge-api-token\'\n',
   },
 };
 function plistOf(input: RoutineInput): string {
-  const args = [input.program, ...input.arguments].map((a) => `\t\t<string>${a}</string>`).join('\n');
+  const s = input.skill;
+  const program = s
+    ? [CLAUDE, '-p', s.arguments ? `/${s.skill} ${s.arguments}` : `/${s.skill}`, '--max-turns', String(s.maxTurns),
+        ...(s.model ? ['--model', s.model] : []), ...(s.effort ? ['--effort', s.effort] : []),
+        ...(s.allowedTools.length ? ['--allowedTools', ...s.allowedTools] : [])]
+    : [input.program, ...input.arguments];
+  const args = program.map((a) => `\t\t<string>${a}</string>`).join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0">\n<dict>\n\t<key>Label</key>\n\t<string>${input.editing ?? PREFIX + input.name}</string>\n\t<key>ProgramArguments</key>\n\t<array>\n${args}\n\t</array>\n\t<key>StartCalendarInterval</key>\n\t<array>…</array>\n</dict>\n</plist>\n`;
 }
 
@@ -833,12 +867,25 @@ const HANDLERS: Record<string, (args: Record<string, unknown>) => unknown> = {
       plist: plistOf(input),
       schedule: 'lun–ven 9h00',
       nextRun: NOW + 16 * 60 * MIN,
-      blocker: input.program.startsWith('/') ? null : `${input.program} n'existe pas`,
+      blocker: input.skill || input.program.startsWith('/') ? null : `${input.program} n'existe pas`,
     };
   },
   save_routine: (args) => (args.input as RoutineInput).editing ?? PREFIX + (args.input as RoutineInput).name,
   save_routine_prefix: (args) => String(args.prefix).trim(),
   reveal_routine: () => null,
+  routine_skill_catalog: (args) => {
+    if (!String(args.dir).startsWith(`${HOME}/code/`)) {
+      throw `Claude Code n'a pas approuvé ${args.dir} : ouvre-le une fois avec \`claude\` et accepte sa question de confiance`;
+    }
+    return {
+      models: MODELS,
+      skills: [
+        { name: 'revue-du-matin', description: 'Fait le tour des PR ouvertes et des pipelines rouges, en lecture seule.', argumentHint: '[--depuis hier|lundi]' },
+        { name: 'audit-deps', description: 'Liste les dépendances vulnérables ou abandonnées du projet.', argumentHint: '' },
+        { name: 'spec', description: 'Tient la spécification à jour.', argumentHint: '[feature]' },
+      ],
+    };
+  },
   worktrees: (args) => worktrees.filter((w) => w.repository === args.repository),
   prepare_worktree_creation: (args) => ({
     repository: args.repository,

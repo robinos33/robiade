@@ -7,6 +7,7 @@ use std::sync::Arc;
 use robiade_adapters::local_clock;
 use robiade_core::merge_actions::AuditEntry;
 use robiade_core::routine_schedule::{Weekday, WeeklySchedule};
+use robiade_core::routine_skill::{SkillOption, SkillRun};
 use robiade_core::routines::{
     default_logs, Label, LastExit, Routine, RoutineAction, RoutineName, RoutinePrefix, RoutineSpec, Routines,
     ServiceState,
@@ -15,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 
 type CmdResult<T> = Result<T, String>;
+use crate::dto::ModelOptionDto;
 use crate::{now, AppState};
 
 /// Fin de journal lue par flux : de quoi voir le dernier passage sans charger un journal de plusieurs Mo.
@@ -25,6 +27,8 @@ pub struct RoutineContext {
     pub home: String,
     /// `PATH` du shell interactif, copié dans une routine neuve.
     pub path: Option<String>,
+    /// `claude` en chemin absolu, trouvé dans ce `PATH` : le programme d'une routine de skill.
+    pub claude: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -36,6 +40,38 @@ pub struct LastExitDto {
     pub signal: Option<String>,
 }
 
+/// Le skill d'une routine de skill ; le dossier est celui de la routine.
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillFormDto {
+    pub skill: String,
+    pub arguments: String,
+    /// `None` : aucun flag, le réglage de Claude Code s'applique.
+    pub model: Option<String>,
+    pub effort: Option<String>,
+    pub max_turns: u32,
+    /// Une règle de permission par entrée.
+    pub allowed_tools: Vec<String>,
+}
+
+impl SkillFormDto {
+    fn of(run: &SkillRun) -> Self {
+        Self {
+            skill: run.skill().to_owned(),
+            arguments: run.arguments().to_owned(),
+            model: run.model().map(str::to_owned),
+            effort: run.effort().map(str::to_owned),
+            max_turns: run.max_turns(),
+            allowed_tools: run.allowed_tools().to_vec(),
+        }
+    }
+
+    fn run(&self) -> CmdResult<SkillRun> {
+        SkillRun::new(&self.skill, &self.arguments, self.model.as_deref(), self.effort.as_deref(), self.max_turns, &self.allowed_tools)
+            .map_err(err)
+    }
+}
+
 /// Ce qu'il faut pour pré-remplir le formulaire d'une routine modifiable.
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -43,6 +79,8 @@ pub struct RoutineFormDto {
     pub name: String,
     pub program: String,
     pub arguments: Vec<String>,
+    /// Présent : une routine de skill, dont `program` et `arguments` se déduisent.
+    pub skill: Option<SkillFormDto>,
     pub working_dir: Option<String>,
     /// Jours ISO : 1 = lundi … 7 = dimanche.
     pub days: Vec<u8>,
@@ -68,6 +106,8 @@ pub struct RoutineDto {
     /// Prochain créneau, si la routine est chargée.
     pub next_run: Option<i64>,
     pub command: Vec<String>,
+    /// `/skill arguments` d'une routine de skill.
+    pub skill: Option<String>,
     pub working_dir: Option<String>,
     pub stdout: Option<String>,
     pub stderr: Option<String>,
@@ -101,6 +141,7 @@ fn form_of(name: &str, spec: &RoutineSpec) -> RoutineFormDto {
         name: name.to_owned(),
         program: spec.program()[0].clone(),
         arguments: spec.program()[1..].to_vec(),
+        skill: SkillRun::parse(spec.program()).as_ref().map(SkillFormDto::of),
         working_dir: spec.working_dir().map(str::to_owned),
         days: schedule.days().iter().map(|d| d.iso()).collect(),
         times: schedule.times().iter().map(|(h, m)| format!("{h}:{m:02}")).collect(),
@@ -134,6 +175,7 @@ fn dto(r: Routine, prefix: &RoutinePrefix, at: i64) -> RoutineDto {
         schedule: definition.map(|d| d.schedule.describe()),
         next_run,
         command: definition.map(|d| d.command()).unwrap_or_default(),
+        skill: definition.and_then(|d| SkillRun::parse(&d.command())).map(|run| run.prompt()),
         working_dir: definition.and_then(|d| d.working_dir.clone()),
         stdout: definition.and_then(|d| d.stdout.clone()),
         stderr: definition.and_then(|d| d.stderr.clone()),
@@ -305,7 +347,15 @@ fn weekly(form: &RoutineFormDto) -> CmdResult<WeeklySchedule> {
 /// ses journaux et son `PATH`.
 fn planned(state: &AppState, input: &RoutineInputDto) -> CmdResult<(Label, RoutineSpec, Option<String>)> {
     let form = &input.form;
-    let program = std::iter::once(form.program.trim().to_owned()).chain(form.arguments.iter().cloned()).collect();
+    let program = match &form.skill {
+        None => std::iter::once(form.program.trim().to_owned()).chain(form.arguments.iter().cloned()).collect(),
+        Some(skill) => {
+            if form.working_dir.as_deref().is_none_or(|d| d.trim().is_empty()) {
+                return Err("une routine de skill a besoin d'un dossier de travail".into());
+            }
+            skill.run()?.program(claude(state)?)
+        }
+    };
     let schedule = weekly(form)?;
     let launchd = &state.routines.launchd;
     let (label, spec, refusal) = match &input.editing {
@@ -330,8 +380,63 @@ fn planned(state: &AppState, input: &RoutineInputDto) -> CmdResult<(Label, Routi
             (label, spec, refusal)
         }
     };
-    let blocker = refusal.or_else(|| launchd.check(&spec));
+    let blocker = refusal.or_else(|| launchd.check(&spec)).or_else(|| {
+        let dir = spec.working_dir().filter(|_| form.skill.is_some())?;
+        untrusted(state, std::path::Path::new(dir))
+    });
     Ok((label, spec, blocker))
+}
+
+/// `claude -p` ne demande pas confiance au dossier, et y applique ses réglages de projet : Robiade
+/// ne l'y lance que si Claude Code l'a déjà approuvé.
+fn untrusted(state: &AppState, dir: &std::path::Path) -> Option<String> {
+    let home = std::path::Path::new(&state.routines.home);
+    let trusted = robiade_adapters::claude_trust::is_trusted(&home.join(".claude.json"), home, dir);
+    (!trusted).then(|| {
+        format!("Claude Code n'a pas approuvé {} : ouvre-le une fois avec `claude` et accepte sa question de confiance", dir.display())
+    })
+}
+
+fn claude(state: &AppState) -> CmdResult<&str> {
+    state.routines.claude.as_deref().ok_or_else(|| "binaire `claude` introuvable dans le PATH du shell de login".into())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillOptionDto {
+    pub name: String,
+    pub description: String,
+    pub argument_hint: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillCatalogDto {
+    pub skills: Vec<SkillOptionDto>,
+    pub models: Vec<ModelOptionDto>,
+}
+
+/// Les skills et les modèles que `claude` propose depuis ce dossier : ceux du projet n'existent
+/// que là. `claude` est lancé sans session ni hook, le temps de répondre.
+#[tauri::command]
+pub async fn routine_skill_catalog(app: tauri::AppHandle, dir: String) -> CmdResult<SkillCatalogDto> {
+    blocking(app, move |state| {
+        let dir = std::path::PathBuf::from(dir.trim());
+        if !dir.is_absolute() || !dir.is_dir() {
+            return Err(format!("le dossier {} n'existe pas", dir.display()));
+        }
+        if let Some(refused) = untrusted(state, &dir) {
+            return Err(refused);
+        }
+        let path = state.routines.path.as_deref().unwrap_or_default();
+        let (models, skills) = robiade_adapters::claude_models::fetch_with_skills(claude(state)?, path, &dir)?;
+        let skills = skills
+            .into_iter()
+            .map(|s: SkillOption| SkillOptionDto { name: s.name, description: s.description, argument_hint: s.argument_hint })
+            .collect();
+        Ok(SkillCatalogDto { skills, models: models.into_iter().map(ModelOptionDto::from).collect() })
+    })
+    .await
 }
 
 /// Le plist exact qui serait écrit, et la raison d'un refus. N'écrit rien.

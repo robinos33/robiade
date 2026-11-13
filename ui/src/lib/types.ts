@@ -391,11 +391,28 @@ export interface ContainerActionPreview { container: Container; action: Containe
 export type RoutineState = 'running' | 'idle' | 'disabled' | 'unloaded';
 export type RoutineAction = 'run' | 'disable' | 'enable' | 'delete';
 
+/** Le skill d'une routine de skill ; `model` et `effort` à `null` : le réglage de Claude Code. */
+export interface RoutineSkill {
+  skill: string;
+  arguments: string;
+  model: string | null;
+  effort: string | null;
+  maxTurns: number;
+  /** Règles de permission de Claude Code, une par entrée. */
+  allowedTools: string[];
+}
+
+/** Un skill que `claude` propose depuis un dossier. */
+export interface SkillOption { name: string; description: string; argumentHint: string }
+export interface SkillCatalog { skills: SkillOption[]; models: ModelOption[] }
+
 /** Formulaire d'une routine ; `days` en ISO (1 = lundi), `times` en `9:00`. */
 export interface RoutineForm {
   name: string;
   program: string;
   arguments: string[];
+  /** Présent : une routine de skill, dont `program` et `arguments` se déduisent. */
+  skill: RoutineSkill | null;
   workingDir: string | null;
   days: number[];
   times: string[];
@@ -416,6 +433,8 @@ export interface Routine {
   schedule: string | null;
   nextRun: number | null;
   command: string[];
+  /** `/skill arguments` d'une routine de skill. */
+  skill: string | null;
   workingDir: string | null;
   stdout: string | null;
   stderr: string | null;

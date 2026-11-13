@@ -182,6 +182,7 @@ fn main() {
             let updates = Arc::new(updates::Updates::default());
             let build_path = login.path.clone();
             let routine_path = Some(login.path.clone()).filter(|p| !p.is_empty());
+            let routine_claude = login.claude.clone();
             let git = Arc::new(GitCli::with_path(login.path.clone()));
             let registry = Arc::new(agents::AgentRegistry::new(
                 app.handle().clone(),
@@ -240,6 +241,7 @@ fn main() {
                     launchd: Arc::new(Launchd::for_user(&home)),
                     home: home.to_string_lossy().into_owned(),
                     path: routine_path,
+                    claude: routine_claude,
                 },
                 agents: registry,
                 vcs: git.clone(),
@@ -368,6 +370,7 @@ fn main() {
             routines::save_routine,
             routines::save_routine_prefix,
             routines::reveal_routine,
+            routines::routine_skill_catalog,
         ])
         .build(tauri::generate_context!())
         .expect("échec du démarrage de Robiade")

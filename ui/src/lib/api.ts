@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
-  Agent, ModelOption, IssueReading, MrReading, ProjectFile, ProjectFiles, Container, ContributionBucket, Granularity, DbConnection, DbConnectionInput, DbConsoleHistory, DbConsoleReply, DbFinishedWrite, DbOverview, DbPage, DbPageRequest, DbProbe, DbTarget, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, Lifecycle, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, ProjectColors, RepositoryTrunks, SaveOutcome, SearchHit, Session, Settings, Shortcut, ForgeSettings, VaultSettings, Task, TaskStatus, GitWorktree, Routines, RoutineAction, RoutineActionPreview, RoutineInput, RoutineLogs, RoutineSavePreview, Update, WorktreeCreation, WorktreeRemoval,
+  Agent, ModelOption, IssueReading, MrReading, ProjectFile, ProjectFiles, Container, ContributionBucket, Granularity, DbConnection, DbConnectionInput, DbConsoleHistory, DbConsoleReply, DbFinishedWrite, DbOverview, DbPage, DbPageRequest, DbProbe, DbTarget, ContainerAction, ContainerActionPreview, Entry, FileChange, Environment, ActionPreview, AuditEntry, Forge, Issue, IssueAction, IssueActionPreview, IssueStart, Lifecycle, MrAction, NewIssue, MrOutcomes, MrRef, MrState, Overview, ProjectColors, RepositoryTrunks, SaveOutcome, SearchHit, Session, Settings, Shortcut, ForgeSettings, VaultSettings, Task, TaskStatus, GitWorktree, Routines, RoutineAction, RoutineActionPreview, RoutineInput, RoutineLogs, RoutineSavePreview, SkillCatalog, Update, WorktreeCreation, WorktreeRemoval,
 } from './types';
 
 export const api = {
@@ -100,6 +100,8 @@ export const api = {
   saveRoutinePrefix: (prefix: string) => invoke<string>('save_routine_prefix', { prefix }),
   /** `script` : le script lancé plutôt que le plist. */
   revealRoutine: (label: string, script: boolean) => invoke<void>('reveal_routine', { label, script }),
+  /** Les skills et les modèles que `claude` propose depuis ce dossier. */
+  routineSkillCatalog: (dir: string) => invoke<SkillCatalog>('routine_skill_catalog', { dir }),
   followContainerLogs: (id: string) => invoke<number>('follow_container_logs', { id }),
   stopContainerLogs: (stream: number) => invoke<void>('stop_container_logs', { stream }),
   dbConnections: () => invoke<DbConnection[]>('db_connections'),

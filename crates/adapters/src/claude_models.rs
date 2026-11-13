@@ -1,6 +1,7 @@
-//! Modèles que Claude Code propose (son écran `/model`), demandés à la CLI elle-même : la réponse à
-//! la requête `initialize` de son protocole de contrôle, celle que l'Agent SDK lit pour
-//! `supportedModels()`. Aucun appel à l'API, aucune session enregistrée, aucun hook déclenché.
+//! Modèles que Claude Code propose (son écran `/model`), et skills qu'il trouve depuis un dossier,
+//! demandés à la CLI elle-même : la réponse à la requête `initialize` de son protocole de contrôle,
+//! celle que l'Agent SDK lit pour `supportedModels()` et `supportedCommands()`. Aucun appel à
+//! l'API, aucune session enregistrée, aucun hook déclenché.
 //!
 //! Format sans contrat stable : la lecture est tolérante (entrée mal formée = sautée).
 
@@ -11,15 +12,33 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use robiade_core::agents::{is_cli_token, ModelOption};
+use robiade_core::routine_skill::{is_skill_name, SkillOption};
 use serde_json::Value;
 
 const TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_MODELS: usize = 50;
+const MAX_SKILLS: usize = 500;
 const REQUEST: &str = r#"{"type":"control_request","request_id":"robiade-models","request":{"subtype":"initialize"}}"#;
 
 /// Lance `claude` en mode protocole, demande `initialize` et rend sa liste de modèles.
 /// `cwd` : le dossier dont les réglages de projet s'appliquent.
 pub fn fetch(claude: &str, path_env: &str, cwd: &Path) -> Result<Vec<ModelOption>, String> {
+    let models = parse(&initialize(claude, path_env, cwd)?);
+    if models.is_empty() {
+        return Err("aucun modèle lisible dans la réponse de claude".into());
+    }
+    Ok(models)
+}
+
+/// Modèles et skills, en une seule question à `claude` lancé depuis `cwd` : les skills du projet
+/// n'existent que depuis son dossier.
+pub fn fetch_with_skills(claude: &str, path_env: &str, cwd: &Path) -> Result<(Vec<ModelOption>, Vec<SkillOption>), String> {
+    let response = initialize(claude, path_env, cwd)?;
+    Ok((parse(&response), parse_skills(&response)))
+}
+
+/// La réponse de `claude` à `initialize`, lancé depuis `cwd`.
+fn initialize(claude: &str, path_env: &str, cwd: &Path) -> Result<Value, String> {
     let mut cmd = Command::new(claude);
     cmd.args([
         "-p",
@@ -61,11 +80,7 @@ pub fn fetch(claude: &str, path_env: &str, cwd: &Path) -> Result<Vec<ModelOption
     };
     let _ = child.kill();
     let _ = child.wait();
-    let models = parse(&response.ok_or("claude n'a pas donné sa liste de modèles")?);
-    if models.is_empty() {
-        return Err("aucun modèle lisible dans la réponse de claude".into());
-    }
-    Ok(models)
+    response.ok_or_else(|| "claude n'a pas répondu à initialize".into())
 }
 
 /// Les modèles d'une réponse `initialize`, dans l'ordre de l'écran `/model`.
@@ -91,6 +106,32 @@ pub fn parse(response: &Value) -> Vec<ModelOption> {
             })
         })
         .take(MAX_MODELS)
+        .collect()
+}
+
+/// Les skills d'une réponse `initialize` : ses commandes sans `builtin`, celles de l'utilisateur,
+/// du projet, des plugins et de claude.ai. Les commandes intégrées (`clear`, `compact`…) et les
+/// skills livrés avec Claude Code portent `builtin: true`.
+pub fn parse_skills(response: &Value) -> Vec<SkillOption> {
+    let Some(commands) = response.pointer("/response/response/commands").and_then(Value::as_array) else {
+        return vec![];
+    };
+    let text = |c: &Value, key: &str, max: usize| {
+        c.get(key).and_then(Value::as_str).map(|s| s.chars().take(max).collect::<String>()).unwrap_or_default()
+    };
+    let mut seen = std::collections::BTreeSet::new();
+    commands
+        .iter()
+        .filter(|c| c.get("builtin").and_then(Value::as_bool) != Some(true))
+        .filter_map(|c| {
+            let name = c.get("name")?.as_str().filter(|n| is_skill_name(n))?.to_owned();
+            seen.insert(name.clone()).then(|| SkillOption {
+                description: text(c, "description", 300),
+                argument_hint: text(c, "argumentHint", 120),
+                name,
+            })
+        })
+        .take(MAX_SKILLS)
         .collect()
 }
 
@@ -122,6 +163,26 @@ mod tests {
     }
 
     #[test]
+    fn skills_are_the_commands_that_are_not_built_in() {
+        // Extrait d'une vraie réponse (Claude Code 2.1, 2026-11-13).
+        let response = serde_json::json!({"response": {"response": {"commands": [
+            {"name": "audit", "description": "Audite le projet. (user)", "argumentHint": ""},
+            {"name": "spec", "description": "Tient la spec à jour. (project)", "argumentHint": "[feature]"},
+            {"name": "slack:standup", "description": "Standup", "argumentHint": "", "aliases": []},
+            {"name": "code-review", "description": "Review", "argumentHint": "[low|high]", "builtin": true},
+            {"name": "clear", "description": "Clear", "argumentHint": "[name]", "builtin": true},
+            {"name": "../evasion", "description": "piège"},
+            {"name": "audit", "description": "doublon"},
+            {"description": "sans nom"}
+        ]}}});
+        let skills = parse_skills(&response);
+        let names: Vec<&str> = skills.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["audit", "spec", "slack:standup"]);
+        assert_eq!(skills[0].description, "Audite le projet. (user)");
+        assert_eq!(skills[1].argument_hint, "[feature]");
+    }
+
+    #[test]
     fn an_unexpected_response_gives_no_model() {
         assert!(parse(&serde_json::json!({"response": {"response": {}}})).is_empty());
     }
@@ -133,5 +194,7 @@ mod tests {
         let path = std::env::var("PATH").unwrap();
         let models = fetch("claude", &path, &std::env::temp_dir()).unwrap();
         assert!(models.iter().any(|m| m.value == "default"), "{models:?}");
+        let (_, skills) = fetch_with_skills("claude", &path, &std::env::temp_dir()).unwrap();
+        assert!(skills.iter().all(|s| s.name != "clear"), "{skills:?}");
     }
 }

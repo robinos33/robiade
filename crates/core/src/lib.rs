@@ -24,6 +24,7 @@ pub mod pricing;
 pub mod project;
 pub mod project_colors;
 pub mod routine_schedule;
+pub mod routine_skill;
 pub mod routines;
 pub mod scratchpad;
 pub mod secrets;
