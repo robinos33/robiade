@@ -33,6 +33,17 @@ Robiade montre, lance à la demande, active, désactive, crée et modifie.
   `/usr/bin:/bin:/usr/sbin:/sbin`. **[À trancher]** : le formulaire ne propose pas d'autres
   journaux, alors que l'issue les disait seulement « par défaut ». Robiade montre le plist exact avant de l'écrire et ne
   l'enregistre qu'après confirmation. Il le charge ensuite, et le retire si launchd le refuse.
+- **Routine de skill** : le formulaire propose deux types, « Commande » et « Skill Claude Code ».
+  Le type Skill demande un dossier, obligatoire (mes projets sont proposés), un skill, ses
+  arguments sur une ligne, un modèle et un effort (ceux de Claude Code, ou son réglage par défaut),
+  un nombre maximal de tours (30 par défaut) et les outils autorisés, une règle de permission par
+  ligne. Les skills proposés sont ceux que `claude` trouve depuis ce dossier, hors commandes
+  intégrées : les miens, ceux du projet, des plugins et de claude.ai. Le plist reste une routine
+  ordinaire, dont la commande est `claude -p "/<skill> <arguments>"` suivie de `--max-turns`, du
+  modèle, de l'effort et de `--allowedTools`. Le détail montre le skill lancé. Au-delà du nombre de
+  tours, `claude` sort en échec et la routine remonte dans l'Inbox. La session du passage est
+  gardée : elle compte dans les stats, mais n'apparaît pas dans l'historique, comme toute session
+  lancée en `-p`. Le résultat se lit dans le journal stdout.
 - **Modifier une routine** : le même formulaire, sans changer le nom. Les journaux et le `PATH` du
   plist sont gardés. Robiade décharge la routine, réécrit le plist, puis la recharge, sauf si elle
   est désactivée. Si launchd refuse le nouveau plist, l'ancien revient et la routine est
@@ -61,11 +72,25 @@ Robiade montre, lance à la demande, active, désactive, crée et modifie.
   (`Program`, `StartInterval`, `RunAtLoad`, `KeepAlive`…), ou une clé connue mais mal formée,
   laisse la routine en lecture seule, avec la raison. Elle reste lançable, activable et
   supprimable.
+- **Une routine de skill ne contourne pas les permissions.** Le formulaire ne propose ni
+  `--dangerously-skip-permissions` ni `--permission-mode`. Une routine n'est relue comme routine de
+  skill que si sa commande a exactement la forme que Robiade écrit ; un flag de plus, et c'est une
+  routine « Commande ». Sans règle, le skill lit et fait ce que mes réglages de Claude Code
+  autorisent déjà ; le reste est refusé sans question.
+- **`claude` ne part que dans un dossier que Claude Code a approuvé.** `claude -p` ne pose pas la
+  question de confiance et applique les réglages du projet, dont certains lancent des commandes.
+  La lecture des skills d'un dossier et l'enregistrement d'une routine de skill sont donc refusés
+  si ni le dossier, ni un dossier qui le contient, n'est approuvé dans `~/.claude.json`. Le chemin
+  est résolu avant (un `..` ou un lien ne passe pas), et la racine ou le dossier personnel
+  approuvés n'approuvent qu'eux-mêmes. La lecture des skills lance `claude` sans session ni hook.
 - **Une routine en cours ne se décharge pas** : désactiver, modifier ou supprimer attend la fin,
   car `bootout` tuerait le programme en plein travail. La lancer à nouveau est refusé.
 - **Une écriture ne laisse pas de plist à moitié écrit.** Le plist est écrit à côté de sa place
   et validé par `plutil -lint`, puis mis en place. À la création, il n'écrase jamais un fichier
   existant.
+- **Risque résiduel** : un outil refusé à un skill ne fait pas échouer le passage. `claude` sort
+  avec 0, et la routine ne remonte pas dans l'Inbox : seul son journal le dit. Approuver un dossier
+  dans Claude Code approuve aussi, pour Robiade, tous ses sous-dossiers.
 - **Risque résiduel** : la création appelle `launchctl enable` avant de charger la routine. Une
   routine supprimée puis recréée sous le même nom repart donc active, même si elle avait été
   désactivée. launchd garde aussi une trace de chaque label désactivé ou réactivé, que rien ne
@@ -78,6 +103,11 @@ Décidé le 2026-11-10 : **launchd reste le moteur des routines**, Robiade n'en 
 à une relance de Robiade (#15) ou à un plantage. Robiade est ouvert presque en permanence chez
 moi : ce n'est pas l'argument.
 
+Décidé le 2026-11-13 : **une routine peut lancer un skill Claude Code dans un dossier** (issue
+#69). Le type « prompt Claude » écarté par #62 est rouvert, la condition posée étant remplie (une
+deuxième routine qui appelle `claude -p`), mais restreint aux skills. Il n'ajoute aucune clé au
+plist : c'est une forme de commande, que launchd lance comme les autres.
+
 Décidé le 2026-11-10 : **le préfixe d'un profil neuf est `dev.robin.robiade.routine.`**, celui de
 l'identifiant de l'application (issue #62). Je règle le mien pour retrouver les routines que
 j'avais créées avant.
@@ -87,9 +117,12 @@ j'avais créées avant.
 - Un planificateur interne à Robiade : ce serait un deuxième moteur à sécuriser, moins fiable que
   launchd face à la veille et aux relances.
 - Les LaunchDaemons, et toute routine qui tourne en root.
-- Un type « prompt Claude » (une routine qui lance `claude -p` dans un projet) : il faudrait fixer
-  ses permissions et savoir où lire sa sortie. Un script qui appelle `claude` couvre déjà ce
-  besoin. À rouvrir quand j'aurai une deuxième routine de ce genre.
+- Un prompt libre au lieu d'un skill : un skill porte déjà le prompt, se teste à la main avant
+  d'être planifié et garde la routine lisible. Un prompt libre reste possible avec le type
+  « Commande ».
+- Déduire les outils autorisés du contenu d'un skill.
+- Juger la réussite d'un skill sur sa sortie : seul le code de sortie compte, comme pour toute
+  routine.
 - L'historique des passages (heure exacte, durée, code de chacun) : launchd ne le garde pas, et
   envelopper la commande rendrait la routine dépendante de Robiade.
 - Éditer `StartInterval`, `WatchPaths` et les autres déclencheurs.
@@ -97,3 +130,4 @@ j'avais créées avant.
 ## Tickets
 
 - #62 — Routines — voir, lancer et créer mes tâches planifiées launchd
+- #69 — Routines — lancer un skill Claude Code dans un dossier, à heure fixe
