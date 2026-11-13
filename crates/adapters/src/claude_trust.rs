@@ -14,10 +14,17 @@ use serde_json::Value;
 /// Au-delà, le fichier n'est pas lu : il n'approuve rien.
 const MAX_BYTES: u64 = 64 * 1024 * 1024;
 
-/// `dir`, ou un dossier qui le contient, est approuvé dans `claude_json`. La racine et le dossier
-/// personnel ne comptent que pour eux-mêmes : les approuver n'approuve pas tout le disque.
+/// `dir`, ou un dossier qui le contient, est approuvé dans `claude_json`. Le chemin est d'abord
+/// résolu : un `..` ou un lien ne le fait pas passer pour un dossier approuvé.
 pub fn is_trusted(claude_json: &Path, home: &Path, dir: &Path) -> bool {
-    let Some(projects) = read(claude_json) else { return false };
+    let (Ok(dir), Some(projects)) = (std::fs::canonicalize(dir), read(claude_json)) else { return false };
+    let home = std::fs::canonicalize(home).unwrap_or_else(|_| home.to_path_buf());
+    trusted_in(&projects, &home, &dir)
+}
+
+/// La racine et le dossier personnel ne comptent que pour eux-mêmes : les approuver n'approuve pas
+/// tout le disque. `dir` est déjà résolu.
+fn trusted_in(projects: &serde_json::Map<String, Value>, home: &Path, dir: &Path) -> bool {
     let accepted = |p: &Path| {
         projects
             .get(p.to_string_lossy().as_ref())
@@ -50,10 +57,13 @@ mod tests {
         path
     }
 
+    fn projects(json: &str) -> serde_json::Map<String, Value> {
+        serde_json::from_str::<Value>(json).unwrap()["projects"].as_object().unwrap().clone()
+    }
+
     #[test]
     fn a_folder_is_trusted_by_itself_or_by_a_parent() {
-        let path = config(
-            "parent",
+        let projects = projects(
             r#"{"projects": {
                 "/Users/me/code/app": {"hasTrustDialogAccepted": true},
                 "/Users/me/code/doute": {"hasTrustDialogAccepted": false},
@@ -61,7 +71,7 @@ mod tests {
             }}"#,
         );
         let home = Path::new("/Users/me");
-        let trusted = |dir: &str| is_trusted(&path, home, Path::new(dir));
+        let trusted = |dir: &str| trusted_in(&projects, home, Path::new(dir));
         assert!(trusted("/Users/me/code/app"));
         assert!(trusted("/Users/me/code/app/.claude/worktrees/ticket-1"));
         assert!(!trusted("/Users/me/code/doute"));
@@ -72,14 +82,28 @@ mod tests {
 
     #[test]
     fn trusting_the_root_or_home_does_not_trust_everything() {
-        let path = config(
-            "root",
-            r#"{"projects": {"/": {"hasTrustDialogAccepted": true}, "/Users/me": {"hasTrustDialogAccepted": true}}}"#,
-        );
+        let projects =
+            projects(r#"{"projects": {"/": {"hasTrustDialogAccepted": true}, "/Users/me": {"hasTrustDialogAccepted": true}}}"#);
         let home = Path::new("/Users/me");
-        assert!(is_trusted(&path, home, Path::new("/Users/me")));
-        assert!(!is_trusted(&path, home, Path::new("/Users/me/telechargements/depot")));
-        assert!(!is_trusted(&path, home, Path::new("/tmp/depot")));
+        assert!(trusted_in(&projects, home, Path::new("/Users/me")));
+        assert!(!trusted_in(&projects, home, Path::new("/Users/me/telechargements/depot")));
+        assert!(!trusted_in(&projects, home, Path::new("/tmp/depot")));
+    }
+
+    #[test]
+    fn the_folder_is_resolved_before_being_compared() {
+        let root = std::fs::canonicalize(std::env::temp_dir()).unwrap().join(format!("robiade-trust-dirs-{}", std::process::id()));
+        let (app, other) = (root.join("app"), root.join("autre"));
+        std::fs::create_dir_all(&app).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        let path = config("resolved", &format!(r#"{{"projects": {{"{}": {{"hasTrustDialogAccepted": true}}}}}}"#, app.display()));
+        let home = Path::new("/Users/me");
+        assert!(is_trusted(&path, home, &app));
+        assert!(is_trusted(&path, home, Path::new(&format!("{}/", app.display()))));
+        assert!(!is_trusted(&path, home, &app.join("..").join("autre")));
+        std::os::unix::fs::symlink(&other, app.join("lien")).unwrap();
+        assert!(!is_trusted(&path, home, &app.join("lien")));
+        assert!(!is_trusted(&path, home, &app.join("absent")));
     }
 
     #[test]
