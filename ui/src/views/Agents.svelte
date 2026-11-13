@@ -285,7 +285,9 @@
           {#if recent.length}
             <h2 class="group section-title">Récents · à reprendre</h2>
             <ul class="list">
-              {#each recent as r (r.kind === 'tab' ? r.agent.id : r.session.sessionId)}
+              <!-- Clés préfixées : l'id d'un agent est celui de sa première session, qui reste dans
+                   l'historique après un /clear ou un /resume ; une clé partagée figerait la vue. -->
+              {#each recent as r (r.kind === 'tab' ? `tab:${r.agent.id}` : `session:${r.session.sessionId}`)}
                 {#if r.kind === 'tab'}
                   <li class="tab" style:--tab-project={app.colorVar(r.agent.projectRoot)}>
                     <button
