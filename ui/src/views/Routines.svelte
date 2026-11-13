@@ -164,6 +164,10 @@
           <span>{[r.schedule ?? '—', r.nextRun ? `prochain passage ${dateTime(r.nextRun)}` : ''].filter(Boolean).join(' · ')}</span>
           <span class="k">Dernier</span>
           <span><span class:failed={r.failed}>{lastRun(r)}</span>{#if r.logsWrittenAt}<span class="muted">{' '}(heure de la dernière écriture des journaux)</span>{/if}</span>
+          {#if r.skill}
+            <span class="k">Skill</span>
+            <span class="mono path">{r.skill}</span>
+          {/if}
           <span class="k">Commande</span>
           <span class="mono path">{r.command.join(' ') || '—'}</span>
           {#if r.workingDir}
@@ -177,7 +181,7 @@
         {#if r.readOnly && !r.problem}<p class="muted small">Lecture seule ici : {r.readOnly}.</p>{/if}
         <div class="buttons">
           <button class="btn small" onclick={() => reveal(r, false)}>Montrer le plist</button>
-          {#if r.command.length > 0}<button class="btn small" onclick={() => reveal(r, true)}>Montrer le script</button>{/if}
+          {#if r.command.length > 0 && !r.skill}<button class="btn small" onclick={() => reveal(r, true)}>Montrer le script</button>{/if}
           <span class="spacer"></span>
           <button class="btn small danger-ghost" disabled={r.state === 'running'} onclick={() => (pending = { routine: r, action: 'delete' })}>Supprimer…</button>
         </div>

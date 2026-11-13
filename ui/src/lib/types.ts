@@ -433,6 +433,8 @@ export interface Routine {
   schedule: string | null;
   nextRun: number | null;
   command: string[];
+  /** `/skill arguments` d'une routine de skill. */
+  skill: string | null;
   workingDir: string | null;
   stdout: string | null;
   stderr: string | null;
