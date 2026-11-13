@@ -20,6 +20,15 @@ const REQUEST: &str = r#"{"type":"control_request","request_id":"robiade-models"
 /// Lance `claude` en mode protocole, demande `initialize` et rend sa liste de modèles.
 /// `cwd` : le dossier dont les réglages de projet s'appliquent.
 pub fn fetch(claude: &str, path_env: &str, cwd: &Path) -> Result<Vec<ModelOption>, String> {
+    let models = parse(&initialize(claude, path_env, cwd)?);
+    if models.is_empty() {
+        return Err("aucun modèle lisible dans la réponse de claude".into());
+    }
+    Ok(models)
+}
+
+/// La réponse de `claude` à `initialize`, lancé depuis `cwd`.
+fn initialize(claude: &str, path_env: &str, cwd: &Path) -> Result<Value, String> {
     let mut cmd = Command::new(claude);
     cmd.args([
         "-p",
@@ -61,11 +70,7 @@ pub fn fetch(claude: &str, path_env: &str, cwd: &Path) -> Result<Vec<ModelOption
     };
     let _ = child.kill();
     let _ = child.wait();
-    let models = parse(&response.ok_or("claude n'a pas donné sa liste de modèles")?);
-    if models.is_empty() {
-        return Err("aucun modèle lisible dans la réponse de claude".into());
-    }
-    Ok(models)
+    response.ok_or_else(|| "claude n'a pas répondu à initialize".into())
 }
 
 /// Les modèles d'une réponse `initialize`, dans l'ordre de l'écran `/model`.
