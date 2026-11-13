@@ -7,6 +7,7 @@ use std::sync::Arc;
 use robiade_adapters::local_clock;
 use robiade_core::merge_actions::AuditEntry;
 use robiade_core::routine_schedule::{Weekday, WeeklySchedule};
+use robiade_core::routine_skill::SkillOption;
 use robiade_core::routines::{
     default_logs, Label, LastExit, Routine, RoutineAction, RoutineName, RoutinePrefix, RoutineSpec, Routines,
     ServiceState,
@@ -15,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 
 type CmdResult<T> = Result<T, String>;
+use crate::dto::ModelOptionDto;
 use crate::{now, AppState};
 
 /// Fin de journal lue par flux : de quoi voir le dernier passage sans charger un journal de plusieurs Mo.
@@ -25,6 +27,8 @@ pub struct RoutineContext {
     pub home: String,
     /// `PATH` du shell interactif, copié dans une routine neuve.
     pub path: Option<String>,
+    /// `claude` en chemin absolu, trouvé dans ce `PATH` : le programme d'une routine de skill.
+    pub claude: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -332,6 +336,45 @@ fn planned(state: &AppState, input: &RoutineInputDto) -> CmdResult<(Label, Routi
     };
     let blocker = refusal.or_else(|| launchd.check(&spec));
     Ok((label, spec, blocker))
+}
+
+fn claude(state: &AppState) -> CmdResult<&str> {
+    state.routines.claude.as_deref().ok_or_else(|| "binaire `claude` introuvable dans le PATH du shell de login".into())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillOptionDto {
+    pub name: String,
+    pub description: String,
+    pub argument_hint: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillCatalogDto {
+    pub skills: Vec<SkillOptionDto>,
+    pub models: Vec<ModelOptionDto>,
+}
+
+/// Les skills et les modèles que `claude` propose depuis ce dossier : ceux du projet n'existent
+/// que là. `claude` est lancé sans session ni hook, le temps de répondre.
+#[tauri::command]
+pub async fn routine_skill_catalog(app: tauri::AppHandle, dir: String) -> CmdResult<SkillCatalogDto> {
+    blocking(app, move |state| {
+        let dir = std::path::PathBuf::from(dir.trim());
+        if !dir.is_absolute() || !dir.is_dir() {
+            return Err(format!("le dossier {} n'existe pas", dir.display()));
+        }
+        let path = state.routines.path.as_deref().unwrap_or_default();
+        let (models, skills) = robiade_adapters::claude_models::fetch_with_skills(claude(state)?, path, &dir)?;
+        let skills = skills
+            .into_iter()
+            .map(|s: SkillOption| SkillOptionDto { name: s.name, description: s.description, argument_hint: s.argument_hint })
+            .collect();
+        Ok(SkillCatalogDto { skills, models: models.into_iter().map(ModelOptionDto::from).collect() })
+    })
+    .await
 }
 
 /// Le plist exact qui serait écrit, et la raison d'un refus. N'écrit rien.
