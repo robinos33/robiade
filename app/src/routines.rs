@@ -380,8 +380,21 @@ fn planned(state: &AppState, input: &RoutineInputDto) -> CmdResult<(Label, Routi
             (label, spec, refusal)
         }
     };
-    let blocker = refusal.or_else(|| launchd.check(&spec));
+    let blocker = refusal.or_else(|| launchd.check(&spec)).or_else(|| {
+        let dir = spec.working_dir().filter(|_| form.skill.is_some())?;
+        untrusted(state, std::path::Path::new(dir))
+    });
     Ok((label, spec, blocker))
+}
+
+/// `claude -p` ne demande pas confiance au dossier, et y applique ses réglages de projet : Robiade
+/// ne l'y lance que si Claude Code l'a déjà approuvé.
+fn untrusted(state: &AppState, dir: &std::path::Path) -> Option<String> {
+    let home = std::path::Path::new(&state.routines.home);
+    let trusted = robiade_adapters::claude_trust::is_trusted(&home.join(".claude.json"), home, dir);
+    (!trusted).then(|| {
+        format!("Claude Code n'a pas approuvé {} : ouvre-le une fois avec `claude` et accepte sa question de confiance", dir.display())
+    })
 }
 
 fn claude(state: &AppState) -> CmdResult<&str> {
@@ -411,6 +424,9 @@ pub async fn routine_skill_catalog(app: tauri::AppHandle, dir: String) -> CmdRes
         let dir = std::path::PathBuf::from(dir.trim());
         if !dir.is_absolute() || !dir.is_dir() {
             return Err(format!("le dossier {} n'existe pas", dir.display()));
+        }
+        if let Some(refused) = untrusted(state, &dir) {
+            return Err(refused);
         }
         let path = state.routines.path.as_deref().unwrap_or_default();
         let (models, skills) = robiade_adapters::claude_models::fetch_with_skills(claude(state)?, path, &dir)?;
